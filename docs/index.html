@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Docs — PAGE IDE</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked-highlight/lib/index.umd.js"></script>
+<link rel="stylesheet" id="hljsTheme" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/kotlin.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/gradle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+:root{--bg:#0d1117;--sidebar-bg:#161b22;--card-bg:#1c2128;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--accent-dim:#1f6feb33;--pre-bg:#1e2228;--inline-code:#e6d9a2;--code-text:#abb2bf;--badge-bg:#282c34;--copy-bg:#2d333b;--mermaid-bg:#ffffff;--shadow:rgba(0,0,0,.4);color-scheme:dark}
+html[data-theme="light"]{--bg:#ffffff;--sidebar-bg:#f6f8fa;--card-bg:#eaeef2;--border:#d0d7de;--text:#1f2328;--muted:#59636e;--accent:#0969da;--accent-dim:#0969da1a;--pre-bg:#f6f8fa;--inline-code:#953800;--code-text:#1f2328;--badge-bg:#eaeef2;--copy-bg:#ffffff;--mermaid-bg:#fafbfc;--shadow:rgba(0,0,0,.15);color-scheme:light}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
+.sidebar{width:280px;min-width:280px;background:var(--sidebar-bg);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:20px 16px 12px;border-bottom:1px solid var(--border)}
+.sidebar-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sidebar-header h1{font-size:15px;font-weight:600}
+.lang-toggle{display:inline-flex;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.lang-btn{background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:600;padding:4px 10px;cursor:pointer;transition:background .15s,color .15s}
+.lang-btn.active{background:var(--accent-dim);color:var(--accent)}
+.lang-btn:not(.active):hover{color:var(--text)}
+.search-box{width:100%;padding:7px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;outline:none}
+.search-box:focus{border-color:var(--accent)}
+.search-box::placeholder{color:var(--muted)}
+.nav-list{flex:1;overflow-y:auto;padding:8px 0}
+.nav-group{padding:0 8px;margin-bottom:4px}
+.nav-group-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:8px 8px 4px}
+.nav-item{display:block;padding:6px 12px;font-size:13px;color:var(--muted);text-decoration:none;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s}
+.nav-item:hover{background:var(--accent-dim);color:var(--text)}
+.nav-item.active{background:var(--accent-dim);color:var(--accent);font-weight:500}
+.content{flex:1;overflow-y:auto;padding:40px;scroll-behavior:smooth}
+.content-inner{max-width:860px;margin:0 auto;padding-bottom:40vh}
+.welcome{text-align:center;padding:120px 20px;color:var(--muted)}
+.welcome h2{font-size:20px;margin-bottom:8px;color:var(--text)}
+.welcome p{font-size:14px}
+.md h1{font-size:28px;font-weight:600;margin:0 0 16px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.md h2{font-size:22px;font-weight:600;margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.md h3{font-size:17px;font-weight:600;margin:24px 0 8px}
+.md h4{font-size:15px;font-weight:600;margin:20px 0 6px}
+.md p{font-size:14px;line-height:1.7;margin:0 0 12px}
+.md a{color:var(--accent);text-decoration:none}
+.md a:hover{text-decoration:underline}
+.md ul,.md ol{padding-left:24px;margin:0 0 12px}
+.md li{font-size:14px;line-height:1.7;margin:2px 0}
+.md code{background:var(--card-bg);padding:2px 6px;border-radius:4px;font-size:13px;font-family:'JetBrains Mono','Fira Code',Consolas,monospace;color:var(--inline-code)}
+.md pre{background:var(--pre-bg);border:1px solid var(--border);border-radius:8px;margin:0 0 16px;overflow:hidden;position:relative}
+.md pre code{background:none;padding:16px;font-size:13px;line-height:1.55;display:block;overflow-x:auto;font-family:'JetBrains Mono','Fira Code',Consolas,monospace;color:var(--code-text)}
+.md pre code.hljs{background:none;padding:16px}
+.md pre .code-lang{position:absolute;top:0;right:44px;font-size:11px;color:var(--muted);background:var(--badge-bg);padding:2px 8px;border-radius:0 0 4px 4px;font-family:'JetBrains Mono',monospace;text-transform:lowercase;letter-spacing:.3px;user-select:none;pointer-events:none}
+.md pre .copy-btn{position:absolute;top:6px;right:6px;background:var(--copy-bg);border:1px solid var(--border);color:var(--muted);font-size:11px;padding:4px 10px;border-radius:5px;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s;font-family:inherit}
+.md pre:hover .copy-btn{opacity:1}
+.md pre .copy-btn:hover{background:var(--accent-dim);color:var(--text);border-color:var(--accent)}
+.md pre .copy-btn.ok{color:#2ea043;border-color:#2ea043}
+.md pre.mermaid{background:var(--mermaid-bg);text-align:center;padding:16px;border-color:var(--border)}
+.md pre.mermaid svg{max-width:100%;height:auto}
+.md blockquote{border-left:3px solid var(--accent);padding:4px 16px;margin:0 0 12px;color:var(--muted)}
+.md table{width:100%;border-collapse:collapse;margin:0 0 16px;font-size:13px}
+.md th,.md td{padding:8px 12px;border:1px solid var(--border);text-align:left}
+.md th{background:var(--card-bg);font-weight:600}
+.md hr{border:none;border-top:1px solid var(--border);margin:24px 0}
+.md img{max-width:100%;border-radius:8px}
+.md details{margin:0 0 12px}
+.md summary{cursor:pointer;font-weight:600;font-size:14px;padding:6px 0}
+.md details[open] summary{margin-bottom:8px}
+.breadcrumb{font-size:12px;color:var(--muted);margin-bottom:20px}
+.breadcrumb a{color:var(--accent);text-decoration:none}
+.breadcrumb a:hover{text-decoration:underline}
+.nav-btns{display:inline-flex;gap:4px;margin-right:10px;vertical-align:middle}
+.nav-btn{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);width:28px;height:28px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .15s}
+.nav-btn:hover:not(:disabled){background:var(--accent-dim);border-color:var(--accent)}
+.nav-btn:disabled{opacity:.3;cursor:default}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:98}
+.overlay.show{display:block}
+.menu-toggle{display:none;position:fixed;bottom:20px;right:20px;width:48px;height:48px;background:var(--accent);border:none;border-radius:50%;color:#fff;font-size:22px;cursor:pointer;z-index:100;box-shadow:0 4px 12px var(--shadow)}
+.theme-toggle{background:var(--card-bg);border:1px solid var(--border);border-radius:6px;width:30px;height:26px;padding:0;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;margin-right:6px;transition:background .15s,color .15s,border-color .15s}
+.theme-toggle:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-dim)}
+.theme-toggle svg{width:15px;height:15px;display:block}
+.theme-toggle .icon-sun{display:none}
+.theme-toggle .icon-moon{display:block}
+html[data-theme="light"] .theme-toggle .icon-sun{display:block}
+html[data-theme="light"] .theme-toggle .icon-moon{display:none}
+@media(max-width:768px){.sidebar{position:fixed;left:-300px;top:0;bottom:0;z-index:99;transition:left .25s ease}.sidebar.open{left:0}.overlay.show{display:block}.menu-toggle{display:block}.content{padding:20px 14px}.md h1{font-size:22px}.md h2{font-size:18px}.md h3{font-size:15px}.md pre{padding:10px 12px;font-size:12px}.md table{font-size:12px;display:block;overflow-x:auto}.md th,.md td{padding:6px 8px;white-space:nowrap}}
+::-webkit-scrollbar{width:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+</style>
+<script>
+(function(){
+  try {
+    var t = localStorage.getItem('docsViewerTheme');
+    if(t !== 'light' && t !== 'dark') t = 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    var link = document.getElementById('hljsTheme');
+    if(link) link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-' + (t === 'light' ? 'light' : 'dark') + '.min.css';
+  } catch(e){}
+})();
+</script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-header-row">
+      <h1 id="sidebarTitle">PAGE IDE Docs</h1>
+      <div style="display:inline-flex;align-items:center">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.9" y2="6.9"/><line x1="17.1" y1="17.1" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.9" y2="17.1"/><line x1="17.1" y1="6.9" x2="19.1" y2="4.9"/></svg>
+        </button>
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button class="lang-btn" id="langKo" type="button">KR</button>
+          <button class="lang-btn" id="langEn" type="button">EN</button>
+        </div>
+      </div>
+    </div>
+    <input type="text" class="search-box" id="search" placeholder="검색... (Ctrl+K)">
+  </div>
+  <nav class="nav-list" id="navList"></nav>
+</aside>
+<main class="content" id="content">
+  <div class="content-inner" id="contentInner">
+    <div class="welcome"><h2>문서 뷰어</h2><p>왼쪽 사이드바에서 문서를 선택하세요</p></div>
+  </div>
+</main>
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+<button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
+<script>
+function toggleSidebar(){var s=document.getElementById('sidebar'),o=document.getElementById('overlay');s.classList.toggle('open');o.classList.toggle('show',s.classList.contains('open'));}
+function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show');}
+</script>
+
+<script>
+const MD_DATA = {"guides/architecture.md":"# 아키텍처\n\n> English: [architecture_en.md](./architecture_en.md)\n\n> 모듈 경계, 의존 방향, 기술 스택 결정.\n\n이 문서는 코드가 채워지면서 살이 붙는다. 현재는 결정된 골격만 정리한다.\n\n---\n\n## 기술 스택\n\n| 영역 | 선택 | 비고 |\n|---|---|---|\n| 언어 | Kotlin (JVM 21+) | 자바 생태계 라이브러리 그대로 활용 |\n| UI | Compose Multiplatform Desktop | JetBrains Fleet 동일 스택, Skia 기반 |\n| 빌드 | Gradle (Kotlin DSL) | 멀티모듈 |\n| LSP | LSP4J (Eclipse) | 다언어 지원 표준 |\n| 신택스 | Tree-sitter | JNI 바인딩 |\n| Git | JGit | 자체 구현 회피 |\n| 로컬 저장 | SQLite (xerial JDBC) | Echo 타임라인 |\n| AI HTTP | OkHttp | `LLMProvider` 인터페이스 + 어댑터 4종 |\n| PTY | JediTerm 또는 pty4j | 프로토타입 후 결정 |\n\n---\n\n## 모듈 구조 (계획)\n\n```\npage/\n├── core         (공통 유틸, 도메인 타입, 이벤트 버스)\n├── editor       (텍스트 버퍼, 신택스 하이라이팅, 키 입력)\n├── language     (LSP 클라이언트, 언어 정의 JSON 로더)\n├── workspace    (파일 트리, 다중 탭, 분할 화면, 프로젝트 모델)\n├── ui           (Compose 컴포넌트, Glass 디자인 토큰)\n├── atlas        (코드 그래프 분석 + 렌더)\n├── echo         (키스트로크 레코더 + 타임라인 UI)\n├── pair         (LLMProvider, 어댑터, 채팅/관찰자/에이전트/튜터)\n├── runtime      (PTY, 빌드/실행, 출력 패널)\n├── git          (JGit 래퍼, diff/스테이지/커밋 UI)\n└── app          (조립층, 메인 진입점)\n```\n\n> 각 모듈의 상세 책임은 코드가 들어오면서 별도 문서로 분리한다.\n\n---\n\n## 의존 방향 (계획)\n\n```mermaid\ngraph TD\n  app --> ui\n  app --> workspace\n  app --> editor\n  app --> language\n  app --> atlas\n  app --> echo\n  app --> pair\n  app --> runtime\n  app --> git\n  ui --> core\n  workspace --> core\n  editor --> core\n  language --> core\n  atlas --> language\n  atlas --> core\n  echo --> core\n  pair --> core\n  runtime --> core\n  git --> core\n```\n\n원칙은 단순하다.\n\n- 모든 모듈은 `core`만 의존한다 (또는 `core`도 의존하지 않는다).\n- 기능 모듈끼리(예: `editor` ↔ `pair`)는 직접 의존하지 않는다. 통신은 `core`의 이벤트 버스나 인터페이스로.\n- 조립과 와이어링은 `app`이 전담한다.\n\n---\n\n## AI 프로바이더 전략\n\n`LLMProvider` 인터페이스를 두고 어댑터 네 가지로 갈아끼운다.\n\n```kotlin\ninterface LLMProvider {\n    suspend fun complete(prompt: Prompt): Flow<TokenChunk>\n    fun supportsTools(): Boolean\n}\n```\n\n- **Ollama** — 로컬, 기본. 코드가 PC를 떠나지 않는다.\n- **Anthropic Claude** — 사용자 본인 API 키.\n- **OpenAI ChatGPT** — 사용자 본인 API 키.\n- **OpenAI 호환 endpoint** — Together AI / Groq / 자체 호스팅 등 endpoint URL 직접 입력.\n\nAPI 키는 OS 키체인에 저장한다 (Windows Credential Manager 등). 평문 저장 금지.\n\n---\n\n- [개요로 돌아가기](./overview.md)\n- [목차로 돌아가기](../README.md)\n","guides/architecture_en.md":"# Architecture\n\n> 한국어: [architecture.md](./architecture.md)\n\n> Module boundaries, dependency direction, and stack choices.\n\nThis document grows as code lands. For now, only the decided skeleton is captured.\n\n---\n\n## Stack\n\n| Area | Choice | Note |\n|---|---|---|\n| Language | Kotlin (JVM 21+) | Reuse JVM libraries directly |\n| UI | Compose Multiplatform Desktop | Same stack as JetBrains Fleet, Skia-based |\n| Build | Gradle (Kotlin DSL) | Multi-module |\n| LSP | LSP4J (Eclipse) | Multi-language standard |\n| Syntax | Tree-sitter | JNI bindings |\n| Git | JGit | Avoid reimplementing |\n| Local store | SQLite (xerial JDBC) | Echo timeline |\n| AI HTTP | OkHttp | `LLMProvider` interface + 4 adapters |\n| PTY | JediTerm or pty4j | Decide after prototyping |\n\n---\n\n## Module structure (planned)\n\n```\npage/\n├── core         (shared utilities, domain types, event bus)\n├── editor       (text buffer, syntax highlighting, key input)\n├── language     (LSP client, language-definition JSON loader)\n├── workspace    (file tree, multi-tab, split panes, project model)\n├── ui           (Compose components, Glass design tokens)\n├── atlas        (code graph analysis + render)\n├── echo         (keystroke recorder + timeline UI)\n├── pair         (LLMProvider, adapters, chat/observer/agent/tutor)\n├── runtime      (PTY, build/run, output panel)\n├── git          (JGit wrapper, diff/stage/commit UI)\n└── app          (assembly layer, main entry point)\n```\n\n> Each module's detailed responsibilities will move to its own document as code lands.\n\n---\n\n## Dependency direction (planned)\n\n```mermaid\ngraph TD\n  app --> ui\n  app --> workspace\n  app --> editor\n  app --> language\n  app --> atlas\n  app --> echo\n  app --> pair\n  app --> runtime\n  app --> git\n  ui --> core\n  workspace --> core\n  editor --> core\n  language --> core\n  atlas --> language\n  atlas --> core\n  echo --> core\n  pair --> core\n  runtime --> core\n  git --> core\n```\n\nThe rules are simple.\n\n- Every module depends only on `core` (or on nothing).\n- Feature modules (e.g. `editor` ↔ `pair`) do not depend on each other directly. Communication goes through `core` event buses or interfaces.\n- Assembly and wiring live in `app`.\n\n---\n\n## AI provider strategy\n\nA single `LLMProvider` interface with four swappable adapters.\n\n```kotlin\ninterface LLMProvider {\n    suspend fun complete(prompt: Prompt): Flow<TokenChunk>\n    fun supportsTools(): Boolean\n}\n```\n\n- **Ollama** — local, default. Code never leaves the user's machine.\n- **Anthropic Claude** — user-supplied API key.\n- **OpenAI ChatGPT** — user-supplied API key.\n- **OpenAI-compatible endpoint** — Together AI / Groq / self-hosted; user supplies the endpoint URL.\n\nAPI keys are stored in the OS keychain (Windows Credential Manager, macOS Keychain, libsecret on Linux). No plaintext storage.\n\n---\n\n- [Back to overview](./overview_en.md)\n- [Back to index](../README_en.md)\n","guides/overview.md":"# PAGE 개요\n\n> English: [overview_en.md](./overview_en.md)\n\n> 다언어 데스크톱 IDE. 이름은 핵심 가치 네 개의 머리글자 — **P**air · **A**tlas · **G**lass · **E**cho.\n\nPAGE는 한 페이지 안에서 네 가지 차원을 동시에 본다. 코드(텍스트), 코드 그래프(공간), 작업 시간축(시간), AI 동반자(대화). 기존 IDE가 이 중 하나만 잘 푸는 동안, PAGE는 이 넷을 한 화면 안에 통합한다.\n\n---\n\n## 핵심 가치 네 가지\n\n### Pair — AI 동반자\n\n곁에서 코드를 함께 보는 모드. 명령을 받고 실행하는 외주형이 아니라, 사용자의 작업을 관찰하고 짧게 거드는 동행형을 지향한다.\n\n- **관찰자** — 사용자가 짜는 코드를 보고 자발적으로 짧게 코멘트.\n- **대화** — 채팅 기반 질문/답변, 코드 컨텍스트 자동 첨부.\n- **에이전트** — 도구 호출로 파일 수정, 명령 실행. 모든 변경은 사용자 승인 필요.\n- **튜터** — 학습자용. 코드의 의도를 묻고 대안을 제시한다.\n\n### Atlas — 코드 그래프 (공간)\n\n파일 트리는 디렉터리 구조일 뿐이다. Atlas는 모듈, 함수, 의존성을 노드와 엣지로 시각화한다.\n\n- 노드: 파일 / 주요 심볼\n- 엣지: import, 호출, 상속\n- 줌·팬, 노드 클릭으로 파일 오픈, 호버 미리보기\n- \"현재 파일에서 도달 가능한 노드만 보기\" 필터\n\n### Glass — UI 미감\n\n매일 8시간 보는 화면이라면 보고 싶은 화면이어야 한다. Glass는 글래스모피즘 기반 디자인 시스템이다.\n\n- 다크 모드 기본, 라이트 모드 전환\n- 반투명 패널, 부드러운 모션, 네온 액센트\n- 포커스 모드 (현재 파일 외 흐림)\n- Compose Multiplatform Material 3 위에 디자인 토큰 v1\n\n### Echo — 키스트로크 타임라인 (시간)\n\nGit 커밋은 결과 스냅샷이지, 작업 흐름이 아니다. Echo는 키 입력을 로컬 SQLite에 저장해서 작업 시간축을 그대로 되감을 수 있게 한다.\n\n- 디바운스된 키 입력 자동 레코딩 (오프라인, 로컬 DB)\n- 하단 타임라인 바, 스크럽으로 시점 이동 (read-only 뷰)\n- \"이 시점으로 복원\" 버튼\n- 보존 기간 기본 30일, 커스터마이즈 가능\n\n---\n\n## 만들지 *않을* 것\n\n스코프 보호는 컨셉의 일부다.\n\n- 모바일/웹 버전 — 데스크톱 우선\n- 자체 언어 서버 — LSP 클라이언트만\n- 자체 디버거 엔진 — 추후 DAP 사용\n- 협업 편집 (Live Share 류) — 후순위\n- 마켓플레이스/플러그인 SDK — v2.0 이후\n\n---\n\n## 단계 구성\n\n네 단계로 나누어 단계마다 배포 가능한 결과물을 남긴다.\n\n1. **기반** — 예쁜 다언어 에디터.\n2. **Atlas + Git** — 코드 그래프와 버전 관리 통합.\n3. **Echo** — 키스트로크 타임라인.\n4. **Pair** — AI 동반자 (멀티 프로바이더).\n\n---\n\n## 다음 문서\n\n- [아키텍처](./architecture.md) — 모듈 구조와 의존 방향, 기술 스택 결정\n- [목차로 돌아가기](../README.md)\n","guides/overview_en.md":"# PAGE Overview\n\n> 한국어: [overview.md](./overview.md)\n\n> Multi-language desktop IDE. The name comes from the initials of four core values — **P**air · **A**tlas · **G**lass · **E**cho.\n\nPAGE puts four dimensions on a single page: code (text), code graph (space), work timeline (time), and an AI companion (conversation). Where existing IDEs solve one of these well, PAGE integrates all four into one screen.\n\n---\n\n## The four core values\n\n### Pair — AI companion\n\nA mode where the AI sits beside you and watches the code. Not the outsourcing model where you issue a command and receive a result, but a companion model that observes your work and chimes in briefly.\n\n- **Observer** — Watches the code you write and offers short, unsolicited comments.\n- **Chat** — Question/answer with automatic code-context attachment.\n- **Agent** — Tool-calling for file edits and command execution. Every change requires explicit user approval.\n- **Tutor** — For learners. Asks about the intent of your code and proposes alternatives.\n\n### Atlas — code graph (space)\n\nThe file tree is just directory structure. Atlas visualizes modules, functions, and dependencies as nodes and edges.\n\n- Nodes: files / major symbols\n- Edges: imports, calls, inheritance\n- Zoom/pan, click to open the file, hover to preview\n- \"Show only nodes reachable from the current file\" filter\n\n### Glass — UI aesthetic\n\nIf you stare at a screen eight hours a day, it should be a screen you want to look at. Glass is a glassmorphism-based design system.\n\n- Dark mode by default, light mode toggle\n- Translucent panels, smooth motion, neon accents\n- Focus mode (everything except the current file dims)\n- Design tokens v1 layered on top of Compose Multiplatform Material 3\n\n### Echo — keystroke timeline (time)\n\nA git commit is a result snapshot, not a record of work. Echo stores keystrokes in a local SQLite database so you can rewind the work timeline as it happened.\n\n- Debounced auto-recording of keystrokes (offline, local DB)\n- Bottom timeline bar, scrub to navigate (read-only view)\n- \"Restore to this point\" button\n- Default 30-day retention, configurable\n\n---\n\n## What we will *not* build\n\nScope protection is part of the concept.\n\n- Mobile/web versions — desktop first\n- Our own language server — LSP client only\n- Our own debugger engine — DAP later\n- Collaborative editing (Live Share style) — deferred\n- Marketplace / plugin SDK — post-v2.0\n\n---\n\n## Stages\n\nFour stages, each ending with something shippable.\n\n1. **Foundation** — a good-looking multi-language editor.\n2. **Atlas + Git** — code graph plus version control.\n3. **Echo** — keystroke timeline.\n4. **Pair** — AI companion (multi-provider).\n\n---\n\n## Next document\n\n- [Architecture](./architecture_en.md) — Module structure, dependency direction, and stack choices\n- [Back to index](../README_en.md)\n","README.md":"# PAGE IDE Docs\n\n> English: [README_en.md](./README_en.md)\n\n> 다언어 데스크톱 IDE — Pair · Atlas · Glass · Echo\n\nPAGE IDE의 공개 문서 진입점. 이 페이지는 목차 역할만 한다. 실제 내용은 각 항목을 따라간다.\n\n뷰어는 `node build_viewer.js`로 `index.html`을 빌드한 뒤, 별도 서버 없이 브라우저에서 바로 열 수 있다.\n\n---\n\n## 목차\n\n### 가이드\n- [PAGE 개요](./guides/overview.md) — 핵심 가치 네 가지 (Pair · Atlas · Glass · Echo)와 만들지 않을 것\n- [아키텍처](./guides/architecture.md) — 모듈 구조와 의존 방향, 기술 스택 결정\n\n### 모듈\n> 코드가 들어오는 대로 채운다. 현재는 뼈대만 있는 단계.\n\n### 기능\n> Pair / Atlas / Glass / Echo 기능 문서는 각 단계가 끝날 때 추가된다.\n\n---\n\n## 외부 링크\n\n- GitHub: <https://github.com/Monkshark/PAGE_IDE>\n- 개발기 시리즈: <https://monkshark.github.io/categories/page-개발기/>\n","README_en.md":"# PAGE IDE Docs\n\n> 한국어: [README.md](./README.md)\n\n> Multi-language desktop IDE — Pair · Atlas · Glass · Echo\n\nPublic documentation entry point for PAGE IDE. This page only serves as a table of contents. Each item below links to the actual content.\n\nBuild the viewer with `node build_viewer.js` to produce `index.html`, which opens in a browser with no server required.\n\n---\n\n## Table of contents\n\n### Guides\n- [PAGE overview](./guides/overview_en.md) — The four core values (Pair · Atlas · Glass · Echo) and what we will not build\n- [Architecture](./guides/architecture_en.md) — Module structure, dependency direction, and stack choices\n\n### Modules\n> Filled in as code lands. Only the skeleton exists right now.\n\n### Features\n> Pair / Atlas / Glass / Echo feature docs will be added at the close of each milestone.\n\n---\n\n## External links\n\n- GitHub: <https://github.com/Monkshark/PAGE_IDE>\n- Devlog series (Korean): <https://monkshark.github.io/categories/page-개발기/>\n"};
+
+var FILES = [
+  { titleKo:'개요', titleEn:'Overview', items:[
+    {nameKo:'README (목차)',         nameEn:'README (index)',         pathKo:'README.md',                   pathEn:'README_en.md'}
+  ]},
+  { titleKo:'가이드', titleEn:'Guides', items:[
+    {nameKo:'PAGE 개요',             nameEn:'PAGE overview',          pathKo:'guides/overview.md',          pathEn:'guides/overview_en.md'},
+    {nameKo:'아키텍처',              nameEn:'Architecture',           pathKo:'guides/architecture.md',      pathEn:'guides/architecture_en.md'}
+  ]}
+];
+
+(function(){
+  try {
+    if(globalThis.markedHighlight && globalThis.hljs){
+      marked.use(globalThis.markedHighlight.markedHighlight({
+        langPrefix:'hljs language-',
+        highlight:function(code,lang){
+          try{
+            if(lang === 'mermaid') return code;
+            if(lang && hljs.getLanguage(lang)) return hljs.highlight(code,{language:lang}).value;
+            return hljs.highlightAuto(code).value;
+          }catch(e){return code;}
+        }
+      }));
+    }
+  }catch(e){ console.warn('Highlight init skipped:', e); }
+  marked.use({breaks:false,gfm:true});
+  function slugify(text){
+    return text.toLowerCase()
+      .replace(/<[^>]*>/g,'')
+      .replace(/[^\w㄰-㆏가-힯一-鿿 -]/g,'')
+      .replace(/ /g,'-')
+      .replace(/-+$/,'');
+  }
+  marked.use({renderer:{code:function(code, lang){
+    var raw, language;
+    if(typeof code === 'object' && code !== null){
+      raw = code.text || '';
+      language = (code.lang || '').trim();
+    } else {
+      raw = code || '';
+      language = (lang || '').trim();
+    }
+    if(language === 'mermaid'){
+      var esc = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return '<pre class="mermaid">' + esc + '</pre>';
+    }
+    return false;
+  }}});
+  try {
+    if(globalThis.mermaid){
+      var storedTheme = (localStorage.getItem('docsViewerTheme') === 'light') ? 'default' : 'dark';
+      mermaid.initialize({startOnLoad:false, theme: storedTheme, securityLevel:'loose'});
+    }
+  } catch(e){ console.warn('Mermaid init skipped:', e); }
+
+  var LANG_KEY = 'docsViewerLang';
+  function getLang(){ return localStorage.getItem(LANG_KEY) === 'en' ? 'en' : 'ko'; }
+  function setLang(l){ localStorage.setItem(LANG_KEY, l === 'en' ? 'en' : 'ko'); }
+
+  var PATH_INDEX = {};
+  var PAIR = {};
+  FILES.forEach(function(g){
+    g.items.forEach(function(it){
+      PATH_INDEX[it.pathKo] = { group:g, item:it, lang:'ko' };
+      if(it.pathEn){
+        PATH_INDEX[it.pathEn] = { group:g, item:it, lang:'en' };
+        PAIR[it.pathKo] = it.pathEn;
+        PAIR[it.pathEn] = it.pathKo;
+      }
+    });
+  });
+
+  function pathForItem(item, lang){
+    if(lang === 'en' && item.pathEn) return item.pathEn;
+    return item.pathKo;
+  }
+  function nameForItem(item, lang){
+    return (lang === 'en' && item.nameEn) ? item.nameEn : item.nameKo;
+  }
+  function titleForGroup(g, lang){
+    return (lang === 'en' && g.titleEn) ? g.titleEn : g.titleKo;
+  }
+
+  var navList = document.getElementById('navList');
+  var allItems = [];
+
+  function renderNav(lang){
+    navList.innerHTML = '';
+    allItems = [];
+    FILES.forEach(function(g){
+      var gEl = document.createElement('div');
+      gEl.className = 'nav-group';
+      var titleEl = document.createElement('div');
+      titleEl.className = 'nav-group-title';
+      titleEl.textContent = titleForGroup(g, lang);
+      gEl.appendChild(titleEl);
+      g.items.forEach(function(it){
+        var a = document.createElement('a');
+        a.className = 'nav-item';
+        a.textContent = nameForItem(it, lang);
+        a.dataset.path = pathForItem(it, lang);
+        a.onclick = function(){ loadFile(a.dataset.path); };
+        gEl.appendChild(a);
+        allItems.push({el:a, item:it, group:g});
+      });
+      navList.appendChild(gEl);
+    });
+  }
+
+  function applyLang(lang, opts){
+    opts = opts || {};
+    setLang(lang);
+    document.documentElement.lang = lang;
+    document.getElementById('langKo').classList.toggle('active', lang === 'ko');
+    document.getElementById('langEn').classList.toggle('active', lang === 'en');
+    document.getElementById('search').placeholder = (lang === 'en') ? 'Search... (Ctrl+K)' : '검색... (Ctrl+K)';
+    document.getElementById('sidebarTitle').textContent = (lang === 'en') ? 'PAGE IDE Docs' : 'PAGE IDE Docs';
+    renderNav(lang);
+
+    if(!opts.skipContentSwap){
+      var cur = currentPath();
+      if(cur){
+        var info = PATH_INDEX[cur];
+        if(info){
+          var newPath = pathForItem(info.item, lang);
+          if(newPath !== cur){
+            loadFile(newPath, { replaceHistory:true });
+            return;
+          }
+        }
+      }
+    }
+    var cur2 = currentPath();
+    highlightActive(cur2);
+    applySearchFilter();
+  }
+
+  function highlightActive(p){
+    allItems.forEach(function(i){
+      i.el.classList.toggle('active', i.el.dataset.path === p);
+    });
+  }
+
+  function applySearchFilter(){
+    var q = (document.getElementById('search').value || '').toLowerCase().trim();
+    allItems.forEach(function(i){
+      var hay = (i.item.nameKo + ' ' + (i.item.nameEn||'') + ' ' + i.item.pathKo + ' ' + (i.item.pathEn||'')).toLowerCase();
+      i.el.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
+    });
+    navList.querySelectorAll('.nav-group').forEach(function(g){
+      var vis = Array.from(g.querySelectorAll('.nav-item')).some(function(i){ return i.style.display !== 'none'; });
+      g.style.display = vis ? '' : 'none';
+    });
+  }
+  document.getElementById('search').addEventListener('input', applySearchFilter);
+
+  var history = [];
+  var historyIndex = -1;
+  var navigating = false;
+
+  function currentPath(){
+    return historyIndex >= 0 ? history[historyIndex] : null;
+  }
+
+  function loadFile(p, opts){
+    opts = opts || {};
+    var text = MD_DATA[p];
+    var inner = document.getElementById('contentInner');
+    if(!text){
+      inner.innerHTML = '<div class="welcome"><h2>문서를 찾을 수 없습니다</h2><p>' + p + '</p></div>';
+      return;
+    }
+
+    highlightActive(p);
+
+    if(!opts.fromPopState && !opts.replaceHistory){
+      history = history.slice(0, historyIndex + 1);
+      history.push(p);
+      historyIndex = history.length - 1;
+    } else if(opts.replaceHistory){
+      if(historyIndex < 0){ history.push(p); historyIndex = 0; }
+      else history[historyIndex] = p;
+    }
+
+    var html = marked.parse(text);
+    var dir = p.indexOf('/') !== -1 ? p.substring(0, p.lastIndexOf('/')) : '';
+    var fileName = p.split('/').pop();
+
+    var canBack = historyIndex > 0;
+    var canFwd = historyIndex < history.length - 1;
+    var lang = getLang();
+    var backLabel = (lang === 'en') ? 'Back' : '뒤로';
+    var fwdLabel = (lang === 'en') ? 'Forward' : '앞으로';
+    var rootPath = (lang === 'en' && MD_DATA['README_en.md']) ? 'README_en.md' : 'README.md';
+
+    var navHtml = '<div class="breadcrumb"><span class="nav-btns">'
+      + '<button class="nav-btn" onclick="window._goBack()" ' + (canBack ? '' : 'disabled') + ' title="' + backLabel + '">&#8592;</button>'
+      + '<button class="nav-btn" onclick="window._goForward()" ' + (canFwd ? '' : 'disabled') + ' title="' + fwdLabel + '">&#8594;</button>'
+      + '</span>'
+      + '<a href="#" onclick="window._loadFile(\'' + rootPath + '\');return false">docs</a> / '
+      + (dir ? dir + ' / ' : '')
+      + '<strong>' + fileName + '</strong></div>';
+
+    inner.innerHTML = navHtml + '<div class="md">' + html + '</div>';
+
+    inner.querySelectorAll('.md h1, .md h2, .md h3, .md h4, .md h5, .md h6').forEach(function(h){
+      if(!h.id) h.id = slugify(h.textContent);
+    });
+
+    inner.querySelectorAll('.md a[href]').forEach(function(a){
+      var href = a.getAttribute('href');
+      if(!href || href.indexOf('http') === 0) return;
+      var hashOnly = href.charAt(0) === '#';
+      if(hashOnly){
+        a.addEventListener('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          var id = decodeURIComponent(href.substring(1));
+          var target = document.getElementById(id);
+          if(target){ target.scrollIntoView({behavior:'smooth',block:'start'}); }
+        });
+        return;
+      }
+      var hashTarget = '';
+      var hashIdx = href.indexOf('#');
+      if(hashIdx !== -1){ hashTarget = decodeURIComponent(href.substring(hashIdx + 1)); href = href.substring(0, hashIdx); }
+      if(!href.endsWith('.md')) return;
+
+      if(href.indexOf('./') === 0) href = href.substring(2);
+
+      var resolved;
+      if(href.indexOf('../') === 0){
+        var parts = dir ? dir.split('/') : [];
+        var h = href;
+        while(h.indexOf('../') === 0){ parts.pop(); h = h.substring(3); }
+        resolved = (parts.length ? parts.join('/') + '/' : '') + h;
+      } else if(href.indexOf('/') === 0){
+        resolved = href.substring(1);
+      } else {
+        resolved = dir ? dir + '/' + href : href;
+      }
+      if(MD_DATA[resolved]){
+        a.onclick = function(e){ e.preventDefault(); loadFile(resolved, hashTarget ? {scrollTo: hashTarget} : undefined); };
+      } else {
+        a.onclick = function(e){ e.preventDefault(); console.warn('Doc not found in viewer:', resolved); };
+      }
+    });
+
+    try {
+      if(globalThis.mermaid){
+        var nodes = inner.querySelectorAll('pre.mermaid');
+        nodes.forEach(function(n){ if(!n.dataset.mermaidSrc) n.dataset.mermaidSrc = n.textContent; });
+        if(nodes.length) mermaid.run({nodes:nodes});
+      }
+    } catch(e){ console.warn('Mermaid run failed:', e); }
+
+    inner.querySelectorAll('.md img[src]').forEach(function(img){
+      var src = img.getAttribute('src');
+      if(!src) return;
+      if(/^(https?:)?\/\//.test(src) || src.indexOf('data:') === 0) return;
+      if(src.indexOf('./') === 0) src = src.substring(2);
+      var baseParts = ['docs'];
+      if(dir) baseParts = baseParts.concat(dir.split('/'));
+      var s = src;
+      if(s.indexOf('/') === 0){
+        baseParts = ['docs'];
+        s = s.substring(1);
+      } else {
+        while(s.indexOf('../') === 0){ baseParts.pop(); s = s.substring(3); }
+      }
+      var resolved = baseParts.concat(s ? [s] : []).join('/');
+      if(resolved.indexOf('docs/') === 0){
+        img.setAttribute('src', resolved.substring(5));
+      } else {
+        img.setAttribute('src', 'https://raw.githubusercontent.com/Monkshark/PAGE_IDE/main/' + resolved);
+      }
+    });
+
+    inner.querySelectorAll('.md pre').forEach(function(pre){
+      if(pre.classList.contains('mermaid')) return;
+      var code = pre.querySelector('code');
+      if(!code) return;
+      var lang = '';
+      (code.className || '').split(/\s+/).forEach(function(c){
+        if(c.indexOf('language-') === 0) lang = c.substring(9);
+      });
+      if(lang){
+        var badge = document.createElement('span');
+        badge.className = 'code-lang';
+        badge.textContent = lang;
+        pre.appendChild(badge);
+      }
+      var btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.type = 'button';
+      btn.textContent = 'Copy';
+      btn.onclick = function(){
+        var text = code.textContent || '';
+        var done = function(){
+          btn.textContent = 'Copied';
+          btn.classList.add('ok');
+          setTimeout(function(){ btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1200);
+        };
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(text).then(done).catch(function(){});
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); done(); } catch(e){}
+          document.body.removeChild(ta);
+        }
+      };
+      pre.appendChild(btn);
+    });
+
+    var scrollTarget = opts.scrollTo || null;
+    if(scrollTarget){
+      var el = inner.querySelector('#' + CSS.escape(scrollTarget));
+      if(!el){
+        var headings = inner.querySelectorAll('.md h1, .md h2, .md h3, .md h4, .md h5, .md h6');
+        for(var i = 0; i < headings.length; i++){
+          if(headings[i].id && headings[i].id.indexOf(scrollTarget) === 0){
+            el = headings[i];
+            break;
+          }
+        }
+      }
+      if(el){
+        el.scrollIntoView({behavior:'auto', block:'start'});
+      } else {
+        document.getElementById('content').scrollTop = 0;
+      }
+    } else {
+      document.getElementById('content').scrollTop = 0;
+    }
+    closeSidebar();
+    if(!opts.fromPopState){
+      var hashPart = '#' + p + (scrollTarget ? '#' + scrollTarget : '');
+      window.history.pushState({path:p, scrollTo: scrollTarget}, '', hashPart);
+    }
+  }
+
+  window._goBack = function(){
+    if(historyIndex > 0){
+      historyIndex--;
+      var p = history[historyIndex];
+      loadFile(p, {fromPopState:true});
+      window.history.pushState({path:p}, '', '#' + p);
+    }
+  };
+  window._goForward = function(){
+    if(historyIndex < history.length - 1){
+      historyIndex++;
+      var p = history[historyIndex];
+      loadFile(p, {fromPopState:true});
+      window.history.pushState({path:p}, '', '#' + p);
+    }
+  };
+  window._loadFile = function(p){ loadFile(p); };
+
+  function parseHash(raw){
+    if(!raw) return {path:null, scrollTo:null};
+    var s = raw.charAt(0) === '#' ? raw.slice(1) : raw;
+    if(!s) return {path:null, scrollTo:null};
+    var mdIdx = s.indexOf('.md');
+    if(mdIdx !== -1){
+      var path = s.substring(0, mdIdx + 3);
+      var rest = s.substring(mdIdx + 3);
+      var scrollTo = (rest.charAt(0) === '#') ? decodeURIComponent(rest.substring(1)) : null;
+      return {path: path, scrollTo: scrollTo};
+    }
+    return {path: s, scrollTo: null};
+  }
+
+  window.addEventListener('popstate', function(e){
+    if(navigating) return;
+    var stateP = e.state && e.state.path;
+    var stateScroll = e.state && e.state.scrollTo;
+    var p, scrollTo;
+    if(stateP){ p = stateP; scrollTo = stateScroll || null; }
+    else {
+      var parsed = parseHash(location.hash);
+      p = parsed.path || initialDefaultPath();
+      scrollTo = parsed.scrollTo;
+    }
+    if(MD_DATA[p]){
+      navigating = true;
+      var idx = history.lastIndexOf(p);
+      if(idx !== -1) historyIndex = idx;
+      loadFile(p, {fromPopState:true, scrollTo: scrollTo});
+      navigating = false;
+    }
+  });
+
+  document.addEventListener('keydown', function(e){
+    if((e.ctrlKey || e.metaKey) && e.key === 'k'){ e.preventDefault(); document.getElementById('search').focus(); }
+    if(e.altKey && e.key === 'ArrowLeft'){ e.preventDefault(); window._goBack(); }
+    if(e.altKey && e.key === 'ArrowRight'){ e.preventDefault(); window._goForward(); }
+  });
+
+  document.getElementById('langKo').addEventListener('click', function(){ if(getLang()!=='ko') applyLang('ko'); });
+  document.getElementById('langEn').addEventListener('click', function(){ if(getLang()!=='en') applyLang('en'); });
+
+  var THEME_KEY = 'docsViewerTheme';
+  function getTheme(){ return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; }
+  function setThemeStored(t){ localStorage.setItem(THEME_KEY, t === 'light' ? 'light' : 'dark'); }
+  function swapHljsStylesheet(theme){
+    var link = document.getElementById('hljsTheme');
+    if(link) link.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-' + (theme === 'light' ? 'light' : 'dark') + '.min.css';
+  }
+  function reInitMermaidAndRerender(theme){
+    if(!globalThis.mermaid) return;
+    try {
+      mermaid.initialize({startOnLoad:false, theme: theme === 'light' ? 'default' : 'dark', securityLevel:'loose'});
+    } catch(e){ console.warn('Mermaid re-init failed:', e); }
+    var inner = document.getElementById('contentInner');
+    if(!inner) return;
+    var nodes = inner.querySelectorAll('pre.mermaid');
+    nodes.forEach(function(n){
+      if(n.dataset.mermaidSrc){
+        n.removeAttribute('data-processed');
+        n.innerHTML = n.dataset.mermaidSrc;
+      }
+    });
+    try {
+      if(nodes.length) mermaid.run({nodes: nodes});
+    } catch(e){ console.warn('Mermaid re-run failed:', e); }
+  }
+  function applyTheme(theme, opts){
+    opts = opts || {};
+    theme = (theme === 'light') ? 'light' : 'dark';
+    setThemeStored(theme);
+    document.documentElement.setAttribute('data-theme', theme);
+    swapHljsStylesheet(theme);
+    if(!opts.skipMermaid) reInitMermaidAndRerender(theme);
+  }
+  document.getElementById('themeToggle').addEventListener('click', function(){
+    applyTheme(getTheme() === 'light' ? 'dark' : 'light');
+  });
+
+  function initialDefaultPath(){
+    return (getLang() === 'en' && MD_DATA['README_en.md']) ? 'README_en.md' : 'README.md';
+  }
+
+  var initialLang = getLang();
+  applyLang(initialLang, {skipContentSwap:true});
+
+  var parsedInit = parseHash(location.hash);
+  if(parsedInit.path && MD_DATA[parsedInit.path]){
+    var info = PATH_INDEX[parsedInit.path];
+    if(info && info.lang !== initialLang){
+      setLang(info.lang);
+      document.getElementById('langKo').classList.toggle('active', info.lang === 'ko');
+      document.getElementById('langEn').classList.toggle('active', info.lang === 'en');
+      document.getElementById('search').placeholder = (info.lang === 'en') ? 'Search... (Ctrl+K)' : '검색... (Ctrl+K)';
+      document.getElementById('sidebarTitle').textContent = 'PAGE IDE Docs';
+      renderNav(info.lang);
+    }
+    loadFile(parsedInit.path, parsedInit.scrollTo ? {scrollTo: parsedInit.scrollTo} : undefined);
+  } else {
+    loadFile(initialDefaultPath());
+  }
+})();
+</script>
+</body>
+</html>
