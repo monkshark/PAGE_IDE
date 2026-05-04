@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import page.editor.SearchState
@@ -84,6 +85,10 @@ fun EditorPanel(
         fontFamily = FontFamily.Monospace,
         fontSize = 14.sp,
         lineHeight = 20.sp,
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.None,
+        ),
     )
     val scrollState = rememberScrollState()
 
