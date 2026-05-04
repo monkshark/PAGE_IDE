@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -27,10 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -42,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import page.editor.OpenTab
 import page.editor.TabBook
 import kotlin.math.abs
@@ -64,6 +70,8 @@ fun TabBar(
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetPx by remember { mutableStateOf(0f) }
     val tabBounds = remember { mutableStateMapOf<Int, IntRange>() }
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(book.tabs.size) {
         tabBounds.keys.removeAll { it >= book.tabs.size }
@@ -79,12 +87,31 @@ fun TabBar(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.type == PointerEventType.Scroll) {
+                                    val deltaY = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                                    if (deltaY != 0f) {
+                                        scope.launch {
+                                            scrollState.scrollBy(deltaY * 60f)
+                                        }
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     .pointerInput(book.tabs.size) {
                         val touchSlop = viewConfiguration.touchSlop
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = true)
-                            val tappedIndex = findTabAt(down.position.x, tabBounds, book.tabs.size)
-                                ?: return@awaitEachGesture
+                            val tappedIndex = findTabAt(
+                                down.position.x + scrollState.value,
+                                tabBounds,
+                                book.tabs.size,
+                            ) ?: return@awaitEachGesture
                             onActivate(tappedIndex)
                             draggingIndex = tappedIndex
                             dragOffsetPx = 0f
@@ -130,7 +157,7 @@ fun TabBar(
                     },
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.horizontalScroll(scrollState),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     book.tabs.forEachIndexed { index, tab ->
