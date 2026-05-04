@@ -11,17 +11,41 @@ object Indent {
         val selStart = minOf(edit.selectionStart, edit.selectionEnd)
         val selEnd = maxOf(edit.selectionStart, edit.selectionEnd)
         val text = edit.text
+        if (selStart == selEnd) {
+            val lineStart = lineStartOf(text, selStart)
+            val col = selStart - lineStart
+            val pad = TAB_UNIT - (col % TAB_UNIT)
+            val spaces = " ".repeat(pad)
+            val newText = text.substring(0, selStart) + spaces + text.substring(selEnd)
+            return TextEdit(newText, selStart + pad)
+        }
         val isMultiLine = text.substring(selStart, selEnd).contains('\n')
         if (isMultiLine) return indentLines(edit, +1)
         val lineStart = lineStartOf(text, selStart)
-        val col = selStart - lineStart
-        val pad = TAB_UNIT - (col % TAB_UNIT)
-        val spaces = " ".repeat(pad)
-        val newText = text.substring(0, selStart) + spaces + text.substring(selEnd)
-        return TextEdit(newText, selStart + pad)
+        val newText = text.substring(0, lineStart) + TAB_SPACES + text.substring(lineStart)
+        return TextEdit(
+            newText,
+            edit.selectionStart + TAB_SPACES.length,
+            edit.selectionEnd + TAB_SPACES.length,
+        )
     }
 
     fun handleShiftTab(edit: TextEdit): TextEdit = indentLines(edit, -1)
+
+    fun handleLiteralTab(edit: TextEdit): TextEdit {
+        val selStart = minOf(edit.selectionStart, edit.selectionEnd)
+        val selEnd = maxOf(edit.selectionStart, edit.selectionEnd)
+        val text = edit.text
+        if (selStart == selEnd) {
+            val newText = text.substring(0, selStart) + "\t" + text.substring(selEnd)
+            return TextEdit(newText, selStart + 1)
+        }
+        val isMultiLine = text.substring(selStart, selEnd).contains('\n')
+        if (isMultiLine) return indentLines(edit, +1, "\t")
+        val lineStart = lineStartOf(text, selStart)
+        val newText = text.substring(0, lineStart) + "\t" + text.substring(lineStart)
+        return TextEdit(newText, edit.selectionStart + 1, edit.selectionEnd + 1)
+    }
 
     fun handleBackspace(edit: TextEdit): TextEdit? {
         if (edit.selectionStart != edit.selectionEnd) return null
@@ -97,7 +121,7 @@ object Indent {
         return TextEdit(newText, newCaret)
     }
 
-    private fun indentLines(edit: TextEdit, direction: Int): TextEdit {
+    private fun indentLines(edit: TextEdit, direction: Int, addUnit: String = TAB_SPACES): TextEdit {
         val selStart = minOf(edit.selectionStart, edit.selectionEnd)
         val selEnd = maxOf(edit.selectionStart, edit.selectionEnd)
         val text = edit.text
@@ -117,7 +141,7 @@ object Indent {
         var i = firstLineStart
         while (true) {
             val le = lineEndOf(text, i)
-            val r = applyIndentChange(text.substring(i, le), direction)
+            val r = applyIndentChange(text.substring(i, le), direction, addUnit)
             modified.add(ModifiedLine(i, le, r.line, r.delta, r.removed))
             if (i >= lastLineStart) break
             i = le + 1
@@ -162,9 +186,9 @@ object Indent {
 
     private data class IndentResult(val line: String, val delta: Int, val removed: Int)
 
-    private fun applyIndentChange(line: String, direction: Int): IndentResult {
+    private fun applyIndentChange(line: String, direction: Int, addUnit: String): IndentResult {
         return if (direction > 0) {
-            IndentResult(TAB_SPACES + line, TAB_UNIT, 0)
+            IndentResult(addUnit + line, addUnit.length, 0)
         } else {
             var i = 0
             var removed = 0

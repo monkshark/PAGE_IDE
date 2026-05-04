@@ -27,10 +27,27 @@ class IndentTest {
     }
 
     @Test
-    fun `tab replaces single line selection with four spaces`() {
+    fun `tab on single-line selection indents line start and preserves selection`() {
         val r = Indent.handleTab(TextEdit("foo bar", 4, 7))
-        assertEquals("foo     ", r.text)
-        assertEquals(8, r.caret)
+        assertEquals("    foo bar", r.text)
+        assertEquals(8, r.selectionStart)
+        assertEquals(11, r.selectionEnd)
+    }
+
+    @Test
+    fun `tab on single-line selection at line start keeps selection content`() {
+        val r = Indent.handleTab(TextEdit("hello world", 0, 5))
+        assertEquals("    hello world", r.text)
+        assertEquals(4, r.selectionStart)
+        assertEquals(9, r.selectionEnd)
+    }
+
+    @Test
+    fun `tab on reverse single-line selection preserves direction`() {
+        val r = Indent.handleTab(TextEdit("foo bar", 7, 4))
+        assertEquals("    foo bar", r.text)
+        assertEquals(11, r.selectionStart)
+        assertEquals(8, r.selectionEnd)
     }
 
     @Test
@@ -337,5 +354,60 @@ class IndentTest {
         val r = Indent.maybeApplyEnter(old, new)
         assertEquals("abc\n", r.text)
         assertEquals(3, r.caret)
+    }
+
+    @Test
+    fun `literal tab inserts a tab character at caret`() {
+        val r = Indent.handleLiteralTab(TextEdit("abc", 1))
+        assertEquals("a\tbc", r.text)
+        assertEquals(2, r.caret)
+    }
+
+    @Test
+    fun `literal tab on single-line selection indents line start and preserves selection`() {
+        val r = Indent.handleLiteralTab(TextEdit("foo bar", 4, 7))
+        assertEquals("\tfoo bar", r.text)
+        assertEquals(5, r.selectionStart)
+        assertEquals(8, r.selectionEnd)
+    }
+
+    @Test
+    fun `literal tab on single-line selection at line start keeps selection content`() {
+        val r = Indent.handleLiteralTab(TextEdit("```\nhello world\n```", 4, 9))
+        assertEquals("```\n\thello world\n```", r.text)
+        assertEquals(5, r.selectionStart)
+        assertEquals(10, r.selectionEnd)
+    }
+
+    @Test
+    fun `literal tab on reverse single-line selection preserves direction`() {
+        val r = Indent.handleLiteralTab(TextEdit("foo bar", 7, 4))
+        assertEquals("\tfoo bar", r.text)
+        assertEquals(8, r.selectionStart)
+        assertEquals(5, r.selectionEnd)
+    }
+
+    @Test
+    fun `literal tab on multi-line selection indents each line with tab`() {
+        val r = Indent.handleLiteralTab(TextEdit("abc\ndef", 0, 7))
+        assertEquals("\tabc\n\tdef", r.text)
+        assertEquals(0, r.selectionStart)
+        assertEquals(9, r.selectionEnd)
+    }
+
+    @Test
+    fun `literal tab on partial multi-line selection indents both spanned lines`() {
+        val r = Indent.handleLiteralTab(TextEdit("abc\ndef\nghi", 1, 5))
+        assertEquals("\tabc\n\tdef\nghi", r.text)
+        assertEquals(2, r.selectionStart)
+        assertEquals(7, r.selectionEnd)
+    }
+
+    @Test
+    fun `literal tab preserves reverse selection direction`() {
+        val r = Indent.handleLiteralTab(TextEdit("abc\ndef", 7, 0))
+        assertEquals("\tabc\n\tdef", r.text)
+        assertEquals(9, r.selectionStart)
+        assertEquals(0, r.selectionEnd)
     }
 }
