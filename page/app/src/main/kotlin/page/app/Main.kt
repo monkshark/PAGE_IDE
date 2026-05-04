@@ -50,6 +50,8 @@ import page.editor.EditSnapshot
 import page.editor.FileDocument
 import page.editor.FileKind
 import page.editor.FileKinds
+import page.editor.IndexedFile
+import page.editor.ProjectFileIndex
 import page.editor.Replace
 import page.editor.SearchState
 import page.editor.SyntaxLexers
@@ -67,6 +69,8 @@ fun main() = application {
     var sidebarWidth: Dp by remember { mutableStateOf(260.dp) }
     var search: SearchState? by remember { mutableStateOf(null) }
     var pendingClose: PendingClose? by remember { mutableStateOf(null) }
+    var quickOpen by remember { mutableStateOf(false) }
+    var quickOpenIndex by remember { mutableStateOf<List<IndexedFile>>(emptyList()) }
 
     LaunchedEffect(book.activeIndex, book.tabs.size) {
         val active = book.active
@@ -255,6 +259,14 @@ fun main() = application {
         }
     }
 
+    val openQuickOpen: () -> Unit = {
+        val root = rootDir
+        if (root != null) {
+            quickOpenIndex = ProjectFileIndex.walk(root)
+            quickOpen = true
+        }
+    }
+
     val frameRef = remember { mutableStateOf<java.awt.Frame?>(null) }
     val handleShortcut: (KeyEvent) -> Boolean = handler@{ event ->
         if (event.type != KeyEventType.KeyDown) return@handler false
@@ -273,6 +285,7 @@ fun main() = application {
                 event.key == Key.W -> { closeActiveTab(); true }
                 event.key == Key.F -> { openSearch(); true }
                 event.key == Key.R -> { openReplace(); true }
+                event.key == Key.P -> { openQuickOpen(); true }
                 event.key == Key.Z && event.isShiftPressed -> {
                     if (search != null) false else { doRedo(); true }
                 }
@@ -342,6 +355,17 @@ fun main() = application {
                 )
             }
         }
+    }
+
+    if (quickOpen) {
+        QuickOpenDialog(
+            files = quickOpenIndex,
+            onPick = { f ->
+                quickOpen = false
+                openInTab(f.path)
+            },
+            onDismiss = { quickOpen = false },
+        )
     }
 
     val current = pendingClose

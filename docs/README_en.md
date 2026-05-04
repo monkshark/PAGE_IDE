@@ -33,6 +33,9 @@ Build the viewer with `node build_viewer.js` to produce `index.html`, which open
 - [Indent](https://monkshark.github.io/PAGE_IDE/#modules/editor/indent_en.md) — Tab / Enter auto-indent
 - [LineMove](https://monkshark.github.io/PAGE_IDE/#modules/editor/line_move_en.md) — Line move / duplicate
 - [WordBoundary](https://monkshark.github.io/PAGE_IDE/#modules/editor/word_boundary_en.md) — Word-wise motion / deletion boundaries
+- [FuzzyMatcher](https://monkshark.github.io/PAGE_IDE/#modules/editor/fuzzy_matcher_en.md) — Subsequence fuzzy match + score
+- [QuickOpen](https://monkshark.github.io/PAGE_IDE/#modules/editor/quick_open_en.md) — Quick Open result ranking
+- [ProjectFileIndex](https://monkshark.github.io/PAGE_IDE/#modules/editor/project_file_index_en.md) — Flattening walker over the project root
 - [MarkdownFence](https://monkshark.github.io/PAGE_IDE/#modules/editor/markdown_fence_en.md) — Inside-code-fence detection
 - [SyntaxLexer](https://monkshark.github.io/PAGE_IDE/#modules/editor/syntax_lexer_en.md) — Lexer interface
 - [SyntaxLexers](https://monkshark.github.io/PAGE_IDE/#modules/editor/syntax_lexers_en.md) — Extension → lexer dispatch
@@ -55,6 +58,7 @@ Build the viewer with `node build_viewer.js` to produce `index.html`, which open
 - [LineNumberGutter](https://monkshark.github.io/PAGE_IDE/#modules/app/line_number_gutter_en.md) — Line-number gutter
 - [PreviewPanel](https://monkshark.github.io/PAGE_IDE/#modules/app/preview_panel_en.md) — Image / SVG preview
 - [UnsavedChangesDialog](https://monkshark.github.io/PAGE_IDE/#modules/app/unsaved_changes_dialog_en.md) — Save-confirmation modal
+- [QuickOpenDialog](https://monkshark.github.io/PAGE_IDE/#modules/app/quick_open_dialog_en.md) — `Ctrl+P` Quick Open dialog
 - [PendingClose](https://monkshark.github.io/PAGE_IDE/#modules/app/pending_close_en.md) — Close-request identifier
 - [FileDialogs](https://monkshark.github.io/PAGE_IDE/#modules/app/file_dialogs_en.md) — `JFileChooser` wrappers
 
