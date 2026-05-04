@@ -17,7 +17,9 @@ Build the viewer with `node build_viewer.js` to produce `index.html`, which open
 - [Architecture](https://monkshark.github.io/PAGE_IDE/#guides/architecture_en.md) — Module structure, dependency direction, and stack choices
 
 ### Modules
-> Filled in as code lands. Only the skeleton exists right now.
+- [editor](https://monkshark.github.io/PAGE_IDE/#modules/editor_en.md) — Text buffer, edit operations, syntax highlighting, tab model (pure logic, no UI dependency)
+
+> Remaining modules (`core`, `ui`, `app`, ...) will be added as code lands.
 
 ### Features
 > Pair / Atlas / Glass / Echo feature docs will be added at the close of each milestone.
