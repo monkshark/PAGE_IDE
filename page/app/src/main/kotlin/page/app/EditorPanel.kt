@@ -106,10 +106,14 @@ fun EditorPanel(
 
     LaunchedEffect(focusGainVersion) {
         if (focusGainVersion > 0) {
-            delay(150)
-            if (scrollState.value != savedScrollOnPress) {
-                scrollState.scroll(MutatePriority.UserInput) {
-                    scrollBy(savedScrollOnPress.toFloat() - scrollState.value)
+            val target = savedScrollOnPress
+            scrollState.scroll(MutatePriority.PreventUserInput) {
+                val end = System.nanoTime() + 250_000_000L
+                while (System.nanoTime() < end) {
+                    if (scrollState.value != target) {
+                        scrollBy(target.toFloat() - scrollState.value)
+                    }
+                    delay(8)
                 }
             }
         }
