@@ -1,5 +1,6 @@
 package page.app
 
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import page.editor.SearchState
 import page.editor.SyntaxLexer
 import page.editor.TextBuffer
@@ -100,13 +102,15 @@ fun EditorPanel(
     )
     val scrollState = rememberScrollState()
     var savedScrollOnPress by remember { mutableStateOf(0) }
-    var pendingFocusRestore by remember { mutableStateOf(false) }
+    var focusGainVersion by remember { mutableStateOf(0) }
 
-    LaunchedEffect(pendingFocusRestore) {
-        if (pendingFocusRestore) {
-            pendingFocusRestore = false
+    LaunchedEffect(focusGainVersion) {
+        if (focusGainVersion > 0) {
+            delay(150)
             if (scrollState.value != savedScrollOnPress) {
-                scrollState.scrollTo(savedScrollOnPress)
+                scrollState.scroll(MutatePriority.UserInput) {
+                    scrollBy(savedScrollOnPress.toFloat() - scrollState.value)
+                }
             }
         }
     }
@@ -151,7 +155,7 @@ fun EditorPanel(
                     .padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)
                     .onFocusChanged { state ->
                         if (state.isFocused) {
-                            pendingFocusRestore = true
+                            focusGainVersion++
                         }
                     },
                 textStyle = textStyle,
