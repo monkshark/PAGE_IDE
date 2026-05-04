@@ -26,11 +26,11 @@ object Indent {
     fun handleLiteralTab(edit: TextEdit): TextEdit {
         val selStart = minOf(edit.selectionStart, edit.selectionEnd)
         val selEnd = maxOf(edit.selectionStart, edit.selectionEnd)
-        if (selStart == selEnd) {
-            val newText = edit.text.substring(0, selStart) + "\t" + edit.text.substring(selEnd)
-            return TextEdit(newText, selStart + 1)
-        }
-        return indentLines(edit, +1, "\t")
+        val text = edit.text
+        val isMultiLine = text.substring(selStart, selEnd).contains('\n')
+        if (isMultiLine) return indentLines(edit, +1, "\t")
+        val newText = text.substring(0, selStart) + "\t" + text.substring(selEnd)
+        return TextEdit(newText, selStart + 1)
     }
 
     fun handleBackspace(edit: TextEdit): TextEdit? {

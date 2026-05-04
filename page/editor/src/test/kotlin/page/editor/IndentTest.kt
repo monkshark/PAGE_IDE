@@ -347,11 +347,10 @@ class IndentTest {
     }
 
     @Test
-    fun `literal tab on single-line selection indents that line with tab`() {
+    fun `literal tab on single-line selection replaces selection with tab`() {
         val r = Indent.handleLiteralTab(TextEdit("foo bar", 4, 7))
-        assertEquals("\tfoo bar", r.text)
-        assertEquals(5, r.selectionStart)
-        assertEquals(8, r.selectionEnd)
+        assertEquals("foo \t", r.text)
+        assertEquals(5, r.caret)
     }
 
     @Test
