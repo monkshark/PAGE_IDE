@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -77,6 +79,14 @@ fun EditorPanel(
         }
     }
 
+    val textStyle = TextStyle(
+        color = MaterialTheme.colorScheme.onBackground,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+    )
+    val scrollState = rememberScrollState()
+
     Column(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
         if (search != null) {
             SearchBar(
@@ -88,22 +98,28 @@ fun EditorPanel(
                 onClose = onSearchClose,
             )
         }
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            textStyle = TextStyle(
-                color = MaterialTheme.colorScheme.onBackground,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            visualTransformation = visualTransformation,
-        )
+                .verticalScroll(scrollState),
+        ) {
+            LineNumberGutter(
+                lineCount = buffer.lineCount,
+                currentLine = caret.line,
+                textStyle = textStyle,
+            )
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp),
+                textStyle = textStyle,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = visualTransformation,
+            )
+        }
         EditorStatusBar(
             line = caret.line,
             col = caret.col,
