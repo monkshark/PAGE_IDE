@@ -17,24 +17,62 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import page.editor.SearchState
 import page.editor.TextBuffer
 
 @Composable
 fun EditorPanel(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
+    search: SearchState?,
+    onQueryChange: (String) -> Unit,
+    onToggleCase: () -> Unit,
+    onSearchNext: () -> Unit,
+    onSearchPrev: () -> Unit,
+    onSearchClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val buffer = remember(value.text) { TextBuffer(value.text) }
     val caretOffset = value.selection.start.coerceIn(0, buffer.length)
     val caret = buffer.lineColOf(caretOffset)
 
+    val matchBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+
+    val visualTransformation = remember(search, matchBg, activeBg) {
+        if (search != null && search.matches.isNotEmpty()) {
+            HighlightTransformation(
+                matches = search.matches,
+                activeIndex = search.activeMatchIndex,
+                matchBg = matchBg,
+                activeBg = activeBg,
+            )
+        } else {
+            VisualTransformation.None
+        }
+    }
+
     Column(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
+        if (search != null) {
+            SearchBar(
+                state = search,
+                onQueryChange = onQueryChange,
+                onToggleCase = onToggleCase,
+                onNext = onSearchNext,
+                onPrev = onSearchPrev,
+                onClose = onSearchClose,
+            )
+        }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -49,6 +87,7 @@ fun EditorPanel(
                 lineHeight = 20.sp,
             ),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            visualTransformation = visualTransformation,
         )
         EditorStatusBar(
             line = caret.line,
@@ -56,6 +95,26 @@ fun EditorPanel(
             lineCount = buffer.lineCount,
             charCount = buffer.length,
         )
+    }
+}
+
+private class HighlightTransformation(
+    private val matches: List<IntRange>,
+    private val activeIndex: Int,
+    private val matchBg: androidx.compose.ui.graphics.Color,
+    private val activeBg: androidx.compose.ui.graphics.Color,
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        if (matches.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
+        val builder = AnnotatedString.Builder(text)
+        matches.forEachIndexed { index, range ->
+            val start = range.first.coerceIn(0, text.length)
+            val end = (range.last + 1).coerceIn(start, text.length)
+            if (start == end) return@forEachIndexed
+            val bg = if (index == activeIndex) activeBg else matchBg
+            builder.addStyle(SpanStyle(background = bg), start, end)
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }
 
