@@ -28,6 +28,12 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -45,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import page.editor.AutoClose
+import page.editor.Indent
 import page.editor.SearchState
 import page.editor.SyntaxLexer
 import page.editor.TextBuffer
@@ -172,10 +179,10 @@ fun EditorPanel(
             BasicTextField(
                 value = value,
                 onValueChange = { newValue ->
-                    val result = AutoClose.apply(
-                        TextEdit(value.text, value.selection.start, value.selection.end),
-                        TextEdit(newValue.text, newValue.selection.start, newValue.selection.end),
-                    )
+                    val oldEdit = TextEdit(value.text, value.selection.start, value.selection.end)
+                    val newEdit = TextEdit(newValue.text, newValue.selection.start, newValue.selection.end)
+                    val afterAutoClose = AutoClose.apply(oldEdit, newEdit)
+                    val result = Indent.maybeUnindentClosingBrace(oldEdit, afterAutoClose)
                     val adjusted = if (
                         result.text == newValue.text &&
                         result.selectionStart == newValue.selection.start &&
@@ -196,6 +203,43 @@ fun EditorPanel(
                     .onFocusChanged { state ->
                         if (state.isFocused) {
                             focusGainVersion++
+                        }
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (event.key) {
+                            Key.Tab -> {
+                                val edit = TextEdit(
+                                    value.text,
+                                    value.selection.start,
+                                    value.selection.end,
+                                )
+                                val r = if (event.isShiftPressed) Indent.handleShiftTab(edit)
+                                else Indent.handleTab(edit)
+                                onValueChange(
+                                    value.copy(
+                                        text = r.text,
+                                        selection = TextRange(r.selectionStart, r.selectionEnd),
+                                    )
+                                )
+                                true
+                            }
+                            Key.Enter, Key.NumPadEnter -> {
+                                val edit = TextEdit(
+                                    value.text,
+                                    value.selection.start,
+                                    value.selection.end,
+                                )
+                                val r = Indent.handleEnter(edit)
+                                onValueChange(
+                                    value.copy(
+                                        text = r.text,
+                                        selection = TextRange(r.selectionStart, r.selectionEnd),
+                                    )
+                                )
+                                true
+                            }
+                            else -> false
                         }
                     },
                 textStyle = textStyle,
