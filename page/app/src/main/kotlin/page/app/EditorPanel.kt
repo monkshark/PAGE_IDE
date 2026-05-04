@@ -1,5 +1,6 @@
 package page.app
 
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,30 +9,49 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import page.editor.AutoClose
 import page.editor.SearchState
 import page.editor.SyntaxLexer
 import page.editor.TextBuffer
+import page.editor.TextEdit
 import page.editor.Token
 import page.editor.TokenKind
+import page.ui.EditorFontFamily
 import page.ui.GlassDarkSyntax
 import page.ui.SyntaxPalette
 
@@ -54,6 +74,7 @@ fun EditorPanel(
 
     val matchBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+    val currentLineBg = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.06f)
     val palette = GlassDarkSyntax
 
     val tokens = remember(value.text, lexer) {
@@ -77,6 +98,35 @@ fun EditorPanel(
         }
     }
 
+    val textStyle = TextStyle(
+        color = MaterialTheme.colorScheme.onBackground,
+        fontFamily = EditorFontFamily,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.None,
+        ),
+    )
+    val scrollState = rememberScrollState()
+    var savedScrollOnPress by remember { mutableStateOf(0) }
+    var focusGainVersion by remember { mutableStateOf(0) }
+
+    LaunchedEffect(focusGainVersion) {
+        if (focusGainVersion > 0) {
+            val target = savedScrollOnPress
+            scrollState.scroll(MutatePriority.PreventUserInput) {
+                val end = System.nanoTime() + 250_000_000L
+                while (System.nanoTime() < end) {
+                    if (scrollState.value != target) {
+                        scrollBy(target.toFloat() - scrollState.value)
+                    }
+                    delay(8)
+                }
+            }
+        }
+    }
+
     Column(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
         if (search != null) {
             SearchBar(
@@ -88,22 +138,71 @@ fun EditorPanel(
                 onClose = onSearchClose,
             )
         }
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            textStyle = TextStyle(
-                color = MaterialTheme.colorScheme.onBackground,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            visualTransformation = visualTransformation,
-        )
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.type == PointerEventType.Press) {
+                                savedScrollOnPress = scrollState.value
+                            }
+                        }
+                    }
+                }
+                .verticalScroll(scrollState)
+                .drawBehind {
+                    val lineH = 20.sp.toPx()
+                    val topPad = 16.dp.toPx()
+                    val y = topPad + caret.line * lineH
+                    drawRect(
+                        color = currentLineBg,
+                        topLeft = Offset(0f, y),
+                        size = Size(size.width, lineH),
+                    )
+                },
+        ) {
+            LineNumberGutter(
+                lineCount = buffer.lineCount,
+                currentLine = caret.line,
+                textStyle = textStyle,
+            )
+            BasicTextField(
+                value = value,
+                onValueChange = { newValue ->
+                    val result = AutoClose.apply(
+                        TextEdit(value.text, value.selection.start, value.selection.end),
+                        TextEdit(newValue.text, newValue.selection.start, newValue.selection.end),
+                    )
+                    val adjusted = if (
+                        result.text == newValue.text &&
+                        result.selectionStart == newValue.selection.start &&
+                        result.selectionEnd == newValue.selection.end
+                    ) {
+                        newValue
+                    } else {
+                        newValue.copy(
+                            text = result.text,
+                            selection = TextRange(result.selectionStart, result.selectionEnd),
+                        )
+                    }
+                    onValueChange(adjusted)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            focusGainVersion++
+                        }
+                    },
+                textStyle = textStyle,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = visualTransformation,
+            )
+        }
         EditorStatusBar(
             line = caret.line,
             col = caret.col,

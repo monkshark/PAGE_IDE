@@ -57,9 +57,13 @@ internal fun UnsavedChangesDialog(
         resizable = false,
         undecorated = true,
         onPreviewKeyEvent = { event ->
-            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                onCancel(); true
-            } else false
+            if (event.type != KeyEventType.KeyDown) false
+            else when (event.key) {
+                Key.Escape -> { onCancel(); true }
+                Key.Y -> { onSave(); true }
+                Key.N -> { onDiscard(); true }
+                else -> false
+            }
         },
     ) {
         GlassTheme {
