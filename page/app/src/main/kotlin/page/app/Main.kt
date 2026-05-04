@@ -402,6 +402,7 @@ private fun Shell(
                         onSearchClose = onSearchClose,
                         onWindowShortcut = onWindowShortcut,
                         lexer = active?.path?.let { SyntaxLexers.forPath(it) },
+                        activePath = active?.path,
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     )
                 }

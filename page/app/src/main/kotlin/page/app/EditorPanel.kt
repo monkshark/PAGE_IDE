@@ -54,12 +54,14 @@ import kotlinx.coroutines.delay
 import page.editor.AutoClose
 import page.editor.BracketMatch
 import page.editor.Indent
+import page.editor.MarkdownFence
 import page.editor.SearchState
 import page.editor.SyntaxLexer
 import page.editor.TextBuffer
 import page.editor.TextEdit
 import page.editor.Token
 import page.editor.TokenKind
+import java.nio.file.Path
 import page.ui.EditorFontFamily
 import page.ui.GlassDarkSyntax
 import page.ui.SyntaxPalette
@@ -79,8 +81,13 @@ fun EditorPanel(
     onSearchClose: () -> Unit,
     onWindowShortcut: (KeyEvent) -> Boolean,
     lexer: SyntaxLexer?,
+    activePath: Path?,
     modifier: Modifier = Modifier,
 ) {
+    val isMarkdown = remember(activePath) {
+        val name = activePath?.fileName?.toString()?.lowercase()
+        name != null && (name.endsWith(".md") || name.endsWith(".markdown"))
+    }
     val buffer = remember(value.text) { TextBuffer(value.text) }
     val caretOffset = value.selection.start.coerceIn(0, buffer.length)
     val caret = buffer.lineColOf(caretOffset)
@@ -233,8 +240,13 @@ fun EditorPanel(
                                     value.selection.start,
                                     value.selection.end,
                                 )
-                                val r = if (event.isShiftPressed) Indent.handleShiftTab(edit)
-                                else Indent.handleTab(edit)
+                                val inFence = isMarkdown &&
+                                    MarkdownFence.isInsideFence(value.text, value.selection.start)
+                                val r = when {
+                                    event.isShiftPressed -> Indent.handleShiftTab(edit)
+                                    inFence -> Indent.handleLiteralTab(edit)
+                                    else -> Indent.handleTab(edit)
+                                }
                                 onValueChange(
                                     value.copy(
                                         text = r.text,

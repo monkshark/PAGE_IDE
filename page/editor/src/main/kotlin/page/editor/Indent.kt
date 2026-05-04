@@ -23,6 +23,13 @@ object Indent {
 
     fun handleShiftTab(edit: TextEdit): TextEdit = indentLines(edit, -1)
 
+    fun handleLiteralTab(edit: TextEdit): TextEdit {
+        val selStart = minOf(edit.selectionStart, edit.selectionEnd)
+        val selEnd = maxOf(edit.selectionStart, edit.selectionEnd)
+        val newText = edit.text.substring(0, selStart) + "\t" + edit.text.substring(selEnd)
+        return TextEdit(newText, selStart + 1)
+    }
+
     fun handleBackspace(edit: TextEdit): TextEdit? {
         if (edit.selectionStart != edit.selectionEnd) return null
         val caret = edit.caret

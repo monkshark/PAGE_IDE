@@ -338,4 +338,18 @@ class IndentTest {
         assertEquals("abc\n", r.text)
         assertEquals(3, r.caret)
     }
+
+    @Test
+    fun `literal tab inserts a tab character at caret`() {
+        val r = Indent.handleLiteralTab(TextEdit("abc", 1))
+        assertEquals("a\tbc", r.text)
+        assertEquals(2, r.caret)
+    }
+
+    @Test
+    fun `literal tab replaces selection with single tab`() {
+        val r = Indent.handleLiteralTab(TextEdit("foo bar", 4, 7))
+        assertEquals("foo \t", r.text)
+        assertEquals(5, r.caret)
+    }
 }
