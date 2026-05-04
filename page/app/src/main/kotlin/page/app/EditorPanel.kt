@@ -23,13 +23,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.OffsetMapping
@@ -40,9 +44,11 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import page.editor.AutoClose
 import page.editor.SearchState
 import page.editor.SyntaxLexer
 import page.editor.TextBuffer
+import page.editor.TextEdit
 import page.editor.Token
 import page.editor.TokenKind
 import page.ui.GlassDarkSyntax
@@ -67,6 +73,7 @@ fun EditorPanel(
 
     val matchBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+    val currentLineBg = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.06f)
     val palette = GlassDarkSyntax
 
     val tokens = remember(value.text, lexer) {
@@ -144,7 +151,17 @@ fun EditorPanel(
                         }
                     }
                 }
-                .verticalScroll(scrollState),
+                .verticalScroll(scrollState)
+                .drawBehind {
+                    val lineH = 20.sp.toPx()
+                    val topPad = 16.dp.toPx()
+                    val y = topPad + caret.line * lineH
+                    drawRect(
+                        color = currentLineBg,
+                        topLeft = Offset(0f, y),
+                        size = Size(size.width, lineH),
+                    )
+                },
         ) {
             LineNumberGutter(
                 lineCount = buffer.lineCount,
@@ -153,7 +170,20 @@ fun EditorPanel(
             )
             BasicTextField(
                 value = value,
-                onValueChange = onValueChange,
+                onValueChange = { newValue ->
+                    val adjusted = if (value.selection.collapsed && newValue.selection.collapsed) {
+                        val result = AutoClose.apply(
+                            TextEdit(value.text, value.selection.start),
+                            TextEdit(newValue.text, newValue.selection.start),
+                        )
+                        if (result.text == newValue.text && result.caret == newValue.selection.start) {
+                            newValue
+                        } else {
+                            newValue.copy(text = result.text, selection = TextRange(result.caret))
+                        }
+                    } else newValue
+                    onValueChange(adjusted)
+                },
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)
