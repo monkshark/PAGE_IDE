@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import page.editor.AutoClose
+import page.editor.BracketMatch
 import page.editor.Indent
 import page.editor.SearchState
 import page.editor.SyntaxLexer
@@ -82,16 +83,22 @@ fun EditorPanel(
     val matchBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
     val currentLineBg = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.06f)
+    val bracketBg = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f)
     val palette = GlassDarkSyntax
 
     val tokens = remember(value.text, lexer) {
         lexer?.tokenize(value.text).orEmpty()
     }
 
-    val visualTransformation = remember(search, tokens, matchBg, activeBg, palette) {
+    val bracketMatch = remember(value.text, value.selection.start, value.selection.end) {
+        if (value.selection.start != value.selection.end) null
+        else BracketMatch.find(value.text, value.selection.start)
+    }
+
+    val visualTransformation = remember(search, tokens, bracketMatch, matchBg, activeBg, bracketBg, palette) {
         val matches = search?.matches.orEmpty()
         val activeIndex = search?.activeMatchIndex ?: -1
-        if (tokens.isEmpty() && matches.isEmpty()) {
+        if (tokens.isEmpty() && matches.isEmpty() && bracketMatch == null) {
             VisualTransformation.None
         } else {
             CombinedHighlightTransformation(
@@ -101,6 +108,8 @@ fun EditorPanel(
                 activeIndex = activeIndex,
                 matchBg = matchBg,
                 activeBg = activeBg,
+                bracketMatch = bracketMatch,
+                bracketBg = bracketBg,
             )
         }
     }
@@ -281,6 +290,8 @@ private class CombinedHighlightTransformation(
     private val activeIndex: Int,
     private val matchBg: androidx.compose.ui.graphics.Color,
     private val activeBg: androidx.compose.ui.graphics.Color,
+    private val bracketMatch: Pair<Int, Int>?,
+    private val bracketBg: androidx.compose.ui.graphics.Color,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val builder = AnnotatedString.Builder(text)
@@ -297,6 +308,14 @@ private class CombinedHighlightTransformation(
             if (start == end) return@forEachIndexed
             val bg = if (index == activeIndex) activeBg else matchBg
             builder.addStyle(SpanStyle(background = bg), start, end)
+        }
+        if (bracketMatch != null) {
+            for (off in listOf(bracketMatch.first, bracketMatch.second)) {
+                val start = off.coerceIn(0, text.length)
+                val end = (off + 1).coerceIn(start, text.length)
+                if (start == end) continue
+                builder.addStyle(SpanStyle(background = bracketBg), start, end)
+            }
         }
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
