@@ -15,10 +15,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -91,6 +99,17 @@ fun EditorPanel(
         ),
     )
     val scrollState = rememberScrollState()
+    var savedScrollOnPress by remember { mutableStateOf(0) }
+    var pendingFocusRestore by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pendingFocusRestore) {
+        if (pendingFocusRestore) {
+            pendingFocusRestore = false
+            if (scrollState.value != savedScrollOnPress) {
+                scrollState.scrollTo(savedScrollOnPress)
+            }
+        }
+    }
 
     Column(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
         if (search != null) {
@@ -107,6 +126,16 @@ fun EditorPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (event.type == PointerEventType.Press) {
+                                savedScrollOnPress = scrollState.value
+                            }
+                        }
+                    }
+                }
                 .verticalScroll(scrollState),
         ) {
             LineNumberGutter(
@@ -119,7 +148,12 @@ fun EditorPanel(
                 onValueChange = onValueChange,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp),
+                    .padding(start = 8.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            pendingFocusRestore = true
+                        }
+                    },
                 textStyle = textStyle,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 visualTransformation = visualTransformation,
