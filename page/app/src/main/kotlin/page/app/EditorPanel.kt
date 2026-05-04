@@ -69,9 +69,12 @@ fun EditorPanel(
     onValueChange: (TextFieldValue) -> Unit,
     search: SearchState?,
     onQueryChange: (String) -> Unit,
+    onReplaceChange: (String) -> Unit,
     onToggleCase: () -> Unit,
     onSearchNext: () -> Unit,
     onSearchPrev: () -> Unit,
+    onReplace: () -> Unit,
+    onReplaceAll: () -> Unit,
     onSearchClose: () -> Unit,
     lexer: SyntaxLexer?,
     modifier: Modifier = Modifier,
@@ -148,9 +151,12 @@ fun EditorPanel(
             SearchBar(
                 state = search,
                 onQueryChange = onQueryChange,
+                onReplaceChange = onReplaceChange,
                 onToggleCase = onToggleCase,
                 onNext = onSearchNext,
                 onPrev = onSearchPrev,
+                onReplace = onReplace,
+                onReplaceAll = onReplaceAll,
                 onClose = onSearchClose,
             )
         }

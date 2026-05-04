@@ -48,6 +48,7 @@ import page.core.PageIdentity
 import page.editor.FileDocument
 import page.editor.FileKind
 import page.editor.FileKinds
+import page.editor.Replace
 import page.editor.SearchState
 import page.editor.SyntaxLexers
 import page.editor.TabBook
@@ -151,8 +152,16 @@ fun main() = application {
     }
     val openSearch: () -> Unit = {
         if (book.active != null && FileKinds.classify(book.active!!.path) == FileKind.TEXT) {
-            val initial = SearchState().withQuery(editorValue.text, "")
-            search = initial
+            val current = search
+            search = current?.withReplaceVisible(false)
+                ?: SearchState().withQuery(editorValue.text, "")
+        }
+    }
+    val openReplace: () -> Unit = {
+        if (book.active != null && FileKinds.classify(book.active!!.path) == FileKind.TEXT) {
+            val current = search
+            search = current?.withReplaceVisible(true)
+                ?: SearchState().withQuery(editorValue.text, "").withReplaceVisible(true)
         }
     }
     val closeSearch: () -> Unit = { search = null }
@@ -185,6 +194,35 @@ fun main() = application {
             moveCaretToActiveMatch(updated)
         }
     }
+    val onReplaceChange: (String) -> Unit = { value ->
+        search = search?.withReplace(value)
+    }
+    val onReplace: () -> Unit = {
+        val s = search
+        val range = s?.active
+        if (s != null && range != null) {
+            val r = Replace.applyCurrent(editorValue.text, range, s.replace)
+            editorValue = TextFieldValue(r.text, TextRange(r.caret))
+            book = book.updateActive(r.text, r.caret)
+            val retargeted = s.retarget(r.text)
+            val nextIdx = retargeted.matches.indexOfFirst { it.first >= r.caret }
+            val updated = retargeted.copy(
+                activeMatchIndex = if (nextIdx >= 0) nextIdx
+                else if (retargeted.matches.isNotEmpty()) 0 else -1
+            )
+            search = updated
+            moveCaretToActiveMatch(updated)
+        }
+    }
+    val onReplaceAll: () -> Unit = {
+        val s = search
+        if (s != null && s.matches.isNotEmpty()) {
+            val r = Replace.applyAll(editorValue.text, s.matches, s.replace)
+            editorValue = TextFieldValue(r.text, TextRange(r.caret))
+            book = book.updateActive(r.text, r.caret)
+            search = s.retarget(r.text)
+        }
+    }
 
     val frameRef = remember { mutableStateOf<java.awt.Frame?>(null) }
     Window(
@@ -207,6 +245,7 @@ fun main() = application {
                     }
                     event.key == Key.W -> { closeActiveTab(); true }
                     event.key == Key.F -> { openSearch(); true }
+                    event.key == Key.R -> { openReplace(); true }
                     else -> false
                 }
             } else if (event.key == Key.Escape && search != null) {
@@ -245,9 +284,12 @@ fun main() = application {
                     onOpenFile = openInTab,
                     search = search,
                     onQueryChange = onQueryChange,
+                    onReplaceChange = onReplaceChange,
                     onToggleCase = onToggleCase,
                     onSearchNext = onSearchNext,
                     onSearchPrev = onSearchPrev,
+                    onReplace = onReplace,
+                    onReplaceAll = onReplaceAll,
                     onSearchClose = closeSearch,
                 )
             }
@@ -306,9 +348,12 @@ private fun Shell(
     onOpenFile: (Path) -> Unit,
     search: SearchState?,
     onQueryChange: (String) -> Unit,
+    onReplaceChange: (String) -> Unit,
     onToggleCase: () -> Unit,
     onSearchNext: () -> Unit,
     onSearchPrev: () -> Unit,
+    onReplace: () -> Unit,
+    onReplaceAll: () -> Unit,
     onSearchClose: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -343,9 +388,12 @@ private fun Shell(
                         onValueChange = onEditorChange,
                         search = search,
                         onQueryChange = onQueryChange,
+                        onReplaceChange = onReplaceChange,
                         onToggleCase = onToggleCase,
                         onSearchNext = onSearchNext,
                         onSearchPrev = onSearchPrev,
+                        onReplace = onReplace,
+                        onReplaceAll = onReplaceAll,
                         onSearchClose = onSearchClose,
                         lexer = active?.path?.let { SyntaxLexers.forPath(it) },
                         modifier = Modifier.fillMaxWidth().weight(1f),
