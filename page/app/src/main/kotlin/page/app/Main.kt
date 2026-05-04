@@ -32,7 +32,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -187,31 +186,38 @@ fun main() = application {
         }
     }
 
+    val frameRef = remember { mutableStateOf<java.awt.Frame?>(null) }
     Window(
         onCloseRequest = requestExit,
         state = windowState,
         title = windowTitle(book.active?.path),
+        onPreviewKeyEvent = handler@{ event ->
+            if (event.type != KeyEventType.KeyDown) return@handler false
+            val frame = frameRef.value
+            if (event.isCtrlPressed) {
+                when {
+                    event.key == Key.O && event.isShiftPressed -> {
+                        if (frame != null) openFolder(frame); true
+                    }
+                    event.key == Key.O -> {
+                        if (frame != null) openFile(frame); true
+                    }
+                    event.key == Key.S -> {
+                        if (frame != null) saveFile(frame); true
+                    }
+                    event.key == Key.W -> { closeActiveTab(); true }
+                    event.key == Key.F -> { openSearch(); true }
+                    else -> false
+                }
+            } else if (event.key == Key.Escape && search != null) {
+                closeSearch(); true
+            } else false
+        },
     ) {
-        val frame = window
+        LaunchedEffect(Unit) { frameRef.value = window }
         GlassTheme {
             Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        if (event.isCtrlPressed) {
-                            when {
-                                event.key == Key.O && event.isShiftPressed -> { openFolder(frame); true }
-                                event.key == Key.O -> { openFile(frame); true }
-                                event.key == Key.S -> { saveFile(frame); true }
-                                event.key == Key.W -> { closeActiveTab(); true }
-                                event.key == Key.F -> { openSearch(); true }
-                                else -> false
-                            }
-                        } else if (event.key == Key.Escape && search != null) {
-                            closeSearch(); true
-                        } else false
-                    },
+                modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
             ) {
                 Shell(
