@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -147,6 +148,7 @@ private fun ImageViewer(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .clipToBounds()
             .onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
                 val delta = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                 if (delta != 0f) {
