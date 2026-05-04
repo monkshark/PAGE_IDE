@@ -49,6 +49,7 @@ import page.core.PageIdentity
 import page.editor.FileDocument
 import page.editor.FileKind
 import page.editor.FileKinds
+import page.editor.SearchState
 import page.editor.TabBook
 import page.ui.GlassTheme
 import java.awt.Cursor
@@ -61,6 +62,7 @@ fun main() = application {
     var rootDir: Path? by remember { mutableStateOf(null) }
     var expanded: Set<Path> by remember { mutableStateOf(emptySet()) }
     var sidebarWidth: Dp by remember { mutableStateOf(260.dp) }
+    var search: SearchState? by remember { mutableStateOf(null) }
 
     LaunchedEffect(book.activeIndex, book.tabs.size) {
         val active = book.active
@@ -70,6 +72,7 @@ fun main() = application {
         } else {
             TextFieldValue("")
         }
+        search = search?.retarget(editorValue.text)
     }
 
     val openInTab: (Path) -> Unit = { picked ->
@@ -113,6 +116,50 @@ fun main() = application {
     val closeActiveTab: () -> Unit = {
         book = book.closeActive()
     }
+    val moveCaretToActiveMatch: (SearchState) -> Unit = { s ->
+        val range = s.active
+        if (range != null) {
+            val start = range.first.coerceIn(0, editorValue.text.length)
+            val end = (range.last + 1).coerceIn(start, editorValue.text.length)
+            editorValue = editorValue.copy(selection = TextRange(start, end))
+        }
+    }
+    val openSearch: () -> Unit = {
+        if (book.active != null && FileKinds.classify(book.active!!.path) == FileKind.TEXT) {
+            val initial = SearchState().withQuery(editorValue.text, "")
+            search = initial
+        }
+    }
+    val closeSearch: () -> Unit = { search = null }
+    val onQueryChange: (String) -> Unit = { q ->
+        val updated = (search ?: SearchState()).withQuery(editorValue.text, q)
+        search = updated
+        moveCaretToActiveMatch(updated)
+    }
+    val onToggleCase: () -> Unit = {
+        val s = search
+        if (s != null) {
+            val updated = s.withCaseSensitive(editorValue.text, !s.caseSensitive)
+            search = updated
+            moveCaretToActiveMatch(updated)
+        }
+    }
+    val onSearchNext: () -> Unit = {
+        val s = search
+        if (s != null) {
+            val updated = s.next()
+            search = updated
+            moveCaretToActiveMatch(updated)
+        }
+    }
+    val onSearchPrev: () -> Unit = {
+        val s = search
+        if (s != null) {
+            val updated = s.prev()
+            search = updated
+            moveCaretToActiveMatch(updated)
+        }
+    }
 
     Window(
         onCloseRequest = ::exitApplication,
@@ -125,14 +172,18 @@ fun main() = application {
                 modifier = Modifier
                     .fillMaxSize()
                     .onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.isCtrlPressed) {
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (event.isCtrlPressed) {
                             when {
                                 event.key == Key.O && event.isShiftPressed -> { openFolder(frame); true }
                                 event.key == Key.O -> { openFile(frame); true }
                                 event.key == Key.S -> { saveFile(frame); true }
                                 event.key == Key.W -> { closeActiveTab(); true }
+                                event.key == Key.F -> { openSearch(); true }
                                 else -> false
                             }
+                        } else if (event.key == Key.Escape && search != null) {
+                            closeSearch(); true
                         } else false
                     },
                 color = MaterialTheme.colorScheme.background,
@@ -142,8 +193,12 @@ fun main() = application {
                     activePath = book.active?.path,
                     editorValue = editorValue,
                     onEditorChange = { v ->
+                        val textChanged = v.text != editorValue.text
                         editorValue = v
                         book = book.updateActive(v.text, v.selection.start)
+                        if (textChanged) {
+                            search = search?.retarget(v.text)
+                        }
                     },
                     onActivateTab = { index -> book = book.activate(index) },
                     onCloseTab = { index -> book = book.close(index) },
@@ -156,6 +211,12 @@ fun main() = application {
                     },
                     onToggle = toggleExpanded,
                     onOpenFile = openInTab,
+                    search = search,
+                    onQueryChange = onQueryChange,
+                    onToggleCase = onToggleCase,
+                    onSearchNext = onSearchNext,
+                    onSearchPrev = onSearchPrev,
+                    onSearchClose = closeSearch,
                 )
             }
         }
@@ -182,6 +243,12 @@ private fun Shell(
     onSidebarResize: (Dp) -> Unit,
     onToggle: (Path) -> Unit,
     onOpenFile: (Path) -> Unit,
+    search: SearchState?,
+    onQueryChange: (String) -> Unit,
+    onToggleCase: () -> Unit,
+    onSearchNext: () -> Unit,
+    onSearchPrev: () -> Unit,
+    onSearchClose: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TitleBar(path = activePath)
@@ -213,6 +280,12 @@ private fun Shell(
                     else -> EditorPanel(
                         value = editorValue,
                         onValueChange = onEditorChange,
+                        search = search,
+                        onQueryChange = onQueryChange,
+                        onToggleCase = onToggleCase,
+                        onSearchNext = onSearchNext,
+                        onSearchPrev = onSearchPrev,
+                        onSearchClose = onSearchClose,
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     )
                 }
