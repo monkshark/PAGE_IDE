@@ -171,17 +171,22 @@ fun EditorPanel(
             BasicTextField(
                 value = value,
                 onValueChange = { newValue ->
-                    val adjusted = if (value.selection.collapsed && newValue.selection.collapsed) {
-                        val result = AutoClose.apply(
-                            TextEdit(value.text, value.selection.start),
-                            TextEdit(newValue.text, newValue.selection.start),
+                    val result = AutoClose.apply(
+                        TextEdit(value.text, value.selection.start, value.selection.end),
+                        TextEdit(newValue.text, newValue.selection.start, newValue.selection.end),
+                    )
+                    val adjusted = if (
+                        result.text == newValue.text &&
+                        result.selectionStart == newValue.selection.start &&
+                        result.selectionEnd == newValue.selection.end
+                    ) {
+                        newValue
+                    } else {
+                        newValue.copy(
+                            text = result.text,
+                            selection = TextRange(result.selectionStart, result.selectionEnd),
                         )
-                        if (result.text == newValue.text && result.caret == newValue.selection.start) {
-                            newValue
-                        } else {
-                            newValue.copy(text = result.text, selection = TextRange(result.caret))
-                        }
-                    } else newValue
+                    }
                     onValueChange(adjusted)
                 },
                 modifier = Modifier

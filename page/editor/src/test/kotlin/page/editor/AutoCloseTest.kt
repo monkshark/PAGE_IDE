@@ -147,4 +147,44 @@ class AutoCloseTest {
         assertEquals("foox", result.text)
         assertEquals(4, result.caret)
     }
+
+    @Test
+    fun `wraps selection with parens`() {
+        val old = TextEdit("foo bar baz", 4, 7)
+        val new = TextEdit("foo ( baz", 5, 5)
+        val result = AutoClose.apply(old, new)
+        assertEquals("foo (bar) baz", result.text)
+        assertEquals(5, result.selectionStart)
+        assertEquals(8, result.selectionEnd)
+    }
+
+    @Test
+    fun `wraps selection with brackets`() {
+        val old = TextEdit("xs", 0, 2)
+        val new = TextEdit("[", 1, 1)
+        val result = AutoClose.apply(old, new)
+        assertEquals("[xs]", result.text)
+        assertEquals(1, result.selectionStart)
+        assertEquals(3, result.selectionEnd)
+    }
+
+    @Test
+    fun `wraps selection with double quotes`() {
+        val old = TextEdit("hello world", 6, 11)
+        val new = TextEdit("hello \"", 7, 7)
+        val result = AutoClose.apply(old, new)
+        assertEquals("hello \"world\"", result.text)
+        assertEquals(7, result.selectionStart)
+        assertEquals(12, result.selectionEnd)
+    }
+
+    @Test
+    fun `does not wrap selection when typing non-pair char`() {
+        val old = TextEdit("foo bar", 4, 7)
+        val new = TextEdit("foo X", 5, 5)
+        val result = AutoClose.apply(old, new)
+        assertEquals("foo X", result.text)
+        assertEquals(5, result.selectionStart)
+        assertEquals(5, result.selectionEnd)
+    }
 }
