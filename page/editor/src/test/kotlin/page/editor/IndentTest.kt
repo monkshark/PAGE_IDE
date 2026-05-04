@@ -2,6 +2,7 @@ package page.editor
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class IndentTest {
     @Test
@@ -225,5 +226,116 @@ class IndentTest {
         val r = Indent.maybeUnindentClosingBrace(old, new)
         assertEquals("    ab", r.text)
         assertEquals(6, r.caret)
+    }
+
+    @Test
+    fun `backspace removes full indent unit at column 4`() {
+        val r = Indent.handleBackspace(TextEdit("    abc", 4))
+        assertEquals("abc", r?.text)
+        assertEquals(0, r?.caret)
+    }
+
+    @Test
+    fun `backspace at column 8 removes back to column 4`() {
+        val r = Indent.handleBackspace(TextEdit("        abc", 8))
+        assertEquals("    abc", r?.text)
+        assertEquals(4, r?.caret)
+    }
+
+    @Test
+    fun `backspace at column 5 needs only one char so default handles it`() {
+        val r = Indent.handleBackspace(TextEdit("     abc", 5))
+        assertNull(r)
+    }
+
+    @Test
+    fun `backspace at column 6 in pure indent removes back to column 4`() {
+        val r = Indent.handleBackspace(TextEdit("      abc", 6))
+        assertEquals("    abc", r?.text)
+        assertEquals(4, r?.caret)
+    }
+
+    @Test
+    fun `backspace at column 1 returns null for default behavior`() {
+        val r = Indent.handleBackspace(TextEdit(" abc", 1))
+        assertNull(r)
+    }
+
+    @Test
+    fun `backspace returns null when caret follows non-whitespace`() {
+        val r = Indent.handleBackspace(TextEdit("    abc", 7))
+        assertNull(r)
+    }
+
+    @Test
+    fun `backspace returns null when leading contains tab character`() {
+        val r = Indent.handleBackspace(TextEdit("\t   abc", 4))
+        assertNull(r)
+    }
+
+    @Test
+    fun `backspace returns null at column 0`() {
+        val r = Indent.handleBackspace(TextEdit("abc", 0))
+        assertNull(r)
+    }
+
+    @Test
+    fun `backspace returns null with non-empty selection`() {
+        val r = Indent.handleBackspace(TextEdit("    abc", 0, 3))
+        assertNull(r)
+    }
+
+    @Test
+    fun `enter via diff applies leading indent`() {
+        val old = TextEdit("    abc", 7)
+        val new = TextEdit("    abc\n", 8)
+        val r = Indent.maybeApplyEnter(old, new)
+        assertEquals("    abc\n    ", r.text)
+        assertEquals(12, r.caret)
+    }
+
+    @Test
+    fun `enter via diff with selection-replace inserts indent`() {
+        val old = TextEdit("    abc XYZ", 7, 11)
+        val new = TextEdit("    abc\n", 8)
+        val r = Indent.maybeApplyEnter(old, new)
+        assertEquals("    abc\n    ", r.text)
+        assertEquals(12, r.caret)
+    }
+
+    @Test
+    fun `enter via diff between brace pair smart-splits`() {
+        val old = TextEdit("{}", 1)
+        val new = TextEdit("{\n}", 2)
+        val r = Indent.maybeApplyEnter(old, new)
+        assertEquals("{\n    \n}", r.text)
+        assertEquals(6, r.caret)
+    }
+
+    @Test
+    fun `enter via diff is no-op for non-newline insert`() {
+        val old = TextEdit("abc", 3)
+        val new = TextEdit("abcd", 4)
+        val r = Indent.maybeApplyEnter(old, new)
+        assertEquals("abcd", r.text)
+        assertEquals(4, r.caret)
+    }
+
+    @Test
+    fun `enter via diff is no-op when length mismatches`() {
+        val old = TextEdit("abc", 3)
+        val new = TextEdit("abc\n\n", 5)
+        val r = Indent.maybeApplyEnter(old, new)
+        assertEquals("abc\n\n", r.text)
+        assertEquals(5, r.caret)
+    }
+
+    @Test
+    fun `enter via diff is no-op when caret position mismatches`() {
+        val old = TextEdit("abc", 3)
+        val new = TextEdit("abc\n", 3)
+        val r = Indent.maybeApplyEnter(old, new)
+        assertEquals("abc\n", r.text)
+        assertEquals(3, r.caret)
     }
 }

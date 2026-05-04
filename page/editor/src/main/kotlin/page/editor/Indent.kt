@@ -23,6 +23,33 @@ object Indent {
 
     fun handleShiftTab(edit: TextEdit): TextEdit = indentLines(edit, -1)
 
+    fun handleBackspace(edit: TextEdit): TextEdit? {
+        if (edit.selectionStart != edit.selectionEnd) return null
+        val caret = edit.caret
+        if (caret == 0) return null
+        val text = edit.text
+        val lineStart = lineStartOf(text, caret)
+        if (caret == lineStart) return null
+        for (i in lineStart until caret) {
+            if (text[i] != ' ') return null
+        }
+        val col = caret - lineStart
+        val toRemove = ((col - 1) % TAB_UNIT) + 1
+        if (toRemove <= 1) return null
+        val newText = text.substring(0, caret - toRemove) + text.substring(caret)
+        return TextEdit(newText, caret - toRemove)
+    }
+
+    fun maybeApplyEnter(old: TextEdit, new: TextEdit): TextEdit {
+        val oldSelStart = minOf(old.selectionStart, old.selectionEnd)
+        val oldSelEnd = maxOf(old.selectionStart, old.selectionEnd)
+        val expectedNewLen = old.text.length - (oldSelEnd - oldSelStart) + 1
+        if (new.text.length != expectedNewLen) return new
+        if (new.caret != oldSelStart + 1) return new
+        if (new.text.getOrNull(new.caret - 1) != '\n') return new
+        return handleEnter(old)
+    }
+
     fun handleEnter(edit: TextEdit): TextEdit {
         val selStart = minOf(edit.selectionStart, edit.selectionEnd)
         val selEnd = maxOf(edit.selectionStart, edit.selectionEnd)

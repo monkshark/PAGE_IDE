@@ -182,7 +182,8 @@ fun EditorPanel(
                     val oldEdit = TextEdit(value.text, value.selection.start, value.selection.end)
                     val newEdit = TextEdit(newValue.text, newValue.selection.start, newValue.selection.end)
                     val afterAutoClose = AutoClose.apply(oldEdit, newEdit)
-                    val result = Indent.maybeUnindentClosingBrace(oldEdit, afterAutoClose)
+                    val afterUnindent = Indent.maybeUnindentClosingBrace(oldEdit, afterAutoClose)
+                    val result = Indent.maybeApplyEnter(oldEdit, afterUnindent)
                     val adjusted = if (
                         result.text == newValue.text &&
                         result.selectionStart == newValue.selection.start &&
@@ -238,6 +239,23 @@ fun EditorPanel(
                                     )
                                 )
                                 true
+                            }
+                            Key.Backspace -> {
+                                val edit = TextEdit(
+                                    value.text,
+                                    value.selection.start,
+                                    value.selection.end,
+                                )
+                                val r = Indent.handleBackspace(edit)
+                                if (r != null) {
+                                    onValueChange(
+                                        value.copy(
+                                            text = r.text,
+                                            selection = TextRange(r.caret),
+                                        )
+                                    )
+                                    true
+                                } else false
                             }
                             else -> false
                         }
