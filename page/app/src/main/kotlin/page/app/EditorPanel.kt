@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import page.editor.AutoClose
 import page.editor.BracketMatch
+import page.editor.FoldRegions
 import page.editor.Indent
 import page.editor.LineMove
 import page.editor.MarkdownFence
@@ -102,6 +103,8 @@ fun EditorPanel(
     val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
     val currentLineBg = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.06f)
     val bracketBg = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f)
+    val foldPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f)
+    val foldPlaceholderBg = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.06f)
     val palette = GlassDarkSyntax
 
     val tokens = remember(value.text, lexer) {
@@ -113,10 +116,41 @@ fun EditorPanel(
         else BracketMatch.find(value.text, value.selection.start)
     }
 
-    val visualTransformation = remember(search, tokens, bracketMatch, matchBg, activeBg, bracketBg, palette) {
+    val foldRegions = remember(value.text) { FoldRegions.detect(value.text) }
+    var foldedRegions by remember(activePath) { mutableStateOf<Set<FoldRegions.Region>>(emptySet()) }
+    val activeFolds = remember(foldedRegions, foldRegions) {
+        val live = foldRegions.toSet()
+        foldedRegions.filter { it in live }.toSet()
+    }
+    val foldSegments = remember(value.text, activeFolds) {
+        FoldRegions.segmentsFor(value.text, activeFolds)
+    }
+    val foldStartByLine = remember(foldRegions) { foldRegions.associateBy { it.startLine } }
+    val foldedStartLines = remember(activeFolds) { activeFolds.map { it.startLine }.toSet() }
+    val hiddenLines = remember(activeFolds) {
+        val set = mutableSetOf<Int>()
+        for (r in activeFolds) for (l in (r.startLine + 1)..r.endLine) set.add(l)
+        set
+    }
+    val gutterLines = remember(buffer.lineCount, foldStartByLine, foldedStartLines, hiddenLines) {
+        (0 until buffer.lineCount)
+            .filter { it !in hiddenLines }
+            .map { ln ->
+                GutterLine(
+                    originalLine = ln,
+                    foldable = ln in foldStartByLine,
+                    folded = ln in foldedStartLines,
+                )
+            }
+    }
+
+    val visualTransformation = remember(
+        search, tokens, bracketMatch, matchBg, activeBg, bracketBg, palette,
+        foldSegments, foldPlaceholderColor, foldPlaceholderBg,
+    ) {
         val matches = search?.matches.orEmpty()
         val activeIndex = search?.activeMatchIndex ?: -1
-        if (tokens.isEmpty() && matches.isEmpty() && bracketMatch == null) {
+        if (tokens.isEmpty() && matches.isEmpty() && bracketMatch == null && foldSegments.isEmpty()) {
             VisualTransformation.None
         } else {
             CombinedHighlightTransformation(
@@ -128,6 +162,11 @@ fun EditorPanel(
                 activeBg = activeBg,
                 bracketMatch = bracketMatch,
                 bracketBg = bracketBg,
+                foldSegments = foldSegments,
+                foldPlaceholderStyle = SpanStyle(
+                    color = foldPlaceholderColor,
+                    background = foldPlaceholderBg,
+                ),
             )
         }
     }
@@ -151,6 +190,12 @@ fun EditorPanel(
     var lastClickPos by remember { mutableStateOf(Offset.Zero) }
     val latestValue by rememberUpdatedState(value)
     val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val latestFoldSegments by rememberUpdatedState(foldSegments)
+    val latestActiveFolds by rememberUpdatedState(activeFolds)
+    val latestToggleFold by rememberUpdatedState({ region: FoldRegions.Region ->
+        foldedRegions = if (region in foldedRegions) foldedRegions - region
+        else foldedRegions + region
+    })
 
     LaunchedEffect(focusGainVersion) {
         if (focusGainVersion > 0) {
@@ -209,8 +254,13 @@ fun EditorPanel(
                 },
         ) {
             LineNumberGutter(
-                lineCount = buffer.lineCount,
-                currentLine = caret.line,
+                lines = gutterLines,
+                currentOriginalLine = caret.line,
+                onToggleFold = { line ->
+                    val region = foldStartByLine[line] ?: return@LineNumberGutter
+                    foldedRegions = if (region in foldedRegions) foldedRegions - region
+                    else foldedRegions + region
+                },
                 textStyle = textStyle,
             )
             BasicTextField(
@@ -247,6 +297,21 @@ fun EditorPanel(
                                 when (event.type) {
                                     PointerEventType.Press -> {
                                         val pos = change.position
+                                        val layout = textLayout
+                                        if (layout != null && latestFoldSegments.isNotEmpty()) {
+                                            val transOff = layout.getOffsetForPosition(pos)
+                                            val region = FoldRegions.foldedRegionAt(
+                                                latestValue.text,
+                                                latestActiveFolds,
+                                                transOff,
+                                            )
+                                            if (region != null) {
+                                                latestToggleFold(region)
+                                                change.consume()
+                                                clickCount = 0
+                                                continue
+                                            }
+                                        }
                                         val now = System.currentTimeMillis()
                                         val close = (pos - lastClickPos).getDistance() < 8f
                                         clickCount = when {
@@ -262,7 +327,10 @@ fun EditorPanel(
                                         if (clickCount < 2) continue
                                         val layout = textLayout ?: continue
                                         val v = latestValue
-                                        val offset = layout.getOffsetForPosition(lastClickPos).coerceIn(0, v.text.length)
+                                        val transOff = layout.getOffsetForPosition(lastClickPos)
+                                        val origOff = if (latestFoldSegments.isEmpty()) transOff
+                                        else FoldRegions.transformedToOriginal(latestFoldSegments, transOff)
+                                        val offset = origOff.coerceIn(0, v.text.length)
                                         when (clickCount) {
                                             2 -> {
                                                 val r = WordBoundary.wordRangeAt(v.text, offset)
@@ -435,8 +503,37 @@ private class CombinedHighlightTransformation(
     private val activeBg: androidx.compose.ui.graphics.Color,
     private val bracketMatch: Pair<Int, Int>?,
     private val bracketBg: androidx.compose.ui.graphics.Color,
+    private val foldSegments: List<FoldRegions.Segment>,
+    private val foldPlaceholderStyle: SpanStyle,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
+        val styled = applyHighlights(text)
+        if (foldSegments.isEmpty()) {
+            return TransformedText(styled, OffsetMapping.Identity)
+        }
+        val builder = AnnotatedString.Builder()
+        var cursor = 0
+        for (seg in foldSegments) {
+            if (cursor < seg.origStart) {
+                builder.append(styled.subSequence(cursor, seg.origStart))
+            }
+            val placeholderStart = builder.length
+            builder.append(seg.replacement)
+            val dotsOffset = seg.replacement.indexOf("...")
+            if (dotsOffset >= 0) {
+                val dotsStart = placeholderStart + dotsOffset
+                val dotsEnd = dotsStart + 3
+                builder.addStyle(foldPlaceholderStyle, dotsStart, dotsEnd)
+            }
+            cursor = seg.origEnd
+        }
+        if (cursor < styled.length) {
+            builder.append(styled.subSequence(cursor, styled.length))
+        }
+        return TransformedText(builder.toAnnotatedString(), FoldOffsetMapping(foldSegments))
+    }
+
+    private fun applyHighlights(text: AnnotatedString): AnnotatedString {
         val builder = AnnotatedString.Builder(text)
         for (token in tokens) {
             val start = token.range.first.coerceIn(0, text.length)
@@ -460,7 +557,7 @@ private class CombinedHighlightTransformation(
                 builder.addStyle(SpanStyle(background = bracketBg), start, end)
             }
         }
-        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+        return builder.toAnnotatedString()
     }
 
     private fun colorFor(kind: TokenKind, palette: SyntaxPalette) = when (kind) {
@@ -472,6 +569,16 @@ private class CombinedHighlightTransformation(
         TokenKind.TYPE -> palette.type
         TokenKind.PUNCT -> null
     }
+}
+
+private class FoldOffsetMapping(
+    private val segments: List<FoldRegions.Segment>,
+) : OffsetMapping {
+    override fun originalToTransformed(offset: Int): Int =
+        FoldRegions.originalToTransformed(segments, offset)
+
+    override fun transformedToOriginal(offset: Int): Int =
+        FoldRegions.transformedToOriginal(segments, offset)
 }
 
 @Composable

@@ -131,15 +131,34 @@ onValueChange(final)
 
 ---
 
+## 코드 폴딩
+
+```kotlin
+val foldRegions = remember(value.text) { FoldRegions.detect(value.text) }
+var foldedRegions by remember(activePath) { mutableStateOf(emptySet<FoldRegions.Region>()) }
+val foldSegments = FoldRegions.segmentsFor(value.text, activeFolds)
+```
+
+`{`/`}` 페어 기준 폴딩. 거터에 ▾/▸ 토글이 뜨고, 클릭하면 `foldedRegions` 셋이 갱신됨. 텍스트가 바뀌면 `foldRegions` 가 재계산되며 이미 사라진 region 은 자동으로 폴드에서 빠짐 (`activeFolds` 필터)
+
+접힌 영역은 `{ ... }` 모양으로 표시되고, `...` 부분만 회색 + 옅은 배경으로 강조됨 — `...` 위 클릭만 펼침으로 동작하고 `{`, 좌우 공백, `}` 는 일반 텍스트처럼 선택/드래그 가능. pointerInput Press 에서 `FoldRegions.foldedRegionAt` 가 `...` 안인지 검사해 일치할 때만 토글 + 이벤트 소비
+
+거터에 넘기는 `gutterLines` 는 `(startLine+1..endLine)` 에 들어가는 줄을 뺀 리스트 — 본문에서 안 보이는 줄은 거터에서도 같이 안 보임
+
+탭 전환 시 (`activePath` 변경) 폴드 상태는 초기화 — `remember(activePath)` 로 키잉됨
+
+---
+
 ## `CombinedHighlightTransformation`
 
-`VisualTransformation` 한 번에 세 종류 색을 칠한다:
+`VisualTransformation` 한 번에 네 종류를 처리한다:
 
 1. 토큰 컬러 (`colorFor(kind)`, `PUNCT` 는 `null` → 본문 색 유지)
 2. 매치 배경 — active match 와 일반 match 색 구분
 3. 브래킷 매치 배경
+4. 폴딩 — `foldSegments` 가 있으면 본문을 ` ... ` 플레이스홀더로 치환하고 `FoldOffsetMapping` 사용
 
-`OffsetMapping.Identity` — 글자 수가 안 변하니 매핑 변환은 단위함수로 충분
+폴딩이 없을 때는 `OffsetMapping.Identity`. 있을 때는 `FoldRegions.{originalToTransformed, transformedToOriginal}` 위에 얇게 씌운 매핑
 
 ---
 

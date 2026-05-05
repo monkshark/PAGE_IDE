@@ -2,9 +2,9 @@
 
 > 한국어: [line_number_gutter.md](https://monkshark.github.io/PAGE_IDE/#modules/app/line_number_gutter.md)
 
-> `page/app/src/main/kotlin/page/app/LineNumberGutter.kt` — Editor's left-side line numbers
+> `page/app/src/main/kotlin/page/app/LineNumberGutter.kt` — Left-edge line numbers + fold toggles
 
-The gutter sitting next to the `EditorPanel` body. The current line is bright, every other line is muted.
+Hugs the left edge of `EditorPanel`. The current line is bright, the rest are muted, and foldable lines pick up a ▾/▸ toggle.
 
 ---
 
@@ -13,46 +13,61 @@ The gutter sitting next to the `EditorPanel` body. The current line is bright, e
 ```kotlin
 @Composable
 internal fun LineNumberGutter(
-    lineCount: Int,
-    currentLine: Int,
+    lines: List<GutterLine>,
+    currentOriginalLine: Int,
+    onToggleFold: (Int) -> Unit,
     textStyle: TextStyle,
     modifier: Modifier = Modifier,
+)
+
+internal data class GutterLine(
+    val originalLine: Int,
+    val foldable: Boolean,
+    val folded: Boolean,
 )
 ```
 
 | Parameter | Meaning |
 |---|---|
-| `lineCount` | Number of rows to render (`TextBuffer.lineCount`) |
-| `currentLine` | Line under the caret (`TextBuffer.lineColOf(caret).line`) — used for the highlight |
-| `textStyle` | Same font / line-height as the body — passing the body style verbatim keeps gutter rows pixel-aligned with body rows |
+| `lines` | Rows that should actually render — caller pre-filters out fold-hidden lines |
+| `currentOriginalLine` | Caret line in original-text coords — the matching row gets the active color |
+| `onToggleFold(originalLine)` | Toggle click callback — argument is a 0-indexed original line number |
+| `textStyle` | Same font / line height as the body so rows align exactly |
 
 ---
 
 ## Colors
 
-| Line | Color |
+| Row state | Color |
 |---|---|
-| `line == currentLine` | `colorScheme.onBackground` (highlight) |
+| `originalLine == currentOriginalLine` | `colorScheme.onBackground` (active) |
 | Otherwise | `colorScheme.onSurfaceVariant` (muted) |
+| Toggle (folded) | Slightly brighter `colorScheme.primary` — visual signal that the block is collapsed |
+| Toggle (unfolded / not foldable) | `onSurfaceVariant` |
 
 ---
 
-## Layout
+## Row structure
 
-`fillMaxWidth()` + `TextAlign.End` keeps the digits right-aligned as the count grows. The column uses `IntrinsicSize.Max`, so width is determined by the widest number (`lineCount`).
-
-The 16dp top/bottom padding must match the body's top padding so that gutter rows line up with body rows.
+Each row is `Row { FoldToggle; Text(number) }`. `FoldToggle` is a 14dp clickable `Box` — foldable lines get ▾ (open) / ▸ (folded); everything else gets a space so the column width stays steady.
 
 ---
 
-## Non-goals
+## Alignment
 
-- Click-to-navigate on line number — caret movement still happens via body clicks.
-- Folding / breakpoint marks — added when the gutter grows into a real column.
+`fillMaxWidth()` + `TextAlign.End` — right-aligned even when the digit count grows. Internally uses `IntrinsicSize.Max`, so the gutter width tracks the largest number (`lineCount`).
+
+The 16dp top/bottom padding has to match `EditorPanel`'s body padding exactly, otherwise gutter rows drift relative to the body.
 
 ---
 
-## Usage
+## Filtering rows for folds
+
+The caller (`EditorPanel`) computes `hiddenLines = union of (startLine+1..endLine) for each folded region` and passes only the surviving lines as `lines`. Gutter row count then matches the visible body row count exactly — a folded region collapses to its start line.
+
+---
+
+## Used by
 
 | Location | Purpose |
 |---|---|
