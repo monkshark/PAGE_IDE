@@ -33,6 +33,7 @@ Build the viewer with `node build_viewer.js` to produce `index.html`, which open
 - [Indent](https://monkshark.github.io/PAGE_IDE/#modules/editor/indent_en.md) — Tab / Enter auto-indent
 - [LineMove](https://monkshark.github.io/PAGE_IDE/#modules/editor/line_move_en.md) — Line move / duplicate
 - [WordBoundary](https://monkshark.github.io/PAGE_IDE/#modules/editor/word_boundary_en.md) — Word-wise motion / deletion boundaries
+- [FoldRegions](https://monkshark.github.io/PAGE_IDE/#modules/editor/fold_regions_en.md) — Code-fold region detection + offset mapping
 - [FuzzyMatcher](https://monkshark.github.io/PAGE_IDE/#modules/editor/fuzzy_matcher_en.md) — Subsequence fuzzy match + score
 - [QuickOpen](https://monkshark.github.io/PAGE_IDE/#modules/editor/quick_open_en.md) — Quick Open result ranking
 - [ProjectFileIndex](https://monkshark.github.io/PAGE_IDE/#modules/editor/project_file_index_en.md) — Flattening walker over the project root

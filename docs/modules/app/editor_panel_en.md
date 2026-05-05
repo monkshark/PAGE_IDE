@@ -131,15 +131,34 @@ Each keystroke runs through three post-processors: `AutoClose` for matched brack
 
 ---
 
+## Code folding
+
+```kotlin
+val foldRegions = remember(value.text) { FoldRegions.detect(value.text) }
+var foldedRegions by remember(activePath) { mutableStateOf(emptySet<FoldRegions.Region>()) }
+val foldSegments = FoldRegions.segmentsFor(value.text, activeFolds)
+```
+
+Brace-pair folding. The gutter shows ▾/▸ toggles; clicking updates the `foldedRegions` set. When the text changes, `foldRegions` is recomputed and any folded region that no longer exists drops out automatically (`activeFolds` filter).
+
+A folded region renders as `{ ... }` with only the `...` substring tinted gray and softly backgrounded. Only clicks on `...` unfold — `{`, the surrounding spaces, and `}` stay regular text so drag-selection / copy-paste shortcuts work over the placeholder. The `pointerInput` Press handler hands the transformed offset to `FoldRegions.foldedRegionAt`, which only matches inside the `...` window, and consumes the event on a hit.
+
+`gutterLines` excludes every line in `(startLine+1..endLine)` for an active fold — lines hidden from the body are hidden from the gutter as well.
+
+Tab switches (`activePath` change) reset the fold state — keyed via `remember(activePath)`.
+
+---
+
 ## `CombinedHighlightTransformation`
 
-A single `VisualTransformation` paints three layers in order:
+A single `VisualTransformation` handles four things:
 
 1. Token colors (`colorFor(kind)`; `PUNCT` returns `null` to keep body color).
 2. Match backgrounds — active match vs. regular match.
 3. Bracket-match background.
+4. Folding — when `foldSegments` is non-empty, the body gets spliced with ` ... ` placeholders and a `FoldOffsetMapping` is used.
 
-`OffsetMapping.Identity` — character count never changes, so the identity mapping is enough.
+Without folds it returns `OffsetMapping.Identity`. With folds it returns a thin mapping built on top of `FoldRegions.{originalToTransformed, transformedToOriginal}`.
 
 ---
 
