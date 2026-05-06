@@ -111,6 +111,12 @@ fun CodeEditor(
     val latestMapping by rememberUpdatedState(mapping)
     val latestLayout by rememberUpdatedState(layout)
 
+    val caretRectProvider: () -> androidx.compose.ui.geometry.Rect = {
+        val sel = latestValue.selection
+        val caretTrans = latestMapping.originalToTransformed(sel.end)
+        latestLayout.getCursorRect(caretTrans)
+    }
+
     Box(
         modifier = modifier
             .background(MaterialTheme.colorScheme.background)
@@ -131,7 +137,8 @@ fun CodeEditor(
                     }
                 }
             }
-            .padding(contentPadding),
+            .padding(contentPadding)
+            .imeInput(value, onValueChange, caretRectProvider),
     ) {
         Canvas(
             modifier = Modifier
@@ -183,6 +190,21 @@ fun CodeEditor(
                 }
             }
             drawText(textLayoutResult = layout)
+            val composition = latestValue.composition
+            if (composition != null && !composition.collapsed) {
+                val cStart = latestMapping.originalToTransformed(composition.min)
+                val cEnd = latestMapping.originalToTransformed(composition.max)
+                if (cStart < cEnd) {
+                    val startRect = layout.getCursorRect(cStart)
+                    val endRect = layout.getCursorRect(cEnd)
+                    val underlineThickness = with(density) { 1.dp.toPx() }
+                    drawRect(
+                        brush = cursorBrush,
+                        topLeft = Offset(startRect.left, startRect.bottom - underlineThickness),
+                        size = Size(endRect.left - startRect.left, underlineThickness),
+                    )
+                }
+            }
             if (isFocused && caretVisible) {
                 val caretTrans = latestMapping.originalToTransformed(sel.end)
                 val caretRect = layout.getCursorRect(caretTrans)
