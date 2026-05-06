@@ -324,7 +324,6 @@ private fun handleDefaultKey(
             if (event.isAltPressed || event.isMetaPressed) return false
             val cp = event.utf16CodePoint
             if (cp == 0 || cp == 0xFFFF || cp < 0x20 || cp == 0x7F) return false
-            if (cp == 0x20 && event.nativeKeyEvent.keyCode != java.awt.event.KeyEvent.VK_SPACE) return false
             val ch = String(Character.toChars(cp))
             onChange(insertReplacing(value, ch))
             true
