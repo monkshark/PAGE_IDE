@@ -82,6 +82,7 @@ fun CodeEditor(
     onTextLayout: (TextLayoutResult) -> Unit = {},
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onPointerPress: ((transformedOffset: Int) -> Boolean)? = null,
+    manageHistory: Boolean = true,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -128,43 +129,50 @@ fun CodeEditor(
     val latestMapping by rememberUpdatedState(mapping)
     val latestLayout by rememberUpdatedState(layout)
 
-    var history by remember { mutableStateOf(EditHistory()) }
-    val lastRecorded = remember { mutableStateOf<EditSnapshot?>(null) }
-    var skipRecord by remember { mutableStateOf(false) }
+    val performUndo: () -> Boolean
+    val performRedo: () -> Boolean
+    if (manageHistory) {
+        var history by remember { mutableStateOf(EditHistory()) }
+        val lastRecorded = remember { mutableStateOf<EditSnapshot?>(null) }
+        var skipRecord by remember { mutableStateOf(false) }
 
-    LaunchedEffect(value.text, value.selection.end) {
-        val current = EditSnapshot(value.text, value.selection.end)
-        val prev = lastRecorded.value
-        if (skipRecord) {
-            skipRecord = false
-        } else if (prev != null && prev.text != current.text) {
-            history = history.pushBeforeChange(prev)
+        LaunchedEffect(value.text, value.selection.end) {
+            val current = EditSnapshot(value.text, value.selection.end)
+            val prev = lastRecorded.value
+            if (skipRecord) {
+                skipRecord = false
+            } else if (prev != null && prev.text != current.text) {
+                history = history.pushBeforeChange(prev)
+            }
+            lastRecorded.value = current
         }
-        lastRecorded.value = current
-    }
 
-    val performUndo: () -> Boolean = lambda@{
-        val current = EditSnapshot(latestValue.text, latestValue.selection.end)
-        val r = history.undo(current) ?: return@lambda false
-        history = r.first
-        skipRecord = true
-        lastRecorded.value = r.second
-        latestOnChange(
-            latestValue.copy(text = r.second.text, selection = TextRange(r.second.caret)),
-        )
-        true
-    }
+        performUndo = lambda@{
+            val current = EditSnapshot(latestValue.text, latestValue.selection.end)
+            val r = history.undo(current) ?: return@lambda false
+            history = r.first
+            skipRecord = true
+            lastRecorded.value = r.second
+            latestOnChange(
+                latestValue.copy(text = r.second.text, selection = TextRange(r.second.caret)),
+            )
+            true
+        }
 
-    val performRedo: () -> Boolean = lambda@{
-        val current = EditSnapshot(latestValue.text, latestValue.selection.end)
-        val r = history.redo(current) ?: return@lambda false
-        history = r.first
-        skipRecord = true
-        lastRecorded.value = r.second
-        latestOnChange(
-            latestValue.copy(text = r.second.text, selection = TextRange(r.second.caret)),
-        )
-        true
+        performRedo = lambda@{
+            val current = EditSnapshot(latestValue.text, latestValue.selection.end)
+            val r = history.redo(current) ?: return@lambda false
+            history = r.first
+            skipRecord = true
+            lastRecorded.value = r.second
+            latestOnChange(
+                latestValue.copy(text = r.second.text, selection = TextRange(r.second.caret)),
+            )
+            true
+        }
+    } else {
+        performUndo = { false }
+        performRedo = { false }
     }
 
     val caretRectProvider: () -> androidx.compose.ui.geometry.Rect = {

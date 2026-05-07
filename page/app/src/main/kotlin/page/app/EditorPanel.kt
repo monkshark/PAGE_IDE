@@ -301,6 +301,7 @@ fun EditorPanel(
                         true
                     } else false
                 },
+                manageHistory = false,
             )
         }
         EditorStatusBar(
