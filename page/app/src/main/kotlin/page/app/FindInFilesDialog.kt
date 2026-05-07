@@ -3,6 +3,7 @@ package page.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -38,6 +40,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -82,6 +85,7 @@ internal fun FindInFilesDialog(
     var report by remember { mutableStateOf<GrepReport?>(null) }
     var busy by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(0) }
+    var popupOffset by remember { mutableStateOf(IntOffset(0, 56)) }
 
     LaunchedEffect(query, caseSensitive, files) {
         if (query.isEmpty()) {
@@ -150,8 +154,8 @@ internal fun FindInFilesDialog(
     }
 
     Popup(
-        alignment = Alignment.TopStart,
-        offset = IntOffset(0, 0),
+        alignment = Alignment.TopCenter,
+        offset = popupOffset,
         onDismissRequest = onDismiss,
         properties = PopupProperties(
             focusable = true,
@@ -163,39 +167,72 @@ internal fun FindInFilesDialog(
         GlassTheme {
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(360.dp)
+                    .size(width = 720.dp, height = 440.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 color = MaterialTheme.colorScheme.background,
                 shadowElevation = 12.dp,
                 tonalElevation = 4.dp,
             ) {
-                Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-                    Header(
-                        query = query,
-                        onQueryChange = { query = it; selected = 0 },
-                        caseSensitive = caseSensitive,
-                        onToggleCase = { caseSensitive = !caseSensitive; selected = 0 },
-                        focus = queryFocus,
-                        busy = busy,
-                        stats = report?.stats,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Body(
-                        rows = rows,
-                        hitRowIndices = hitRowIndices,
-                        selected = selected,
-                        listState = listState,
-                        onSelect = { selected = it },
-                        onPick = { row ->
-                            onPickAt(row.file.file.path, row.hit.offset)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    DragHandle(
+                        onDrag = { dx, dy ->
+                            popupOffset = IntOffset(popupOffset.x + dx, popupOffset.y + dy)
                         },
-                        empty = report != null && rows.isEmpty(),
-                        idle = report == null,
                     )
+                    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                        Header(
+                            query = query,
+                            onQueryChange = { query = it; selected = 0 },
+                            caseSensitive = caseSensitive,
+                            onToggleCase = { caseSensitive = !caseSensitive; selected = 0 },
+                            focus = queryFocus,
+                            busy = busy,
+                            stats = report?.stats,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Body(
+                            rows = rows,
+                            hitRowIndices = hitRowIndices,
+                            selected = selected,
+                            listState = listState,
+                            onSelect = { selected = it },
+                            onPick = { row ->
+                                onPickAt(row.file.file.path, row.hit.offset)
+                            },
+                            empty = report != null && rows.isEmpty(),
+                            idle = report == null,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DragHandle(onDrag: (Int, Int) -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(20.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .pointerInput(Unit) {
+                detectDragGestures { change, drag ->
+                    change.consume()
+                    onDrag(drag.x.toInt(), drag.y.toInt())
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "⋯ Find in Files",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            ),
+        )
     }
 }
 
