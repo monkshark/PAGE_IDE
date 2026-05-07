@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -151,8 +150,8 @@ internal fun FindInFilesDialog(
     }
 
     Popup(
-        alignment = Alignment.TopCenter,
-        offset = IntOffset(0, 56),
+        alignment = Alignment.TopStart,
+        offset = IntOffset(0, 0),
         onDismissRequest = onDismiss,
         properties = PopupProperties(
             focusable = true,
@@ -164,7 +163,8 @@ internal fun FindInFilesDialog(
         GlassTheme {
             Surface(
                 modifier = Modifier
-                    .size(width = 720.dp, height = 440.dp)
+                    .fillMaxWidth()
+                    .height(360.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 color = MaterialTheme.colorScheme.background,
                 shadowElevation = 12.dp,

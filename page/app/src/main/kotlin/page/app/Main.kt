@@ -452,7 +452,10 @@ fun main() = application {
                     if (frame != null) saveFile(frame); true
                 }
                 event.key == Key.W -> { closeActiveTab(); true }
-                event.key == Key.F && event.isShiftPressed -> { openFindInFiles(); true }
+                event.key == Key.F && event.isShiftPressed -> {
+                    if (findInFiles) findInFiles = false else openFindInFiles()
+                    true
+                }
                 event.key == Key.F -> { openSearch(); true }
                 event.key == Key.R -> { openReplace(); true }
                 event.key == Key.P -> { openQuickOpen(); true }
