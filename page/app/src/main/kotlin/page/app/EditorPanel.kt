@@ -302,6 +302,7 @@ fun EditorPanel(
                     } else false
                 },
                 manageHistory = false,
+                viewportHeightProvider = { scrollState.viewportSize.toFloat() },
             )
         }
         EditorStatusBar(

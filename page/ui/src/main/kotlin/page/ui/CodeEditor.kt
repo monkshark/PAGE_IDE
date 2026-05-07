@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import page.editor.EditHistory
 import page.editor.EditSnapshot
+import page.editor.PageScroll
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -83,6 +84,7 @@ fun CodeEditor(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onPointerPress: ((transformedOffset: Int) -> Boolean)? = null,
     manageHistory: Boolean = true,
+    viewportHeightProvider: (() -> Float)? = null,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -128,6 +130,8 @@ fun CodeEditor(
     val latestPointerPress by rememberUpdatedState(onPointerPress)
     val latestMapping by rememberUpdatedState(mapping)
     val latestLayout by rememberUpdatedState(layout)
+    val latestViewportHeight by rememberUpdatedState(viewportHeightProvider)
+    val preferredX = remember { mutableStateOf<Float?>(null) }
 
     val performUndo: () -> Boolean
     val performRedo: () -> Boolean
@@ -211,6 +215,8 @@ fun CodeEditor(
                     clipboard = clipboard,
                     onUndo = performUndo,
                     onRedo = performRedo,
+                    preferredX = preferredX,
+                    viewportHeightPx = latestViewportHeight?.invoke() ?: 0f,
                 )
             }
             .pointerInput(Unit) {
@@ -243,6 +249,7 @@ fun CodeEditor(
                             val change = e.changes.firstOrNull() ?: continue
                             when (e.type) {
                                 PointerEventType.Press -> {
+                                    preferredX.value = null
                                     val transOff = latestLayout.getOffsetForPosition(change.position)
                                     if (latestPointerPress?.invoke(transOff) == true) {
                                         focusRequester.requestFocus()
@@ -430,6 +437,8 @@ private fun handleDefaultKey(
     clipboard: ClipboardManager,
     onUndo: () -> Boolean,
     onRedo: () -> Boolean,
+    preferredX: androidx.compose.runtime.MutableState<Float?>,
+    viewportHeightPx: Float,
 ): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
     val text = value.text
@@ -437,6 +446,11 @@ private fun handleDefaultKey(
     val shift = event.isShiftPressed
     val ctrl = event.isCtrlPressed
     val alt = event.isAltPressed
+    val isVerticalMove = !ctrl && !alt && (
+        event.key == Key.DirectionUp || event.key == Key.DirectionDown ||
+        event.key == Key.PageUp || event.key == Key.PageDown
+    )
+    if (!isVerticalMove) preferredX.value = null
 
     if (ctrl && !alt && event.key == Key.Z) return if (shift) onRedo() else onUndo()
     if (ctrl && !alt && event.key == Key.Y) return onRedo()
@@ -509,12 +523,20 @@ private fun handleDefaultKey(
             true
         }
         Key.DirectionUp -> {
-            val newCaret = verticalCaret(layout, sel.end, up = true) ?: return true
+            val targetLine = layout.getLineForOffset(sel.end) - 1
+            if (targetLine < 0) return true
+            val x = preferredX.value ?: layout.getCursorRect(sel.end).left
+            preferredX.value = x
+            val newCaret = caretAt(layout, targetLine, x)
             onChange(value.copy(selection = newSelection(sel, newCaret, shift)))
             true
         }
         Key.DirectionDown -> {
-            val newCaret = verticalCaret(layout, sel.end, up = false) ?: return true
+            val targetLine = layout.getLineForOffset(sel.end) + 1
+            if (targetLine >= layout.lineCount) return true
+            val x = preferredX.value ?: layout.getCursorRect(sel.end).left
+            preferredX.value = x
+            val newCaret = caretAt(layout, targetLine, x)
             onChange(value.copy(selection = newSelection(sel, newCaret, shift)))
             true
         }
@@ -532,11 +554,16 @@ private fun handleDefaultKey(
         }
         Key.PageUp, Key.PageDown -> {
             val up = event.key == Key.PageUp
-            val targetLine = (layout.getLineForOffset(sel.end) + if (up) -10 else 10)
+            val lineHeightPx = if (layout.lineCount > 0) {
+                layout.getLineBottom(0) - layout.getLineTop(0)
+            } else 0f
+            val step = PageScroll.linesPerPage(viewportHeightPx, lineHeightPx)
+            val currentLine = layout.getLineForOffset(sel.end)
+            val targetLine = (currentLine + if (up) -step else step)
                 .coerceIn(0, layout.lineCount - 1)
-            val x = layout.getCursorRect(sel.end).left
-            val y = layout.getLineTop(targetLine) + 1
-            val newCaret = layout.getOffsetForPosition(Offset(x, y))
+            val x = preferredX.value ?: layout.getCursorRect(sel.end).left
+            preferredX.value = x
+            val newCaret = caretAt(layout, targetLine, x)
             onChange(value.copy(selection = newSelection(sel, newCaret, shift)))
             true
         }
@@ -577,12 +604,8 @@ private fun insertReplacing(value: TextFieldValue, insertion: String): TextField
     return value.copy(text = newText, selection = TextRange(caret))
 }
 
-private fun verticalCaret(layout: TextLayoutResult, currentOffset: Int, up: Boolean): Int? {
-    val line = layout.getLineForOffset(currentOffset)
-    val targetLine = line + if (up) -1 else 1
-    if (targetLine < 0 || targetLine >= layout.lineCount) return null
-    val x = layout.getCursorRect(currentOffset).left
-    val y = layout.getLineTop(targetLine) + 1
+private fun caretAt(layout: TextLayoutResult, targetLine: Int, x: Float): Int {
+    val y = layout.getLineTop(targetLine) + 1f
     return layout.getOffsetForPosition(Offset(x, y))
 }
 
