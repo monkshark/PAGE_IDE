@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -46,10 +47,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogWindow
-import androidx.compose.ui.window.rememberDialogState
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -108,7 +110,6 @@ internal fun FindInFilesDialog(
     val rows = remember(report) { flatten(report?.results.orEmpty()) }
     val hitRowIndices = remember(rows) { rows.withIndex().filter { it.value is ResultRow.Hit }.map { it.index } }
 
-    val state = rememberDialogState(width = 880.dp, height = 560.dp)
     val queryFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
 
@@ -118,44 +119,51 @@ internal fun FindInFilesDialog(
         if (rowIdx != null) listState.animateScrollToItem(rowIdx)
     }
 
-    DialogWindow(
-        onCloseRequest = onDismiss,
-        state = state,
-        title = "파일에서 찾기",
-        resizable = true,
-        undecorated = true,
-        onPreviewKeyEvent = handler@{ event ->
-            if (event.type != KeyEventType.KeyDown) return@handler false
-            when (event.key) {
-                Key.Escape -> { onDismiss(); true }
-                Key.DirectionDown -> {
-                    if (hitRowIndices.isNotEmpty()) {
-                        selected = (selected + 1).coerceAtMost(hitRowIndices.lastIndex)
-                    }
-                    true
+    val onKey: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = handler@{ event ->
+        if (event.type != KeyEventType.KeyDown) return@handler false
+        when (event.key) {
+            Key.Escape -> { onDismiss(); true }
+            Key.DirectionDown -> {
+                if (hitRowIndices.isNotEmpty()) {
+                    selected = (selected + 1).coerceAtMost(hitRowIndices.lastIndex)
                 }
-                Key.DirectionUp -> {
-                    if (hitRowIndices.isNotEmpty()) {
-                        selected = (selected - 1).coerceAtLeast(0)
-                    }
-                    true
-                }
-                Key.Enter -> {
-                    val rowIdx = hitRowIndices.getOrNull(selected)
-                    val row = rowIdx?.let { rows.getOrNull(it) } as? ResultRow.Hit
-                    if (row != null) onPickAt(row.file.file.path, row.hit.offset)
-                    true
-                }
-                else -> false
+                true
             }
-        },
+            Key.DirectionUp -> {
+                if (hitRowIndices.isNotEmpty()) {
+                    selected = (selected - 1).coerceAtLeast(0)
+                }
+                true
+            }
+            Key.Enter -> {
+                val rowIdx = hitRowIndices.getOrNull(selected)
+                val row = rowIdx?.let { rows.getOrNull(it) } as? ResultRow.Hit
+                if (row != null) onPickAt(row.file.file.path, row.hit.offset)
+                true
+            }
+            else -> false
+        }
+    }
+
+    Popup(
+        alignment = Alignment.TopCenter,
+        offset = IntOffset(0, 56),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnClickOutside = true,
+            dismissOnBackPress = true,
+        ),
+        onPreviewKeyEvent = onKey,
     ) {
         GlassTheme {
             Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                    .size(width = 720.dp, height = 440.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 color = MaterialTheme.colorScheme.background,
+                shadowElevation = 12.dp,
+                tonalElevation = 4.dp,
             ) {
                 Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                     Header(
@@ -291,7 +299,7 @@ private fun StatusLabel(busy: Boolean, stats: GrepStats?, hasQuery: Boolean) {
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
         ),
-        modifier = Modifier.width(180.dp),
+        modifier = Modifier.width(160.dp),
     )
 }
 
@@ -322,11 +330,11 @@ private fun Body(
                 is ResultRow.Hit -> HitRow(
                     row = row,
                     isSelected = idx == selectedRowIdx,
-                    onHover = {
+                    onClick = {
                         val pos = hitRowIndices.indexOf(idx)
                         if (pos >= 0) onSelect(pos)
+                        onPick(row)
                     },
-                    onClick = { onPick(row) },
                 )
             }
         }
@@ -384,7 +392,6 @@ private fun FileHeaderRow(file: GrepFileResult) {
 private fun HitRow(
     row: ResultRow.Hit,
     isSelected: Boolean,
-    onHover: () -> Unit,
     onClick: () -> Unit,
 ) {
     val bg = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
@@ -426,7 +433,6 @@ private fun HitRow(
             modifier = Modifier.weight(1f),
         )
     }
-    LaunchedEffect(isSelected) { if (isSelected) onHover() }
 }
 
 private fun highlightedSnippet(
