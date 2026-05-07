@@ -50,6 +50,7 @@ import androidx.compose.ui.window.rememberWindowState
 import page.core.PageIdentity
 import page.editor.EditSnapshot
 import page.editor.FileDocument
+import page.editor.UndoGroupTracker
 import page.editor.FileKind
 import page.editor.FileKinds
 import page.editor.IndexedFile
@@ -80,6 +81,12 @@ fun main() = application {
     var splitEnabled by remember { mutableStateOf(false) }
     var splitOrientation by remember { mutableStateOf(SplitOrientation.HORIZONTAL) }
     var splitState by remember { mutableStateOf(SplitPaneState(ratio = 0.5f)) }
+    val undoTrackerPrimary = remember { UndoGroupTracker() }
+    val undoTrackerSecondary = remember { UndoGroupTracker() }
+    fun undoTracker(side: PaneSide): UndoGroupTracker = when (side) {
+        PaneSide.PRIMARY -> undoTrackerPrimary
+        PaneSide.SECONDARY -> undoTrackerSecondary
+    }
 
     fun paneOf(side: PaneSide): EditorPaneState = when (side) {
         PaneSide.PRIMARY -> primaryPane
@@ -109,6 +116,7 @@ fun main() = application {
             val caret = active.caret.coerceIn(0, active.text.length)
             TextFieldValue(active.text, TextRange(caret))
         } else TextFieldValue("")
+        undoTrackerPrimary.reset()
         primaryPane = primaryPane.copy(
             editorValue = newValue,
             search = primaryPane.search?.retarget(newValue.text),
@@ -121,6 +129,7 @@ fun main() = application {
             val caret = active.caret.coerceIn(0, active.text.length)
             TextFieldValue(active.text, TextRange(caret))
         } else TextFieldValue("")
+        undoTrackerSecondary.reset()
         secondaryPane = secondaryPane.copy(
             editorValue = newValue,
             search = secondaryPane.search?.retarget(newValue.text),
@@ -291,6 +300,7 @@ fun main() = application {
                 activeMatchIndex = if (nextIdx >= 0) nextIdx
                 else if (retargeted.matches.isNotEmpty()) 0 else -1,
             )
+            undoTracker(side).markBreak()
             mutatePane(side) {
                 it.copy(
                     book = it.book
@@ -310,6 +320,7 @@ fun main() = application {
             val text = pane.editorValue.text
             val caret = pane.editorValue.selection.start
             val r = Replace.applyAll(text, s.matches, s.replace)
+            undoTracker(side).markBreak()
             mutatePane(side) {
                 it.copy(
                     book = it.book
@@ -330,6 +341,7 @@ fun main() = application {
         if (result != null) {
             val (newBook, restored) = result
             val caret = restored.caret.coerceIn(0, restored.text.length)
+            undoTracker(side).markBreak()
             mutatePane(side) {
                 it.copy(
                     book = newBook,
@@ -347,6 +359,7 @@ fun main() = application {
         if (result != null) {
             val (newBook, restored) = result
             val caret = restored.caret.coerceIn(0, restored.text.length)
+            undoTracker(side).markBreak()
             mutatePane(side) {
                 it.copy(
                     book = newBook,
@@ -443,14 +456,19 @@ fun main() = application {
                     onPaneFocus = { side -> focusedPane = side },
                     onEditorChange = { side, v ->
                         mutatePane(side) {
-                            val textChanged = v.text != it.editorValue.text
+                            val priorText = it.editorValue.text
+                            val priorSelection = it.editorValue.selection
+                            val textChanged = v.text != priorText
+                            val tracker = undoTracker(side)
                             val nextBook = if (textChanged) {
-                                val priorText = it.editorValue.text
-                                val priorCaret = it.editorValue.selection.start
-                                it.book
-                                    .pushHistoryOnActive(EditSnapshot(priorText, priorCaret))
-                                    .updateActive(v.text, v.selection.start)
+                                val priorCaret = priorSelection.start
+                                val shouldPush = tracker.onTextChange(priorText, v.text)
+                                val withPush = if (shouldPush) {
+                                    it.book.pushHistoryOnActive(EditSnapshot(priorText, priorCaret))
+                                } else it.book
+                                withPush.updateActive(v.text, v.selection.start)
                             } else {
+                                if (v.selection != priorSelection) tracker.markBreak()
                                 it.book.updateActive(v.text, v.selection.start)
                             }
                             val nextSearch = if (textChanged) {
