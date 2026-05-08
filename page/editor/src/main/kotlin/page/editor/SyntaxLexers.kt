@@ -6,6 +6,13 @@ import java.util.Locale
 object SyntaxLexers {
     private const val TREE_SITTER_FLAG = "page.editor.treesitter"
 
+    init {
+        val raw = System.getProperty(TREE_SITTER_FLAG) ?: System.getenv("PAGE_EDITOR_TREESITTER")
+        if (!raw.isNullOrBlank()) {
+            println("[SyntaxLexers] Tree-sitter toggle = '$raw'")
+        }
+    }
+
     fun forPath(path: Path): SyntaxLexer? {
         val name = path.fileName?.toString()?.lowercase(Locale.ROOT) ?: return null
         val ext = name.substringAfterLast('.', missingDelimiterValue = "")
