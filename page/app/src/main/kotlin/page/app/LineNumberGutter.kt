@@ -9,20 +9,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import page.lsp.DiagnosticSeverity
 
 internal data class GutterLine(
     val originalLine: Int,
     val foldable: Boolean,
     val folded: Boolean,
+    val severity: DiagnosticSeverity? = null,
 )
 
 @Composable
@@ -54,6 +59,7 @@ internal fun LineNumberGutter(
                     onClick = { onToggleFold(entry.originalLine) },
                     textStyle = textStyle.copy(color = if (entry.folded) toggleColor else mutedColor),
                 )
+                SeverityDot(entry.severity)
                 Text(
                     text = (entry.originalLine + 1).toString(),
                     style = textStyle.copy(color = color),
@@ -65,6 +71,23 @@ internal fun LineNumberGutter(
             }
         }
     }
+}
+
+@Composable
+private fun SeverityDot(severity: DiagnosticSeverity?) {
+    val color = when (severity) {
+        DiagnosticSeverity.ERROR -> Color(0xFFE5484D)
+        DiagnosticSeverity.WARNING -> Color(0xFFE5C03A)
+        DiagnosticSeverity.INFO -> MaterialTheme.colorScheme.primary
+        DiagnosticSeverity.HINT -> MaterialTheme.colorScheme.tertiary
+        null -> Color.Transparent
+    }
+    Box(
+        modifier = Modifier
+            .padding(start = 4.dp, end = 2.dp)
+            .size(6.dp)
+            .background(color, CircleShape),
+    )
 }
 
 @Composable

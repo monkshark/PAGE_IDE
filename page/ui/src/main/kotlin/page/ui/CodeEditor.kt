@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -81,9 +82,12 @@ fun CodeEditor(
     cursorBrush: Brush = SolidColor(MaterialTheme.colorScheme.primary),
     selectionColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
     contentPadding: PaddingValues = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
+    decorations: List<EditorDecoration> = emptyList(),
     onTextLayout: (TextLayoutResult) -> Unit = {},
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onPointerPress: ((transformedOffset: Int) -> Boolean)? = null,
+    onHover: ((originalOffset: Int?) -> Unit)? = null,
+    hoverText: String? = null,
     manageHistory: Boolean = true,
     viewportHeightProvider: (() -> Float)? = null,
 ) {
@@ -129,11 +133,21 @@ fun CodeEditor(
     val latestOnChange by rememberUpdatedState(onValueChange)
     val latestPreview by rememberUpdatedState(onPreviewKeyEvent)
     val latestPointerPress by rememberUpdatedState(onPointerPress)
+    val latestOnHover by rememberUpdatedState(onHover)
     val latestMapping by rememberUpdatedState(mapping)
     val latestLayout by rememberUpdatedState(layout)
     val latestViewportHeight by rememberUpdatedState(viewportHeightProvider)
     val preferredX = remember { mutableStateOf<Float?>(null) }
     val dragMoveTarget = remember { mutableStateOf<Int?>(null) }
+    var hoverPosition by remember { mutableStateOf<Offset?>(null) }
+    var latchedHoverPosition by remember { mutableStateOf<Offset?>(null) }
+    LaunchedEffect(hoverText) {
+        if (hoverText.isNullOrBlank()) {
+            latchedHoverPosition = null
+        } else {
+            latchedHoverPosition = hoverPosition
+        }
+    }
 
     val performUndo: () -> Boolean
     val performRedo: () -> Boolean
@@ -350,7 +364,16 @@ fun CodeEditor(
                                             latestValue.copy(selection = TextRange(anchor, origOff)),
                                         )
                                         change.consume()
+                                    } else if (!change.pressed) {
+                                        val transOff = latestLayout.getOffsetForPosition(change.position)
+                                        val origOff = latestMapping.transformedToOriginal(transOff)
+                                        hoverPosition = change.position
+                                        latestOnHover?.invoke(origOff)
                                     }
+                                }
+                                PointerEventType.Exit -> {
+                                    hoverPosition = null
+                                    latestOnHover?.invoke(null)
                                 }
                                 PointerEventType.Release -> {
                                     if (moveSourceOffset >= 0) {
@@ -389,6 +412,30 @@ fun CodeEditor(
                 }
             }
             drawText(textLayoutResult = layout)
+            if (decorations.isNotEmpty()) {
+                val strokePx = with(density) { 1.2.dp.toPx() }
+                val ampPx = with(density) { 1.5.dp.toPx() }
+                for (deco in decorations) {
+                    val transStart = latestMapping.originalToTransformed(
+                        deco.startOffset.coerceIn(0, value.text.length),
+                    )
+                    val transEnd = latestMapping.originalToTransformed(
+                        deco.endOffset.coerceIn(0, value.text.length),
+                    )
+                    if (transStart >= transEnd) continue
+                    if (transStart < 0 || transEnd > displayText.length) continue
+                    when (deco.style) {
+                        EditorDecoration.Style.WAVY_UNDERLINE -> drawWavyUnderline(
+                            layout = layout,
+                            transStart = transStart,
+                            transEnd = transEnd,
+                            color = deco.color,
+                            strokeWidth = strokePx,
+                            amplitude = ampPx,
+                        )
+                    }
+                }
+            }
             val composition = latestValue.composition
             if (composition != null && !composition.collapsed) {
                 val cStart = latestMapping.originalToTransformed(composition.min)
@@ -475,6 +522,33 @@ fun CodeEditor(
                     menuExpanded = false
                 },
             )
+        }
+        val hoverTextSnapshot = hoverText
+        val hoverPositionSnapshot = latchedHoverPosition
+        if (!hoverTextSnapshot.isNullOrBlank() && hoverPositionSnapshot != null) {
+            androidx.compose.ui.window.Popup(
+                offset = androidx.compose.ui.unit.IntOffset(
+                    x = hoverPositionSnapshot.x.toInt() + 12,
+                    y = hoverPositionSnapshot.y.toInt() + 18,
+                ),
+                focusable = false,
+            ) {
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.widthIn(max = 480.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = 6.dp,
+                    tonalElevation = 4.dp,
+                ) {
+                    Box(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Text(
+                            text = hoverTextSnapshot,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -672,3 +746,46 @@ private fun caretAt(layout: TextLayoutResult, targetLine: Int, x: Float): Int {
 }
 
 private fun OffsetMapping.safeOriginalToTransformed(offset: Int): Int = originalToTransformed(offset)
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWavyUnderline(
+    layout: TextLayoutResult,
+    transStart: Int,
+    transEnd: Int,
+    color: Color,
+    strokeWidth: Float,
+    amplitude: Float,
+) {
+    val startLine = layout.getLineForOffset(transStart)
+    val endLine = layout.getLineForOffset(transEnd)
+    for (line in startLine..endLine) {
+        val lineStart = layout.getLineStart(line)
+        val lineEnd = layout.getLineEnd(line, visibleEnd = true)
+        val from = maxOf(transStart, lineStart)
+        val to = minOf(transEnd, lineEnd)
+        if (from >= to) continue
+        val leftRect = layout.getCursorRect(from)
+        val rightRect = layout.getCursorRect(to)
+        val baseline = layout.getLineBottom(line) - strokeWidth
+        val left = leftRect.left
+        val right = rightRect.left
+        if (right <= left) continue
+        val path = androidx.compose.ui.graphics.Path()
+        val period = amplitude * 4f
+        var x = left
+        var up = true
+        path.moveTo(x, baseline)
+        while (x < right) {
+            val nextX = (x + period / 2f).coerceAtMost(right)
+            val midX = (x + nextX) / 2f
+            val controlY = if (up) baseline - amplitude else baseline + amplitude
+            path.quadraticTo(midX, controlY, nextX, baseline)
+            x = nextX
+            up = !up
+        }
+        drawPath(
+            path = path,
+            color = color,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth),
+        )
+    }
+}
