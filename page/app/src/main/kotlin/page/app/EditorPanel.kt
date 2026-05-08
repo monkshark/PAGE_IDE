@@ -2,8 +2,10 @@ package page.app
 
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -62,7 +67,10 @@ import page.editor.TextEdit
 import page.editor.Token
 import page.editor.TokenKind
 import java.nio.file.Path
+import page.lsp.Diagnostic
+import page.lsp.DiagnosticSeverity
 import page.ui.CodeEditor
+import page.ui.EditorDecoration
 import page.ui.EditorFontFamily
 import page.ui.GlassDarkSyntax
 import page.ui.SyntaxPalette
@@ -83,6 +91,10 @@ fun EditorPanel(
     onWindowShortcut: (KeyEvent) -> Boolean,
     lexer: SyntaxLexer?,
     activePath: Path?,
+    diagnostics: List<Diagnostic> = emptyList(),
+    lspStatusText: String? = null,
+    lspStartedAtMs: Long = 0L,
+    onProblemsToggle: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isMarkdown = remember(activePath) {
@@ -110,6 +122,44 @@ fun EditorPanel(
         else BracketMatch.find(value.text, value.selection.start)
     }
 
+    val errorColor = androidx.compose.ui.graphics.Color(0xFFE5484D)
+    val warningColor = androidx.compose.ui.graphics.Color(0xFFE5C03A)
+    val infoColor = MaterialTheme.colorScheme.primary
+    val decorations = remember(value.text, diagnostics) {
+        diagnostics.mapNotNull { d ->
+            val startOff = lineColToOffset(value.text, d.start.line, d.start.character)
+            val endOff = lineColToOffset(value.text, d.end.line, d.end.character)
+            if (startOff < 0 || endOff < 0 || endOff <= startOff) return@mapNotNull null
+            val color = when (d.severity) {
+                DiagnosticSeverity.ERROR -> errorColor
+                DiagnosticSeverity.WARNING -> warningColor
+                DiagnosticSeverity.INFO, DiagnosticSeverity.HINT -> infoColor
+            }
+            EditorDecoration(startOff, endOff, color, EditorDecoration.Style.WAVY_UNDERLINE)
+        }
+    }
+    val errorCount = diagnostics.count { it.severity == DiagnosticSeverity.ERROR }
+    val warningCount = diagnostics.count { it.severity == DiagnosticSeverity.WARNING }
+
+    val diagnosticRanges = remember(value.text, diagnostics) {
+        diagnostics.mapNotNull { d ->
+            val s = lineColToOffset(value.text, d.start.line, d.start.character)
+            val e = lineColToOffset(value.text, d.end.line, d.end.character)
+            if (s < 0 || e <= s) null else Triple(s, e, d)
+        }
+    }
+    var pendingHoverDiagnostic by remember(diagnostics) { mutableStateOf<Diagnostic?>(null) }
+    var hoverDiagnostic by remember(diagnostics) { mutableStateOf<Diagnostic?>(null) }
+    LaunchedEffect(pendingHoverDiagnostic) {
+        val target = pendingHoverDiagnostic
+        if (target == null) {
+            hoverDiagnostic = null
+        } else if (target !== hoverDiagnostic) {
+            delay(250)
+            hoverDiagnostic = target
+        }
+    }
+
     val foldRegions = remember(value.text) { FoldRegions.detect(value.text) }
     var foldedRegions by remember(activePath) { mutableStateOf<Set<FoldRegions.Region>>(emptySet()) }
     val activeFolds = remember(foldedRegions, foldRegions) {
@@ -126,7 +176,18 @@ fun EditorPanel(
         for (r in activeFolds) for (l in (r.startLine + 1)..r.endLine) set.add(l)
         set
     }
-    val gutterLines = remember(buffer.lineCount, foldStartByLine, foldedStartLines, hiddenLines) {
+    val severityByLine = remember(diagnostics) {
+        val map = mutableMapOf<Int, DiagnosticSeverity>()
+        for (d in diagnostics) {
+            val ln = d.start.line
+            val cur = map[ln]
+            if (cur == null || severityRank(d.severity) < severityRank(cur)) {
+                map[ln] = d.severity
+            }
+        }
+        map.toMap()
+    }
+    val gutterLines = remember(buffer.lineCount, foldStartByLine, foldedStartLines, hiddenLines, severityByLine) {
         (0 until buffer.lineCount)
             .filter { it !in hiddenLines }
             .map { ln ->
@@ -134,6 +195,7 @@ fun EditorPanel(
                     originalLine = ln,
                     foldable = ln in foldStartByLine,
                     folded = ln in foldedStartLines,
+                    severity = severityByLine[ln],
                 )
             }
     }
@@ -303,6 +365,22 @@ fun EditorPanel(
                 },
                 manageHistory = false,
                 viewportHeightProvider = { scrollState.viewportSize.toFloat() },
+                decorations = decorations,
+                onHover = { origOff ->
+                    pendingHoverDiagnostic = if (origOff == null) null
+                    else diagnosticRanges.firstOrNull { (s, e, _) ->
+                        origOff in s until e
+                    }?.third
+                },
+                hoverText = hoverDiagnostic?.let { d ->
+                    val severity = when (d.severity) {
+                        DiagnosticSeverity.ERROR -> "ERROR"
+                        DiagnosticSeverity.WARNING -> "WARNING"
+                        DiagnosticSeverity.INFO -> "INFO"
+                        DiagnosticSeverity.HINT -> "HINT"
+                    }
+                    "[$severity] ${d.message}"
+                },
             )
         }
         EditorStatusBar(
@@ -310,8 +388,39 @@ fun EditorPanel(
             col = caret.col,
             lineCount = buffer.lineCount,
             charCount = buffer.length,
+            errorCount = errorCount,
+            warningCount = warningCount,
+            lspStatusText = lspStatusText,
+            lspStartedAtMs = lspStartedAtMs,
+            onProblemsToggle = onProblemsToggle,
         )
     }
+}
+
+private fun severityRank(s: DiagnosticSeverity): Int = when (s) {
+    DiagnosticSeverity.ERROR -> 0
+    DiagnosticSeverity.WARNING -> 1
+    DiagnosticSeverity.INFO -> 2
+    DiagnosticSeverity.HINT -> 3
+}
+
+private fun lineColToOffset(text: String, line: Int, col: Int): Int {
+    if (line < 0 || col < 0) return -1
+    var lineIndex = 0
+    var i = 0
+    while (i < text.length && lineIndex < line) {
+        if (text[i] == '\n') lineIndex++
+        i++
+    }
+    if (lineIndex < line) return -1
+    val lineStart = i
+    val lineEnd = run {
+        var j = i
+        while (j < text.length && text[j] != '\n') j++
+        j
+    }
+    val target = lineStart + col
+    return target.coerceIn(lineStart, lineEnd)
 }
 
 private class CombinedHighlightTransformation(
@@ -402,7 +511,17 @@ private class FoldOffsetMapping(
 }
 
 @Composable
-private fun EditorStatusBar(line: Int, col: Int, lineCount: Int, charCount: Int) {
+private fun EditorStatusBar(
+    line: Int,
+    col: Int,
+    lineCount: Int,
+    charCount: Int,
+    errorCount: Int = 0,
+    warningCount: Int = 0,
+    lspStatusText: String? = null,
+    lspStartedAtMs: Long = 0L,
+    onProblemsToggle: (() -> Unit)? = null,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().height(28.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -415,7 +534,79 @@ private fun EditorStatusBar(line: Int, col: Int, lineCount: Int, charCount: Int)
             StatusItem("Ln ${line + 1}, Col ${col + 1}")
             StatusItem("$lineCount lines")
             StatusItem("$charCount chars")
+            if (errorCount > 0) DiagnosticBadge(
+                count = errorCount,
+                color = androidx.compose.ui.graphics.Color(0xFFE5484D),
+                label = "errors",
+                onClick = onProblemsToggle,
+            )
+            if (warningCount > 0) DiagnosticBadge(
+                count = warningCount,
+                color = androidx.compose.ui.graphics.Color(0xFFE5C03A),
+                label = "warnings",
+                onClick = onProblemsToggle,
+            )
+            if (!lspStatusText.isNullOrBlank()) {
+                Box(modifier = Modifier.weight(1f))
+                LspStatusItem(text = lspStatusText, startedAtMs = lspStartedAtMs)
+            }
         }
+    }
+}
+
+@Composable
+private fun LspStatusItem(text: String, startedAtMs: Long) {
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(startedAtMs) {
+        if (startedAtMs <= 0L) return@LaunchedEffect
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(500)
+        }
+    }
+    val elapsedSec = if (startedAtMs > 0L) ((nowMs - startedAtMs) / 1000L).coerceAtLeast(0L).toInt() else 0
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        androidx.compose.material3.LinearProgressIndicator(
+            modifier = Modifier.width(72.dp).height(3.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Text(
+            text = if (elapsedSec > 0) "$text (${elapsedSec}s)" else text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun DiagnosticBadge(
+    count: Int,
+    color: androidx.compose.ui.graphics.Color,
+    label: String,
+    onClick: (() -> Unit)? = null,
+) {
+    val rowMod = Modifier.then(
+        if (onClick != null) Modifier.clickable { onClick() } else Modifier,
+    )
+    Row(
+        modifier = rowMod,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(color, CircleShape),
+        )
+        Text(
+            text = "$count $label",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

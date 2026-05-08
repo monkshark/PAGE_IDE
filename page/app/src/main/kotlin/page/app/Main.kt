@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +84,10 @@ fun main() = application {
     var splitEnabled by remember { mutableStateOf(false) }
     var splitOrientation by remember { mutableStateOf(SplitOrientation.HORIZONTAL) }
     var splitState by remember { mutableStateOf(SplitPaneState(ratio = 0.5f)) }
+    var problemsOpen by remember { mutableStateOf(false) }
+    var problemsHeight: Dp by remember { mutableStateOf(220.dp) }
+    val lsp = rememberLspController(workspaceRoot = rootDir)
+    val currentLsp by rememberUpdatedState(lsp)
     val undoTrackerPrimary = remember { UndoGroupTracker() }
     val undoTrackerSecondary = remember { UndoGroupTracker() }
     fun undoTracker(side: PaneSide): UndoGroupTracker = when (side) {
@@ -142,6 +147,26 @@ fun main() = application {
         if (!splitEnabled) focusedPane = PaneSide.PRIMARY
     }
 
+    LaunchedEffect(rootDir) {
+        if (rootDir != null) lsp.ensureStarted()
+    }
+
+    val focusedActivePath = focused().book.active?.path
+    val focusedActiveText = focused().editorValue.text
+    LaunchedEffect(focusedActivePath) {
+        val path = focusedActivePath
+        if (path != null && isKotlinSource(path)) {
+            lsp.ensureStarted()
+            lsp.didOpen(path, "kotlin", focused().editorValue.text)
+        }
+    }
+    LaunchedEffect(focusedActivePath, focusedActiveText) {
+        val path = focusedActivePath
+        if (path != null && isKotlinSource(path)) {
+            lsp.didChange(path, focusedActiveText)
+        }
+    }
+
     val openInTab: (Path) -> Unit = { picked ->
         val kind = FileKinds.classify(picked)
         if (kind.isEditableAsText) {
@@ -177,6 +202,22 @@ fun main() = application {
                     }
                 }
             }
+        }
+    }
+
+    val jumpToProblem: (Path, Int, Int) -> Unit = { picked, line, character ->
+        val pane = focused()
+        val text = pane.book.tabs.firstOrNull { it.path == picked }?.text
+            ?: FileDocument.loadOrNull(picked)
+        if (text != null) {
+            var lineIdx = 0
+            var i = 0
+            while (i < text.length && lineIdx < line) {
+                if (text[i] == '\n') lineIdx++
+                i++
+            }
+            val offset = (i + character.coerceAtLeast(0)).coerceAtMost(text.length)
+            openInTabAt(picked, offset)
         }
     }
 
@@ -222,7 +263,13 @@ fun main() = application {
         expanded = if (p in expanded) expanded - setOf(p) else expanded + setOf(p)
     }
     val closeTabAt: (PaneSide, Int) -> Unit = { side, idx ->
+        val tab = paneOf(side).book.tabs.getOrNull(idx)
         mutatePane(side) { it.copy(book = it.book.close(idx)) }
+        if (tab != null && isKotlinSource(tab.path)) {
+            val stillOpenAnywhere = primaryPane.book.tabs.any { it.path == tab.path } ||
+                secondaryPane.book.tabs.any { it.path == tab.path }
+            if (!stillOpenAnywhere) lsp.didClose(tab.path)
+        }
     }
     val isUnsavedText: (OpenTab) -> Boolean = { tab ->
         tab.dirty && FileKinds.classify(tab.path).isEditableAsText
@@ -435,6 +482,50 @@ fun main() = application {
         }
     }
 
+    val jumpProblemRelative: (Boolean) -> Unit = { forward ->
+        val pane = focused()
+        val active = pane.book.active
+        if (active != null) {
+            val activeList = currentLsp.diagnosticsFor(active.path).sortedWith(
+                compareBy({ it.start.line }, { it.start.character }),
+            )
+            if (activeList.isNotEmpty()) {
+                val text = pane.editorValue.text
+                val caret = pane.editorValue.selection.start.coerceIn(0, text.length)
+                var line = 0
+                var lastNl = -1
+                var i = 0
+                while (i < caret) {
+                    if (text[i] == '\n') { line++; lastNl = i }
+                    i++
+                }
+                val char = caret - lastNl - 1
+                val target = if (forward) {
+                    activeList.firstOrNull { d ->
+                        d.start.line > line ||
+                            (d.start.line == line && d.start.character > char)
+                    } ?: activeList.first()
+                } else {
+                    activeList.lastOrNull { d ->
+                        d.start.line < line ||
+                            (d.start.line == line && d.start.character < char)
+                    } ?: activeList.last()
+                }
+                jumpToProblem(active.path, target.start.line, target.start.character)
+            } else {
+                val anyEntry = currentLsp.diagnosticsByUri.entries
+                    .firstOrNull { it.value.isNotEmpty() }
+                if (anyEntry != null) {
+                    val path = runCatching { Path.of(java.net.URI(anyEntry.key)) }.getOrNull()
+                    val first = anyEntry.value.firstOrNull()
+                    if (path != null && first != null) {
+                        jumpToProblem(path, first.start.line, first.start.character)
+                    }
+                }
+            }
+        }
+    }
+
     val frameRef = remember { mutableStateOf<java.awt.Frame?>(null) }
     val handleShortcut: (KeyEvent) -> Boolean = handler@{ event ->
         if (event.type != KeyEventType.KeyDown) return@handler false
@@ -452,6 +543,10 @@ fun main() = application {
                     if (frame != null) saveFile(frame); true
                 }
                 event.key == Key.W -> { closeActiveTab(); true }
+                event.key == Key.M && event.isShiftPressed -> {
+                    problemsOpen = !problemsOpen
+                    true
+                }
                 event.key == Key.F && event.isShiftPressed -> {
                     if (findInFiles) findInFiles = false else openFindInFiles()
                     true
@@ -479,6 +574,9 @@ fun main() = application {
                 }
                 else -> false
             }
+        } else if (event.key == Key.F8) {
+            jumpProblemRelative(!event.isShiftPressed)
+            true
         } else if (event.key == Key.Escape && focusedSearch != null) {
             closeSearch(focusedPane); true
         } else false
@@ -509,6 +607,7 @@ fun main() = application {
                     primary = primaryPane,
                     secondary = secondaryPane,
                     focusedPane = focusedPane,
+                    lsp = currentLsp,
                     onPaneFocus = { side -> focusedPane = side },
                     onEditorChange = { side, v ->
                         mutatePane(side) {
@@ -566,6 +665,14 @@ fun main() = application {
                     splitOrientation = splitOrientation,
                     splitState = splitState,
                     onSplitStateChange = { splitState = it },
+                    problemsOpen = problemsOpen,
+                    onProblemsToggle = { problemsOpen = !problemsOpen },
+                    onProblemsClose = { problemsOpen = false },
+                    onJumpToProblem = jumpToProblem,
+                    problemsHeight = problemsHeight,
+                    onProblemsResizeDelta = { delta ->
+                        problemsHeight = (problemsHeight + delta).coerceIn(80.dp, 600.dp)
+                    },
                 )
                 if (findInFiles) {
                     FindInFilesDialog(
@@ -640,11 +747,30 @@ private fun windowTitle(path: Path?): String {
     return "$name — ${PageIdentity.NAME}"
 }
 
+private fun isKotlinSource(path: Path): Boolean {
+    val name = path.fileName?.toString()?.lowercase() ?: return false
+    return name.endsWith(".kt") || name.endsWith(".kts")
+}
+
+@androidx.compose.runtime.Composable
+private fun lspStatusLineText(lsp: LspController): String? {
+    val status = lsp.status.value
+    val activity = lsp.currentActivity.value
+    return when (status) {
+        LspController.Status.IDLE -> null
+        LspController.Status.STARTING -> if (activity.isNotBlank()) "LSP · $activity" else "LSP · 시작 중…"
+        LspController.Status.READY -> if (activity.isNotBlank()) "LSP · $activity" else null
+        LspController.Status.MISSING -> "LSP · kotlin-language-server 누락"
+        LspController.Status.FAILED -> "LSP · 시작 실패"
+    }
+}
+
 @Composable
 private fun Shell(
     primary: EditorPaneState,
     secondary: EditorPaneState,
     focusedPane: PaneSide,
+    lsp: LspController,
     onPaneFocus: (PaneSide) -> Unit,
     onEditorChange: (PaneSide, TextFieldValue) -> Unit,
     onActivateTab: (PaneSide, Int) -> Unit,
@@ -670,11 +796,17 @@ private fun Shell(
     splitOrientation: SplitOrientation,
     splitState: SplitPaneState,
     onSplitStateChange: (SplitPaneState) -> Unit,
+    problemsOpen: Boolean,
+    onProblemsToggle: () -> Unit,
+    onProblemsClose: () -> Unit,
+    onJumpToProblem: (Path, Int, Int) -> Unit,
+    problemsHeight: Dp,
+    onProblemsResizeDelta: (Dp) -> Unit,
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
     Column(modifier = Modifier.fillMaxSize()) {
         TitleBar(path = paneFor(focusedPane, primary, secondary).book.active?.path)
-        Row(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
             FileTreePanel(
                 root = rootDir,
                 expanded = expanded,
@@ -697,6 +829,7 @@ private fun Shell(
                             PaneRegion(
                                 pane = primary,
                                 side = PaneSide.PRIMARY,
+                                lsp = lsp,
                                 isFocused = focusedPane == PaneSide.PRIMARY,
                                 onPaneFocus = onPaneFocus,
                                 onEditorChange = onEditorChange,
@@ -715,6 +848,7 @@ private fun Shell(
                                 onWindowShortcut = onWindowShortcut,
                                 onTabDragStart = { dragSourcePane = PaneSide.PRIMARY },
                                 onTabDragEnd = { dragSourcePane = null },
+                                onProblemsToggle = onProblemsToggle,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -722,6 +856,7 @@ private fun Shell(
                             PaneRegion(
                                 pane = secondary,
                                 side = PaneSide.SECONDARY,
+                                lsp = lsp,
                                 isFocused = focusedPane == PaneSide.SECONDARY,
                                 onPaneFocus = onPaneFocus,
                                 onEditorChange = onEditorChange,
@@ -740,6 +875,7 @@ private fun Shell(
                                 onWindowShortcut = onWindowShortcut,
                                 onTabDragStart = { dragSourcePane = PaneSide.SECONDARY },
                                 onTabDragEnd = { dragSourcePane = null },
+                                onProblemsToggle = onProblemsToggle,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -748,6 +884,7 @@ private fun Shell(
                     PaneRegion(
                         pane = primary,
                         side = PaneSide.PRIMARY,
+                        lsp = lsp,
                         isFocused = true,
                         onPaneFocus = onPaneFocus,
                         onEditorChange = onEditorChange,
@@ -764,10 +901,20 @@ private fun Shell(
                         onReplaceAll = onReplaceAll,
                         onSearchClose = onSearchClose,
                         onWindowShortcut = onWindowShortcut,
+                        onProblemsToggle = onProblemsToggle,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
+        }
+        if (problemsOpen) {
+            ProblemsPanel(
+                diagnostics = lsp.diagnosticsByUri,
+                onJump = onJumpToProblem,
+                onClose = onProblemsClose,
+                height = problemsHeight,
+                onResizeDelta = onProblemsResizeDelta,
+            )
         }
     }
 }
@@ -779,6 +926,7 @@ private fun paneFor(side: PaneSide, primary: EditorPaneState, secondary: EditorP
 private fun PaneRegion(
     pane: EditorPaneState,
     side: PaneSide,
+    lsp: LspController,
     isFocused: Boolean,
     onPaneFocus: (PaneSide) -> Unit,
     onEditorChange: (PaneSide, TextFieldValue) -> Unit,
@@ -797,6 +945,7 @@ private fun PaneRegion(
     onWindowShortcut: (KeyEvent) -> Boolean,
     onTabDragStart: () -> Unit = {},
     onTabDragEnd: () -> Unit = {},
+    onProblemsToggle: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val active = pane.book.active
@@ -852,23 +1001,32 @@ private fun PaneRegion(
                 onWindowShortcut = onWindowShortcut,
                 modifier = Modifier.fillMaxWidth().weight(1f),
             )
-            else -> EditorPanel(
-                value = pane.editorValue,
-                onValueChange = { v -> onEditorChange(side, v) },
-                search = pane.search,
-                onQueryChange = { q -> onQueryChange(side, q) },
-                onReplaceChange = { v -> onReplaceChange(side, v) },
-                onToggleCase = { onToggleCase(side) },
-                onSearchNext = { onSearchNext(side) },
-                onSearchPrev = { onSearchPrev(side) },
-                onReplace = { onReplace(side) },
-                onReplaceAll = { onReplaceAll(side) },
-                onSearchClose = { onSearchClose(side) },
-                onWindowShortcut = onWindowShortcut,
-                lexer = activeLexer,
-                activePath = active?.path,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
+            else -> {
+                val activeDiagnostics = active?.path?.let { lsp.diagnosticsFor(it) }.orEmpty()
+                val lspStatusText = lspStatusLineText(lsp)
+                val lspStartedAtMs = lsp.currentActivityStartedAtMs.value
+                EditorPanel(
+                    value = pane.editorValue,
+                    onValueChange = { v -> onEditorChange(side, v) },
+                    search = pane.search,
+                    onQueryChange = { q -> onQueryChange(side, q) },
+                    onReplaceChange = { v -> onReplaceChange(side, v) },
+                    onToggleCase = { onToggleCase(side) },
+                    onSearchNext = { onSearchNext(side) },
+                    onSearchPrev = { onSearchPrev(side) },
+                    onReplace = { onReplace(side) },
+                    onReplaceAll = { onReplaceAll(side) },
+                    onSearchClose = { onSearchClose(side) },
+                    onWindowShortcut = onWindowShortcut,
+                    lexer = activeLexer,
+                    activePath = active?.path,
+                    diagnostics = activeDiagnostics,
+                    lspStatusText = lspStatusText,
+                    lspStartedAtMs = lspStartedAtMs,
+                    onProblemsToggle = onProblemsToggle,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            }
         }
     }
 }
