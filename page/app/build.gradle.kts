@@ -33,3 +33,9 @@ tasks.register<JavaExec>("runCodeEditorDemo") {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("page.app.CodeEditorDemoKt")
 }
+
+tasks.withType<JavaExec>().configureEach {
+    System.getenv("PAGE_EDITOR_TREESITTER")?.takeIf { it.isNotBlank() }?.let {
+        systemProperty("page.editor.treesitter", it)
+    }
+}
