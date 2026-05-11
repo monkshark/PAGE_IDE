@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
@@ -67,9 +69,16 @@ import page.editor.TextEdit
 import page.editor.Token
 import page.editor.TokenKind
 import java.nio.file.Path
+import java.util.concurrent.CompletableFuture
+import kotlinx.coroutines.launch
+import page.lsp.CompletionItem as LspCompletionItem
+import page.lsp.CompletionItemKind as LspCompletionItemKind
+import page.lsp.CompletionList
+import page.lsp.SnippetExpander
 import page.lsp.Diagnostic
 import page.lsp.DiagnosticSeverity
 import page.ui.CodeEditor
+import page.ui.CompletionDisplay
 import page.ui.EditorDecoration
 import page.ui.EditorFontFamily
 import page.ui.GlassDarkSyntax
@@ -93,8 +102,9 @@ fun EditorPanel(
     activePath: Path?,
     diagnostics: List<Diagnostic> = emptyList(),
     lspStatusText: String? = null,
-    lspStartedAtMs: Long = 0L,
+    lspActivities: List<LspController.Activity> = emptyList(),
     onProblemsToggle: (() -> Unit)? = null,
+    onRequestCompletion: ((line: Int, character: Int, triggerCharacter: String?) -> CompletableFuture<CompletionList>)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isMarkdown = remember(activePath) {
@@ -125,7 +135,9 @@ fun EditorPanel(
     val errorColor = androidx.compose.ui.graphics.Color(0xFFE5484D)
     val warningColor = androidx.compose.ui.graphics.Color(0xFFE5C03A)
     val infoColor = MaterialTheme.colorScheme.primary
-    val decorations = remember(value.text, diagnostics) {
+    val tabstopActiveColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+    val tabstopPendingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
+    val diagnosticDecorations = remember(value.text, diagnostics) {
         diagnostics.mapNotNull { d ->
             val startOff = lineColToOffset(value.text, d.start.line, d.start.character)
             val endOff = lineColToOffset(value.text, d.end.line, d.end.character)
@@ -248,6 +260,262 @@ fun EditorPanel(
         else foldedRegions + region
     })
 
+    val completionScope = rememberCoroutineScope()
+    var completionItems by remember(activePath) { mutableStateOf<List<LspCompletionItem>>(emptyList()) }
+    var completionSelectedIndex by remember(activePath) { mutableStateOf(0) }
+    var completionTriggerOffset by remember(activePath) { mutableStateOf(-1) }
+    var completionRequestToken by remember(activePath) { mutableStateOf(0) }
+    var lastSeenText by remember(activePath) { mutableStateOf(value.text) }
+    var activeTabstops by remember(activePath) { mutableStateOf<List<page.lsp.SnippetTabstop>>(emptyList()) }
+    var activeTabstopIndex by remember(activePath) { mutableStateOf(0) }
+    var activeTabstopBase by remember(activePath) { mutableStateOf(0) }
+    var activeTabstopBaseTextLen by remember(activePath) { mutableStateOf(0) }
+
+    val completionPrefix = run {
+        val trig = completionTriggerOffset
+        val caret = value.selection.end
+        if (trig < 0 || caret < trig || caret > value.text.length) ""
+        else value.text.substring(trig, caret)
+    }
+    val filteredItems = remember(completionItems, completionPrefix) {
+        if (completionPrefix.isEmpty()) completionItems
+        else completionItems.filter { item ->
+            val key = item.filterText.takeIf { it.isNotBlank() } ?: item.label
+            key.startsWith(completionPrefix, ignoreCase = true)
+        }
+    }
+    LaunchedEffect(filteredItems.size) {
+        if (completionSelectedIndex >= filteredItems.size) completionSelectedIndex = 0
+    }
+
+    val clearTabstops: () -> Unit = {
+        activeTabstops = emptyList()
+        activeTabstopIndex = 0
+        activeTabstopBase = 0
+        activeTabstopBaseTextLen = 0
+    }
+
+    val closeCompletion: () -> Unit = {
+        completionItems = emptyList()
+        completionSelectedIndex = 0
+        completionTriggerOffset = -1
+    }
+
+    val triggerCompletion: (Int, Int, String?) -> Unit = lambda@{ triggerOffset, requestOffset, triggerChar ->
+        val cb = onRequestCompletion ?: return@lambda
+        if (activePath == null) return@lambda
+        val req = requestOffset.coerceIn(0, value.text.length)
+        val pos = TextBuffer(value.text).lineColOf(req)
+        completionTriggerOffset = triggerOffset.coerceIn(0, value.text.length)
+        completionItems = emptyList()
+        completionSelectedIndex = 0
+        completionRequestToken += 1
+        val token = completionRequestToken
+        completionScope.launch {
+            if (triggerChar != null) delay(80)
+            if (token != completionRequestToken) return@launch
+            cb(pos.line, pos.col, triggerChar).whenComplete { list, throwable ->
+                if (throwable != null || list == null) return@whenComplete
+                completionScope.launch {
+                    if (token == completionRequestToken) {
+                        completionItems = list.items
+                        completionSelectedIndex = 0
+                    }
+                }
+            }
+        }
+    }
+
+    val refreshCompletion: () -> Unit = lambda@{
+        val cb = onRequestCompletion ?: return@lambda
+        if (activePath == null) return@lambda
+        if (completionTriggerOffset < 0) return@lambda
+        val caret = value.selection.end.coerceIn(0, value.text.length)
+        val pos = TextBuffer(value.text).lineColOf(caret)
+        completionRequestToken += 1
+        val token = completionRequestToken
+        completionScope.launch {
+            delay(80)
+            if (token != completionRequestToken) return@launch
+            cb(pos.line, pos.col, null).whenComplete { list, throwable ->
+                if (throwable != null || list == null) return@whenComplete
+                completionScope.launch {
+                    if (token == completionRequestToken) {
+                        completionItems = list.items
+                        if (completionSelectedIndex >= list.items.size) completionSelectedIndex = 0
+                    }
+                }
+            }
+        }
+    }
+
+    val applySelected: () -> Unit = lambda@{
+        val item = filteredItems.getOrNull(completionSelectedIndex)
+        if (item == null) {
+            closeCompletion()
+            return@lambda
+        }
+        val text = value.text
+        val caret = value.selection.end.coerceIn(0, text.length)
+        val edit = item.edit
+        val replaceStart: Int
+        val replaceEnd: Int
+        if (edit != null) {
+            val s = lineColToOffset(text, edit.startLine, edit.startCharacter)
+            val e = lineColToOffset(text, edit.endLine, edit.endCharacter)
+            if (s < 0 || e < 0 || s > e) {
+                replaceStart = completionTriggerOffset.coerceIn(0, caret)
+                replaceEnd = caret
+            } else {
+                replaceStart = s
+                replaceEnd = maxOf(e, caret)
+            }
+        } else {
+            replaceStart = completionTriggerOffset.coerceIn(0, caret)
+            replaceEnd = caret
+        }
+        val rawInsert = item.insertText
+        val expanded = if (item.isSnippet) SnippetExpander.expand(rawInsert)
+        else page.lsp.ExpandedSnippet(rawInsert, rawInsert.length)
+        val addEdits = item.additionalEdits
+            .map { ed ->
+                val s = lineColToOffset(text, ed.startLine, ed.startCharacter)
+                val e = lineColToOffset(text, ed.endLine, ed.endCharacter)
+                Triple(s, e, ed.newText)
+            }
+            .filter { (s, e, _) ->
+                s in 0..text.length && e in s..text.length && (e <= replaceStart || s >= replaceEnd)
+            }
+        val allEdits = (addEdits + Triple(replaceStart, replaceEnd, expanded.text))
+            .sortedByDescending { it.first }
+        var working = text
+        for ((s, e, t) in allEdits) {
+            working = working.substring(0, s) + t + working.substring(e)
+        }
+        val newText = working
+        val preShift = addEdits
+            .filter { (s, _, _) -> s < replaceStart }
+            .sumOf { (s, e, t) -> t.length - (e - s) }
+        val caretBase = replaceStart + preShift
+        val firstStop = expanded.tabstops.firstOrNull()
+        val newSel = if (firstStop != null) {
+            TextRange(caretBase + firstStop.start, caretBase + firstStop.end)
+        } else {
+            TextRange(caretBase + expanded.finalCaret)
+        }
+        onValueChange(value.copy(text = newText, selection = newSel))
+        if (expanded.tabstops.size >= 2) {
+            activeTabstops = expanded.tabstops
+            activeTabstopIndex = 0
+            activeTabstopBase = replaceStart
+            activeTabstopBaseTextLen = newText.length
+        } else {
+            clearTabstops()
+        }
+        closeCompletion()
+    }
+
+    val advanceTabstop: () -> Boolean = lambda@{
+        val stops = activeTabstops
+        if (stops.isEmpty()) return@lambda false
+        val nextIdx = activeTabstopIndex + 1
+        if (nextIdx >= stops.size) {
+            clearTabstops()
+            return@lambda false
+        }
+        val stop = stops[nextIdx]
+        val base = activeTabstopBase
+        val textLen = value.text.length
+        val delta = textLen - activeTabstopBaseTextLen
+        val from = (base + stop.start + delta).coerceIn(0, textLen)
+        val to = (base + stop.end + delta).coerceIn(from, textLen)
+        activeTabstopIndex = nextIdx
+        onValueChange(value.copy(selection = TextRange(from, to)))
+        true
+    }
+
+    LaunchedEffect(value.text, value.selection.end) {
+        val newText = value.text
+        val newCaret = value.selection.end
+        val oldText = lastSeenText
+        lastSeenText = newText
+        val shrink = oldText.length - newText.length
+        if (activeTabstops.isNotEmpty() && shrink >= 2) {
+            clearTabstops()
+        }
+        val isInsertOne = newText.length == oldText.length + 1 && newCaret > 0
+        var didTrigger = false
+        if (isInsertOne) {
+            val inserted = newText[newCaret - 1]
+            val isWordChar = inserted.isLetter() || inserted == '_'
+            val prevIsBoundary = newCaret < 2 ||
+                !(newText[newCaret - 2].isLetterOrDigit() || newText[newCaret - 2] == '_')
+            when {
+                inserted == '.' -> { triggerCompletion(newCaret, newCaret, "."); didTrigger = true }
+                inserted == ':' -> { triggerCompletion(newCaret, newCaret, null); didTrigger = true }
+                isWordChar && completionTriggerOffset < 0 && prevIsBoundary -> {
+                    triggerCompletion(newCaret - 1, newCaret, null); didTrigger = true
+                }
+            }
+        }
+        if (completionTriggerOffset >= 0 && !didTrigger) {
+            if (newCaret <= completionTriggerOffset || value.selection.start != value.selection.end) {
+                closeCompletion()
+            } else {
+                val typed = newText.substring(completionTriggerOffset, newCaret)
+                val hasNonWord = typed.any { !it.isLetterOrDigit() && it != '_' }
+                if (hasNonWord) {
+                    closeCompletion()
+                } else if (isInsertOne) {
+                    refreshCompletion()
+                }
+            }
+        }
+    }
+
+    val completionDisplay = remember(filteredItems) {
+        filteredItems.map { item ->
+            val displayLabel = sanitizeLabel(item.label)
+                ?: sanitizeLabel(item.filterText)
+                ?: sanitizeLabel(item.insertText)
+                ?: "<unnamed>"
+            CompletionDisplay(
+                label = displayLabel,
+                kindHint = kindHint(item.kind),
+                detail = item.detail?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+
+    val tabstopDecorations: List<EditorDecoration> = if (activeTabstops.isEmpty()) {
+        emptyList()
+    } else {
+        val textLen = value.text.length
+        val delta = textLen - activeTabstopBaseTextLen
+        val caret = value.selection.end
+        val out = mutableListOf<EditorDecoration>()
+        for (i in activeTabstopIndex until activeTabstops.size) {
+            val stop = activeTabstops[i]
+            val isActive = i == activeTabstopIndex
+            val rangeStart: Int
+            val rangeEnd: Int
+            if (isActive) {
+                rangeStart = (activeTabstopBase + stop.start).coerceIn(0, textLen)
+                val typedEnd = (activeTabstopBase + stop.end + delta).coerceIn(rangeStart, textLen)
+                rangeEnd = if (caret in rangeStart..typedEnd) caret else typedEnd
+            } else {
+                rangeStart = (activeTabstopBase + stop.start + delta).coerceIn(0, textLen)
+                rangeEnd = (activeTabstopBase + stop.end + delta).coerceIn(rangeStart, textLen)
+            }
+            val color = if (isActive) tabstopActiveColor else tabstopPendingColor
+            val style = if (isActive) EditorDecoration.Style.TABSTOP_ACTIVE
+                        else EditorDecoration.Style.TABSTOP_PENDING
+            out += EditorDecoration(rangeStart, rangeEnd, color, style)
+        }
+        out
+    }
+    val decorations = diagnosticDecorations + tabstopDecorations
+
     LaunchedEffect(focusGainVersion) {
         if (focusGainVersion > 0) {
             val target = savedScrollOnPress
@@ -345,6 +613,56 @@ fun EditorPanel(
                 },
                 onPreviewKeyEvent = { event ->
                     if (event.type != KeyEventType.KeyDown) return@CodeEditor false
+                    if (filteredItems.isNotEmpty()) {
+                        when (event.key) {
+                            Key.DirectionUp -> {
+                                val n = filteredItems.size
+                                completionSelectedIndex =
+                                    if (completionSelectedIndex - 1 < 0) n - 1
+                                    else completionSelectedIndex - 1
+                                return@CodeEditor true
+                            }
+                            Key.DirectionDown -> {
+                                completionSelectedIndex =
+                                    (completionSelectedIndex + 1) % filteredItems.size
+                                return@CodeEditor true
+                            }
+                            Key.Tab, Key.Enter, Key.NumPadEnter -> {
+                                applySelected()
+                                return@CodeEditor true
+                            }
+                            Key.Escape -> {
+                                closeCompletion()
+                                return@CodeEditor true
+                            }
+                            else -> Unit
+                        }
+                    }
+                    if (event.key == Key.Tab && !event.isShiftPressed && activeTabstops.isNotEmpty()) {
+                        if (advanceTabstop()) return@CodeEditor true
+                    }
+                    if (event.key == Key.Escape && activeTabstops.isNotEmpty()) {
+                        clearTabstops()
+                        return@CodeEditor true
+                    }
+                    if (event.isCtrlPressed && event.key == Key.Spacebar) {
+                        val text = value.text
+                        val caret = value.selection.end.coerceIn(0, text.length)
+                        val wordStart = wordStartAt(text, caret)
+                        triggerCompletion(wordStart, caret, null)
+                        return@CodeEditor true
+                    }
+                    if (
+                        event.key == Key.Tab && !event.isShiftPressed &&
+                        value.selection.collapsed
+                    ) {
+                        val text = value.text
+                        val caret = value.selection.end
+                        if (caret < text.length && text[caret] in CLOSING_PUNCT) {
+                            onValueChange(value.copy(selection = TextRange(caret + 1)))
+                            return@CodeEditor true
+                        }
+                    }
                     if (
                         event.key == Key.Tab && !event.isShiftPressed &&
                         isMarkdown &&
@@ -381,6 +699,9 @@ fun EditorPanel(
                     }
                     "[$severity] ${d.message}"
                 },
+                completionItems = completionDisplay,
+                completionSelectedIndex = completionSelectedIndex,
+                completionAnchorOffset = completionTriggerOffset.takeIf { it >= 0 },
             )
         }
         EditorStatusBar(
@@ -391,17 +712,55 @@ fun EditorPanel(
             errorCount = errorCount,
             warningCount = warningCount,
             lspStatusText = lspStatusText,
-            lspStartedAtMs = lspStartedAtMs,
+            lspActivities = lspActivities,
             onProblemsToggle = onProblemsToggle,
         )
     }
 }
+
+private val CLOSING_PUNCT: Set<Char> = setOf(')', ']', '}', '"', '\'', '`')
 
 private fun severityRank(s: DiagnosticSeverity): Int = when (s) {
     DiagnosticSeverity.ERROR -> 0
     DiagnosticSeverity.WARNING -> 1
     DiagnosticSeverity.INFO -> 2
     DiagnosticSeverity.HINT -> 3
+}
+
+private fun kindHint(kind: LspCompletionItemKind): String = when (kind) {
+    LspCompletionItemKind.METHOD -> "M"
+    LspCompletionItemKind.FUNCTION -> "ƒ"
+    LspCompletionItemKind.CONSTRUCTOR -> "C"
+    LspCompletionItemKind.FIELD -> "f"
+    LspCompletionItemKind.VARIABLE -> "v"
+    LspCompletionItemKind.CLASS -> "C"
+    LspCompletionItemKind.INTERFACE -> "I"
+    LspCompletionItemKind.MODULE -> "m"
+    LspCompletionItemKind.PROPERTY -> "p"
+    LspCompletionItemKind.UNIT -> "u"
+    LspCompletionItemKind.VALUE -> "V"
+    LspCompletionItemKind.ENUM, LspCompletionItemKind.ENUM_MEMBER -> "E"
+    LspCompletionItemKind.KEYWORD -> "K"
+    LspCompletionItemKind.SNIPPET -> "▤"
+    LspCompletionItemKind.CONSTANT -> "c"
+    LspCompletionItemKind.STRUCT -> "S"
+    LspCompletionItemKind.TYPE_PARAMETER -> "T"
+    else -> "•"
+}
+
+private fun sanitizeLabel(s: String?): String? {
+    if (s.isNullOrEmpty()) return null
+    val collapsed = s.replace(Regex("\\s+"), " ").trim()
+    return collapsed.ifEmpty { null }
+}
+
+private fun wordStartAt(text: String, caret: Int): Int {
+    var i = caret.coerceIn(0, text.length)
+    while (i > 0) {
+        val ch = text[i - 1]
+        if (ch.isLetterOrDigit() || ch == '_') i-- else break
+    }
+    return i
 }
 
 private fun lineColToOffset(text: String, line: Int, col: Int): Int {
@@ -519,7 +878,7 @@ private fun EditorStatusBar(
     errorCount: Int = 0,
     warningCount: Int = 0,
     lspStatusText: String? = null,
-    lspStartedAtMs: Long = 0L,
+    lspActivities: List<LspController.Activity> = emptyList(),
     onProblemsToggle: (() -> Unit)? = null,
 ) {
     Surface(
@@ -546,39 +905,109 @@ private fun EditorStatusBar(
                 label = "warnings",
                 onClick = onProblemsToggle,
             )
-            if (!lspStatusText.isNullOrBlank()) {
+            val showLifecycle = !lspStatusText.isNullOrBlank()
+            val showActivities = lspActivities.isNotEmpty()
+            if (showLifecycle || showActivities) {
                 Box(modifier = Modifier.weight(1f))
-                LspStatusItem(text = lspStatusText, startedAtMs = lspStartedAtMs)
+                if (showLifecycle) {
+                    LspLifecycleItem(text = lspStatusText!!)
+                } else {
+                    LspActivitiesItem(activities = lspActivities)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun LspStatusItem(text: String, startedAtMs: Long) {
+private fun LspLifecycleItem(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun LspActivitiesItem(activities: List<LspController.Activity>) {
+    if (activities.isEmpty()) return
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(startedAtMs) {
-        if (startedAtMs <= 0L) return@LaunchedEffect
+    LaunchedEffect(activities.size) {
         while (true) {
             nowMs = System.currentTimeMillis()
             delay(500)
         }
     }
-    val elapsedSec = if (startedAtMs > 0L) ((nowMs - startedAtMs) / 1000L).coerceAtLeast(0L).toInt() else 0
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        androidx.compose.material3.LinearProgressIndicator(
-            modifier = Modifier.width(72.dp).height(3.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-        Text(
-            text = if (elapsedSec > 0) "$text (${elapsedSec}s)" else text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    var expanded by remember { mutableStateOf(false) }
+    val firstLabel = activities.first().label
+    val firstStartedAt = activities.first().startedAtMs
+    val firstElapsed = ((nowMs - firstStartedAt) / 1000L).coerceAtLeast(0L).toInt()
+    val canExpand = activities.size >= 2
+    val rowMod = Modifier.then(
+        if (canExpand) Modifier.clickable { expanded = !expanded } else Modifier,
+    )
+    Box {
+        Row(
+            modifier = rowMod,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.material3.LinearProgressIndicator(
+                modifier = Modifier.width(72.dp).height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            )
+            Text(
+                text = if (firstElapsed > 0) "LSP · $firstLabel (${firstElapsed}s)"
+                else "LSP · $firstLabel",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (canExpand) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        text = "+${activities.size - 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
+                }
+            }
+        }
+        if (canExpand && expanded) {
+            androidx.compose.material3.DropdownMenu(
+                expanded = true,
+                onDismissRequest = { expanded = false },
+            ) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (a in activities) {
+                            val secs = ((nowMs - a.startedAtMs) / 1000L).coerceAtLeast(0L).toInt()
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    modifier = Modifier.width(72.dp).height(3.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                )
+                                Text(
+                                    text = if (secs > 0) "${a.label} (${secs}s)" else a.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

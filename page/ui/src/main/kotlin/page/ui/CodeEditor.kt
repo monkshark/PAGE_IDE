@@ -6,16 +6,23 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -33,6 +41,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -64,8 +73,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
 import kotlinx.coroutines.delay
 import page.editor.EditHistory
 import page.editor.EditSnapshot
@@ -88,6 +100,9 @@ fun CodeEditor(
     onPointerPress: ((transformedOffset: Int) -> Boolean)? = null,
     onHover: ((originalOffset: Int?) -> Unit)? = null,
     hoverText: String? = null,
+    completionItems: List<CompletionDisplay> = emptyList(),
+    completionSelectedIndex: Int = 0,
+    completionAnchorOffset: Int? = null,
     manageHistory: Boolean = true,
     viewportHeightProvider: (() -> Float)? = null,
 ) {
@@ -411,6 +426,43 @@ fun CodeEditor(
                     drawPath(path = path, color = selectionColor)
                 }
             }
+            if (decorations.isNotEmpty()) {
+                val pendingStrokePx = with(density) { 1.2.dp.toPx() }
+                for (deco in decorations) {
+                    val isActive = deco.style == EditorDecoration.Style.TABSTOP_ACTIVE
+                    val isPending = deco.style == EditorDecoration.Style.TABSTOP_PENDING
+                    if (!isActive && !isPending) continue
+                    val transStart = latestMapping.originalToTransformed(
+                        deco.startOffset.coerceIn(0, value.text.length),
+                    )
+                    val transEnd = latestMapping.originalToTransformed(
+                        deco.endOffset.coerceIn(0, value.text.length),
+                    )
+                    if (transStart < 0 || transEnd > displayText.length) continue
+                    val rangeStart = layout.getCursorRect(transStart)
+                    val rangeEnd = layout.getCursorRect(transEnd)
+                    val left = rangeStart.left
+                    val right = if (transStart == transEnd) left + with(density) { 6.dp.toPx() }
+                    else rangeEnd.left
+                    val topLeft = Offset(left - 1f, rangeStart.top)
+                    val size = Size(right - left + 2f, rangeStart.bottom - rangeStart.top)
+                    if (isActive) {
+                        drawRect(color = deco.color, topLeft = topLeft, size = size)
+                    } else {
+                        drawRect(
+                            color = deco.color.copy(alpha = deco.color.alpha * 0.6f),
+                            topLeft = topLeft,
+                            size = size,
+                        )
+                        drawRect(
+                            color = deco.color,
+                            topLeft = topLeft,
+                            size = size,
+                            style = Stroke(width = pendingStrokePx),
+                        )
+                    }
+                }
+            }
             drawText(textLayoutResult = layout)
             if (decorations.isNotEmpty()) {
                 val strokePx = with(density) { 1.2.dp.toPx() }
@@ -433,6 +485,8 @@ fun CodeEditor(
                             strokeWidth = strokePx,
                             amplitude = ampPx,
                         )
+                        EditorDecoration.Style.TABSTOP_ACTIVE -> Unit
+                        EditorDecoration.Style.TABSTOP_PENDING -> Unit
                     }
                 }
             }
@@ -546,6 +600,127 @@ fun CodeEditor(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
+                    }
+                }
+            }
+        }
+        if (completionItems.isNotEmpty()) {
+            val anchorOffset = completionAnchorOffset
+                ?.coerceIn(0, value.text.length)
+                ?: value.selection.end.coerceIn(0, value.text.length)
+            val anchorTrans = mapping.originalToTransformed(anchorOffset)
+            val anchorRect = if (anchorTrans in 0..displayText.length) {
+                layout.getCursorRect(anchorTrans)
+            } else {
+                caretRectProvider()
+            }
+            val padStartPx = with(density) {
+                contentPadding.calculateStartPadding(LayoutDirection.Ltr).toPx()
+            }
+            val padTopPx = with(density) { contentPadding.calculateTopPadding().toPx() }
+            CompletionPopup(
+                anchor = Offset(anchorRect.left + padStartPx, anchorRect.bottom + padTopPx),
+                items = completionItems,
+                selectedIndex = completionSelectedIndex.coerceIn(0, completionItems.size - 1),
+                textStyle = textStyle,
+            )
+        }
+    }
+}
+
+data class CompletionDisplay(
+    val label: String,
+    val kindHint: String,
+    val detail: String? = null,
+)
+
+@Composable
+private fun CompletionPopup(
+    anchor: Offset,
+    items: List<CompletionDisplay>,
+    selectedIndex: Int,
+    textStyle: TextStyle,
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(selectedIndex, items.size) {
+        if (items.isEmpty()) return@LaunchedEffect
+        val target = selectedIndex.coerceIn(0, items.size - 1)
+        val visible = listState.layoutInfo.visibleItemsInfo
+        val firstVisible = visible.firstOrNull()?.index ?: -1
+        val lastVisible = visible.lastOrNull()?.index ?: -1
+        if (firstVisible < 0 || target < firstVisible || target > lastVisible) {
+            listState.scrollToItem(target)
+        }
+    }
+    Popup(
+        offset = IntOffset(
+            x = anchor.x.toInt(),
+            y = anchor.y.toInt() + 4,
+        ),
+        focusable = false,
+    ) {
+        Surface(
+            modifier = Modifier.requiredWidth(360.dp),
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shadowElevation = 6.dp,
+            tonalElevation = 4.dp,
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .padding(vertical = 4.dp)
+                    .requiredHeight(minOf(items.size, 10).times(28).dp),
+            ) {
+                itemsIndexed(items) { idx, item ->
+                    val selected = idx == selectedIndex
+                    val rowBg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                    else Color.Transparent
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(rowBg)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = item.kindHint,
+                            style = textStyle.copy(
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                            ),
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.requiredWidth(20.dp),
+                        )
+                        Text(
+                            text = item.label,
+                            style = textStyle.copy(
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 6.dp),
+                        )
+                        if (!item.detail.isNullOrBlank()) {
+                            Text(
+                                text = item.detail,
+                                style = textStyle.copy(
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .padding(start = 12.dp)
+                                    .widthIn(max = 140.dp),
+                            )
+                        }
                     }
                 }
             }

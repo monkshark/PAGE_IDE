@@ -753,16 +753,10 @@ private fun isKotlinSource(path: Path): Boolean {
 }
 
 @androidx.compose.runtime.Composable
-private fun lspStatusLineText(lsp: LspController): String? {
-    val status = lsp.status.value
-    val activity = lsp.currentActivity.value
-    return when (status) {
-        LspController.Status.IDLE -> null
-        LspController.Status.STARTING -> if (activity.isNotBlank()) "LSP · $activity" else "LSP · 시작 중…"
-        LspController.Status.READY -> if (activity.isNotBlank()) "LSP · $activity" else null
-        LspController.Status.MISSING -> "LSP · kotlin-language-server 누락"
-        LspController.Status.FAILED -> "LSP · 시작 실패"
-    }
+private fun lspStatusLineText(lsp: LspController): String? = when (lsp.status.value) {
+    LspController.Status.MISSING -> "LSP · kotlin-language-server 누락"
+    LspController.Status.FAILED -> "LSP · 시작 실패"
+    else -> null
 }
 
 @Composable
@@ -1004,7 +998,9 @@ private fun PaneRegion(
             else -> {
                 val activeDiagnostics = active?.path?.let { lsp.diagnosticsFor(it) }.orEmpty()
                 val lspStatusText = lspStatusLineText(lsp)
-                val lspStartedAtMs = lsp.currentActivityStartedAtMs.value
+                val lspActivities = lsp.activities.values
+                    .sortedBy { it.startedAtMs }
+                    .toList()
                 EditorPanel(
                     value = pane.editorValue,
                     onValueChange = { v -> onEditorChange(side, v) },
@@ -1022,8 +1018,11 @@ private fun PaneRegion(
                     activePath = active?.path,
                     diagnostics = activeDiagnostics,
                     lspStatusText = lspStatusText,
-                    lspStartedAtMs = lspStartedAtMs,
+                    lspActivities = lspActivities,
                     onProblemsToggle = onProblemsToggle,
+                    onRequestCompletion = active?.path?.let { p ->
+                        { line, ch, trig -> lsp.completion(p, pane.editorValue.text, line, ch, trig) }
+                    },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }
