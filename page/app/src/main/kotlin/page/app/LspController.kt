@@ -33,6 +33,7 @@ import page.lsp.KotlinLsp
 import page.lsp.LspClient
 import page.lsp.LspState
 import page.lsp.LspWorkspace
+import page.lsp.SignatureHelpInfo
 import page.lsp.WorkspaceSymbolEntry
 import page.lsp.parseKlsActivity
 import java.nio.file.Path
@@ -537,6 +538,36 @@ class LspController(
                         println("  [$i] ${t.uri} @(${t.startLine},${t.startCharacter})..(${t.endLine},${t.endCharacter})")
                     }
                     if (list.size > 5) println("  … (+${list.size - 5} more)")
+                }
+            }
+    }
+
+    fun signatureHelp(
+        path: Path,
+        text: String,
+        line: Int,
+        character: Int,
+        triggerCharacter: String? = null,
+        isRetrigger: Boolean = false,
+    ): CompletableFuture<SignatureHelpInfo?> {
+        if (status.value != Status.READY) return CompletableFuture.completedFuture(null)
+        val ws = workspace ?: return CompletableFuture.completedFuture(null)
+        val uri = path.toUri().toString()
+        if (!ws.isOpen(uri)) return CompletableFuture.completedFuture(null)
+        pendingChanges.remove(uri)?.cancel()
+        runCatching { ws.didChange(uri, text) }
+        val tStart = System.nanoTime()
+        val trig = triggerCharacter ?: if (isRetrigger) "<retrigger>" else "<invoke>"
+        return ws.signatureHelp(uri, line, character, triggerCharacter, isRetrigger)
+            .whenComplete { info, err ->
+                val ms = (System.nanoTime() - tStart) / 1_000_000
+                if (err != null) {
+                    println("[lsp] signatureHelp ✗ $uri @($line,$character) trigger=$trig: ${err.message} [${ms}ms]")
+                } else if (info == null || info.isEmpty) {
+                    println("[lsp] signatureHelp — $uri @($line,$character) trigger=$trig [${ms}ms] (empty)")
+                } else {
+                    val sig = info.active?.label?.take(120) ?: "?"
+                    println("[lsp] signatureHelp ✓ $uri @($line,$character) trigger=$trig — ${info.signatures.size} sig(s), active=${info.activeSignature}, param=${info.effectiveActiveParameter()} [${ms}ms] '$sig'")
                 }
             }
     }

@@ -166,4 +166,67 @@ class KotlinLexerTest {
     fun `empty input produces empty tokens`() {
         assertEquals(emptyList(), tokens(""))
     }
+
+    @Test
+    fun `interpolated variable splits string into STRING+IDENTIFIER+STRING`() {
+        val src = "\"hi \$name!\""
+        val parts = kindsAndText(src)
+        assertEquals(
+            listOf(
+                TokenKind.STRING to "\"hi ",
+                TokenKind.IDENTIFIER to "\$name",
+                TokenKind.STRING to "!\"",
+            ),
+            parts,
+        )
+    }
+
+    @Test
+    fun `interpolated braced expression is one IDENTIFIER token`() {
+        val src = "\"sum=\${a + b}!\""
+        val parts = kindsAndText(src)
+        assertEquals(
+            listOf(
+                TokenKind.STRING to "\"sum=",
+                TokenKind.IDENTIFIER to "\${a + b}",
+                TokenKind.STRING to "!\"",
+            ),
+            parts,
+        )
+    }
+
+    @Test
+    fun `nested string inside braced interpolation is handled`() {
+        val src = "\"v=\${wrap(\"x\")}\""
+        val ident = tokens(src).single { it.kind == TokenKind.IDENTIFIER }
+        assertEquals("\${wrap(\"x\")}", src.substring(ident.range.first, ident.range.last + 1))
+    }
+
+    @Test
+    fun `dollar without identifier remains plain string`() {
+        val src = "\"price: \$ only\""
+        val parts = kindsAndText(src)
+        assertEquals(listOf(TokenKind.STRING to "\"price: \$ only\""), parts)
+    }
+
+    @Test
+    fun `escaped dollar is plain string`() {
+        val src = "\"raw \\\$name\""
+        val identifiers = tokens(src).filter { it.kind == TokenKind.IDENTIFIER }
+        assertEquals(emptyList(), identifiers)
+    }
+
+    @Test
+    fun `triple-quoted interpolation splits tokens`() {
+        val src = "\"\"\"a\$x b\"\"\""
+        val parts = kindsAndText(src)
+        assertEquals(
+            listOf(
+                TokenKind.STRING to "\"\"\"a",
+                TokenKind.IDENTIFIER to "\$x",
+                TokenKind.STRING to " b\"\"\"",
+            ),
+            parts,
+        )
+    }
 }

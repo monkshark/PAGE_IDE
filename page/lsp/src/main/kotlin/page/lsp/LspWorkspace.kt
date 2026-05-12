@@ -9,6 +9,9 @@ import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.SignatureHelpContext
+import org.eclipse.lsp4j.SignatureHelpParams
+import org.eclipse.lsp4j.SignatureHelpTriggerKind
 import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
@@ -100,6 +103,26 @@ class LspWorkspace(private val client: LspClient) {
         if (!openDocs.containsKey(uri)) return CompletableFuture.completedFuture(emptyList())
         val params = DefinitionParams(TextDocumentIdentifier(uri), Position(line, character))
         return client.server().textDocumentService.definition(params).thenApply { DefinitionTarget.fromLsp(it) }
+    }
+
+    fun signatureHelp(
+        uri: String,
+        line: Int,
+        character: Int,
+        triggerCharacter: String? = null,
+        isRetrigger: Boolean = false,
+    ): CompletableFuture<SignatureHelpInfo?> {
+        if (!openDocs.containsKey(uri)) return CompletableFuture.completedFuture(null)
+        val params = SignatureHelpParams(TextDocumentIdentifier(uri), Position(line, character))
+        val triggerKind = when {
+            triggerCharacter != null -> SignatureHelpTriggerKind.TriggerCharacter
+            isRetrigger -> SignatureHelpTriggerKind.ContentChange
+            else -> SignatureHelpTriggerKind.Invoked
+        }
+        val ctx = SignatureHelpContext(triggerKind, isRetrigger)
+        if (triggerCharacter != null) ctx.triggerCharacter = triggerCharacter
+        params.context = ctx
+        return client.server().textDocumentService.signatureHelp(params).thenApply { SignatureHelpInfo.fromLsp(it) }
     }
 
     @Suppress("DEPRECATION")

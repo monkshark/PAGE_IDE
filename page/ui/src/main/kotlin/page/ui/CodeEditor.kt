@@ -114,6 +114,8 @@ fun CodeEditor(
     completionItems: List<CompletionDisplay> = emptyList(),
     completionSelectedIndex: Int = 0,
     completionAnchorOffset: Int? = null,
+    signatureHelp: SignatureHelpDisplay? = null,
+    signatureHelpAnchorOffset: Int? = null,
     manageHistory: Boolean = true,
     viewportHeightProvider: (() -> Float)? = null,
 ) {
@@ -622,6 +624,31 @@ fun CodeEditor(
                 textStyle = textStyle,
             )
         }
+        val sigSnapshot = signatureHelp
+        if (sigSnapshot != null && completionItems.isEmpty()) {
+            val anchorOffset = signatureHelpAnchorOffset
+                ?.coerceIn(0, value.text.length)
+                ?: value.selection.end.coerceIn(0, value.text.length)
+            val anchorTrans = mapping.originalToTransformed(anchorOffset)
+            val anchorRect = if (anchorTrans in 0..displayText.length) {
+                layout.getCursorRect(anchorTrans)
+            } else {
+                caretRectProvider()
+            }
+            val padStartPx = with(density) {
+                contentPadding.calculateStartPadding(LayoutDirection.Ltr).toPx()
+            }
+            val padTopPx = with(density) { contentPadding.calculateTopPadding().toPx() }
+            val lineHeightPx = with(density) { textStyle.lineHeight.toPx() }
+            SignatureHelpPopup(
+                anchor = Offset(
+                    anchorRect.left + padStartPx,
+                    anchorRect.top + padTopPx - lineHeightPx,
+                ),
+                display = sigSnapshot,
+                textStyle = textStyle,
+            )
+        }
     }
 }
 
@@ -630,6 +657,117 @@ data class CompletionDisplay(
     val kindHint: String,
     val detail: String? = null,
 )
+
+data class SignatureHelpDisplay(
+    val label: String,
+    val activeParamRange: IntRange?,
+    val documentation: String?,
+    val activeParamDoc: String?,
+    val signatureIndex: Int,
+    val signatureCount: Int,
+)
+
+@Composable
+private fun SignatureHelpPopup(
+    anchor: Offset,
+    display: SignatureHelpDisplay,
+    textStyle: TextStyle,
+) {
+    val label = display.label
+    val activeRange = display.activeParamRange
+    val annotated = buildAnnotatedString {
+        if (activeRange == null || activeRange.first >= label.length) {
+            append(label)
+        } else {
+            val s = activeRange.first.coerceIn(0, label.length)
+            val e = (activeRange.last + 1).coerceIn(s, label.length)
+            if (s > 0) append(label, 0, s)
+            withStyle(
+                SpanStyle(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                ),
+            ) { append(label, s, e) }
+            if (e < label.length) append(label, e, label.length)
+        }
+    }
+    Popup(
+        offset = IntOffset(anchor.x.toInt(), anchor.y.toInt() - 8),
+        focusable = false,
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 560.dp),
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shadowElevation = 6.dp,
+            tonalElevation = 4.dp,
+            shape = RoundedCornerShape(6.dp),
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (display.signatureCount > 1) {
+                        Text(
+                            text = "${display.signatureIndex + 1}/${display.signatureCount}",
+                            style = textStyle.copy(
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines = 1,
+                        )
+                    }
+                    Text(
+                        text = annotated,
+                        style = TextStyle(
+                            fontFamily = EditorFontFamily,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                val paramDoc = display.activeParamDoc?.takeIf { it.isNotBlank() }
+                if (paramDoc != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = paramDoc,
+                            style = textStyle.copy(
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        )
+                    }
+                }
+                val docs = display.documentation?.takeIf { it.isNotBlank() }
+                if (docs != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = docs,
+                            style = textStyle.copy(
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun CompletionPopup(

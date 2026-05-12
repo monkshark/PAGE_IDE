@@ -341,13 +341,21 @@ object CompletionEnhancer {
         return false
     }
 
+    private val enhanceableKinds = setOf(
+        CompletionItemKind.CLASS,
+        CompletionItemKind.CONSTRUCTOR,
+        CompletionItemKind.FUNCTION,
+        CompletionItemKind.METHOD,
+    )
+
     private fun enhanceOne(item: CompletionItem, existingLabels: MutableSet<String>): CompletionItem {
-        if (item.isSnippet) return item
-        if (item.kind != CompletionItemKind.CLASS) return item
+        if (item.kind !in enhanceableKinds) return item
         if (item.detail?.startsWith("(import from ") == true) return item
         val params = extractParams(item) ?: return item
         if (params.isEmpty()) return item
-        val baseName = item.insertText.substringBefore('(').ifBlank { item.label }
+        if (item.isSnippet && countNumberedTabstops(item.insertText) >= params.size) return item
+        val rawBase = item.insertText.substringBefore('(')
+        val baseName = rawBase.ifBlank { item.label.substringBefore('(') }.ifBlank { item.label }
         val snippetBody = params.mapIndexed { i, name -> "\${${i + 1}:$name}" }.joinToString(", ")
         val snippet = "$baseName($snippetBody)\$0"
         val displayLabel = "$baseName(${params.joinToString(", ")})"
@@ -414,5 +422,38 @@ object CompletionEnhancer {
         val colon = part.indexOf(':')
         val raw = if (colon >= 0) part.substring(0, colon).trim() else part.trim()
         return raw.removePrefix("vararg ").removePrefix("val ").removePrefix("var ").trim()
+    }
+
+    private fun countNumberedTabstops(snippet: String): Int {
+        val seen = mutableSetOf<Int>()
+        var i = 0
+        while (i < snippet.length) {
+            val c = snippet[i]
+            if (c == '\\' && i + 1 < snippet.length) { i += 2; continue }
+            if (c == '$' && i + 1 < snippet.length) {
+                val next = snippet[i + 1]
+                if (next.isDigit()) {
+                    var j = i + 1
+                    while (j < snippet.length && snippet[j].isDigit()) j++
+                    val n = snippet.substring(i + 1, j).toIntOrNull() ?: 0
+                    if (n > 0) seen += n
+                    i = j
+                    continue
+                }
+                if (next == '{') {
+                    val end = snippet.indexOf('}', i + 2)
+                    if (end > 0) {
+                        val body = snippet.substring(i + 2, end)
+                        val colon = body.indexOf(':')
+                        val numStr = if (colon >= 0) body.substring(0, colon) else body
+                        numStr.toIntOrNull()?.let { if (it > 0) seen += it }
+                        i = end + 1
+                        continue
+                    }
+                }
+            }
+            i++
+        }
+        return seen.size
     }
 }

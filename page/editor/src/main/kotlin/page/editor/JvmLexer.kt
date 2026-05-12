@@ -3,6 +3,7 @@ package page.editor
 internal abstract class JvmLexer(
     private val keywords: Set<String>,
     private val supportTripleQuoted: Boolean,
+    private val supportInterpolation: Boolean = false,
 ) : SyntaxLexer {
 
     override fun tokenize(text: String): List<Token> {
@@ -33,16 +34,10 @@ internal abstract class JvmLexer(
                     }
                 }
                 supportTripleQuoted && c == '"' && i + 2 < n && text[i + 1] == '"' && text[i + 2] == '"' -> {
-                    val start = i
-                    i += 3
-                    while (i + 2 < n && !(text[i] == '"' && text[i + 1] == '"' && text[i + 2] == '"')) i++
-                    i = (i + 3).coerceAtMost(n)
-                    out += Token(TokenKind.STRING, start until i)
+                    i = emitTripleQuoted(text, i, out)
                 }
                 c == '"' -> {
-                    val start = i
-                    i = scanQuotedString(text, i, '"')
-                    out += Token(TokenKind.STRING, start until i)
+                    i = emitQuotedString(text, i, '"', out)
                 }
                 c == '\'' -> {
                     val start = i
@@ -89,6 +84,105 @@ internal abstract class JvmLexer(
             i++
         }
         return n
+    }
+
+    private fun emitQuotedString(text: String, from: Int, quote: Char, out: MutableList<Token>): Int {
+        if (!supportInterpolation || quote != '"') {
+            val end = scanQuotedString(text, from, quote)
+            out += Token(TokenKind.STRING, from until end)
+            return end
+        }
+        return emitInterpolatedString(text, from, isTriple = false, out)
+    }
+
+    private fun emitTripleQuoted(text: String, from: Int, out: MutableList<Token>): Int {
+        if (!supportInterpolation) {
+            val n = text.length
+            var i = from + 3
+            while (i + 2 < n && !(text[i] == '"' && text[i + 1] == '"' && text[i + 2] == '"')) i++
+            val end = (i + 3).coerceAtMost(n)
+            out += Token(TokenKind.STRING, from until end)
+            return end
+        }
+        return emitInterpolatedString(text, from, isTriple = true, out)
+    }
+
+    private fun emitInterpolatedString(
+        text: String,
+        from: Int,
+        isTriple: Boolean,
+        out: MutableList<Token>,
+    ): Int {
+        val n = text.length
+        val openLen = if (isTriple) 3 else 1
+        var segStart = from
+        var i = from + openLen
+        while (i < n) {
+            val ch = text[i]
+            if (!isTriple && ch == '\\' && i + 1 < n) {
+                i += 2
+                continue
+            }
+            if (!isTriple && ch == '\n') {
+                if (i > segStart) out += Token(TokenKind.STRING, segStart until i)
+                return i
+            }
+            if (isTriple) {
+                if (ch == '"' && i + 2 < n && text[i + 1] == '"' && text[i + 2] == '"') {
+                    val end = (i + 3).coerceAtMost(n)
+                    if (end > segStart) out += Token(TokenKind.STRING, segStart until end)
+                    return end
+                }
+            } else if (ch == '"') {
+                val end = i + 1
+                if (end > segStart) out += Token(TokenKind.STRING, segStart until end)
+                return end
+            }
+            if (ch == '$' && i + 1 < n) {
+                val next = text[i + 1]
+                if (next == '{') {
+                    if (i > segStart) out += Token(TokenKind.STRING, segStart until i)
+                    val exprStart = i
+                    var depth = 1
+                    var j = i + 2
+                    while (j < n && depth > 0) {
+                        val cj = text[j]
+                        when (cj) {
+                            '{' -> depth++
+                            '}' -> depth--
+                            '"' -> {
+                                val strEnd = scanQuotedString(text, j, '"')
+                                j = strEnd
+                                continue
+                            }
+                        }
+                        if (depth == 0) {
+                            j++
+                            break
+                        }
+                        j++
+                    }
+                    val exprEnd = j.coerceAtMost(n)
+                    out += Token(TokenKind.IDENTIFIER, exprStart until exprEnd)
+                    i = exprEnd
+                    segStart = i
+                    continue
+                }
+                if (isIdentStart(next)) {
+                    if (i > segStart) out += Token(TokenKind.STRING, segStart until i)
+                    val identStart = i
+                    var j = i + 2
+                    while (j < n && isIdentPart(text[j])) j++
+                    out += Token(TokenKind.IDENTIFIER, identStart until j)
+                    i = j
+                    segStart = i
+                    continue
+                }
+            }
+            i++
+        }
+        if (i > segStart) out += Token(TokenKind.STRING, segStart until i)
+        return i
     }
 
     private fun scanNumber(text: String, from: Int): Int {
