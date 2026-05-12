@@ -15,6 +15,8 @@ import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.ServerCapabilities
+import org.eclipse.lsp4j.SignatureHelp
+import org.eclipse.lsp4j.SignatureHelpParams
 import org.eclipse.lsp4j.TextDocumentSyncKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageServer
@@ -32,8 +34,10 @@ class FakeLanguageServer : LanguageServer {
     val didCloseCalls = ConcurrentLinkedQueue<DidCloseTextDocumentParams>()
     val hoverCalls = ConcurrentLinkedQueue<HoverParams>()
     val definitionCalls = ConcurrentLinkedQueue<DefinitionParams>()
+    val signatureHelpCalls = ConcurrentLinkedQueue<SignatureHelpParams>()
     @Volatile var hoverResponse: Hover? = null
     @Volatile var definitionResponse: Either<MutableList<out Location>, MutableList<out LocationLink>>? = null
+    @Volatile var signatureHelpResponse: SignatureHelp? = null
     @Volatile var shutdownCalled = false
     @Volatile var exitCalled = false
 
@@ -51,6 +55,10 @@ class FakeLanguageServer : LanguageServer {
         ): CompletableFuture<Either<MutableList<out Location>, MutableList<out LocationLink>>> {
             definitionCalls += params
             return CompletableFuture.completedFuture(definitionResponse)
+        }
+        override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> {
+            signatureHelpCalls += params
+            return CompletableFuture.completedFuture(signatureHelpResponse)
         }
     }
 

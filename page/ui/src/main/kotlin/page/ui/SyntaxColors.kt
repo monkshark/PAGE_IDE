@@ -9,6 +9,7 @@ data class SyntaxPalette(
     val comment: Color,
     val annotation: Color,
     val type: Color,
+    val identifier: Color,
 )
 
 val GlassDarkSyntax = SyntaxPalette(
@@ -18,4 +19,5 @@ val GlassDarkSyntax = SyntaxPalette(
     comment = Color(0xFF8B949E),
     annotation = Color(0xFFD2A8FF),
     type = Color(0xFFFFA657),
+    identifier = Color(0xFFFFD580),
 )

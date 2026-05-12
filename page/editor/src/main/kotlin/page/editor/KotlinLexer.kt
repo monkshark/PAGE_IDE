@@ -5,6 +5,7 @@ object KotlinLexer : SyntaxLexer by KotlinLexerImpl
 private object KotlinLexerImpl : JvmLexer(
     keywords = KOTLIN_KEYWORDS,
     supportTripleQuoted = true,
+    supportInterpolation = true,
 )
 
 private val KOTLIN_KEYWORDS: Set<String> = setOf(

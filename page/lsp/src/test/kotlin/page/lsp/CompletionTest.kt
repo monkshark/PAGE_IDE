@@ -158,11 +158,83 @@ class CompletionTest {
     }
 
     @Test
-    fun `enhancer skips non-class items`() {
+    fun `enhancer skips non-enhanceable kinds`() {
+        val item = CompletionItem(
+            label = "size",
+            kind = CompletionItemKind.FIELD,
+            detail = "val size: Int",
+            insertText = "size",
+            isSnippet = false,
+        )
+        val r = CompletionEnhancer.enhance(listOf(item))
+        assertEquals(item, r[0])
+    }
+
+    @Test
+    fun `enhancer synthesizes snippet for FUNCTION with params`() {
+        val item = CompletionItem(
+            label = "addInts",
+            kind = CompletionItemKind.FUNCTION,
+            detail = "fun addInts(x: Int, y: Int): Int",
+            insertText = "addInts",
+            isSnippet = false,
+        )
+        val out = CompletionEnhancer.enhance(listOf(item))[0]
+        assertTrue(out.isSnippet)
+        assertEquals("addInts(x, y)", out.label)
+        assertEquals("addInts(\${1:x}, \${2:y})\$0", out.insertText)
+    }
+
+    @Test
+    fun `enhancer synthesizes snippet for METHOD with params`() {
+        val item = CompletionItem(
+            label = "repeat",
+            kind = CompletionItemKind.METHOD,
+            detail = "fun String.repeat(n: Int): String",
+            insertText = "repeat",
+            isSnippet = false,
+        )
+        val out = CompletionEnhancer.enhance(listOf(item))[0]
+        assertTrue(out.isSnippet)
+        assertEquals("repeat(n)", out.label)
+        assertEquals("repeat(\${1:n})\$0", out.insertText)
+    }
+
+    @Test
+    fun `enhancer re-enhances snippet with insufficient tabstops for multi-param FUNCTION`() {
+        val item = CompletionItem(
+            label = "addInts",
+            kind = CompletionItemKind.FUNCTION,
+            detail = "fun addInts(x: Int, y: Int): Int",
+            insertText = "addInts(\$0)",
+            isSnippet = true,
+        )
+        val out = CompletionEnhancer.enhance(listOf(item))[0]
+        assertTrue(out.isSnippet)
+        assertEquals("addInts(x, y)", out.label)
+        assertEquals("addInts(\${1:x}, \${2:y})\$0", out.insertText)
+    }
+
+    @Test
+    fun `enhancer keeps snippet when KLS supplies enough tabstops`() {
+        val item = CompletionItem(
+            label = "addInts",
+            kind = CompletionItemKind.FUNCTION,
+            detail = "fun addInts(x: Int, y: Int): Int",
+            insertText = "addInts(\${1:x}, \${2:y})",
+            isSnippet = true,
+        )
+        val out = CompletionEnhancer.enhance(listOf(item))[0]
+        assertEquals("addInts", out.label)
+        assertEquals("addInts(\${1:x}, \${2:y})", out.insertText)
+    }
+
+    @Test
+    fun `enhancer leaves zero-param FUNCTION untouched`() {
         val item = CompletionItem(
             label = "println",
             kind = CompletionItemKind.FUNCTION,
-            detail = "(message: Any?) -> Unit",
+            detail = "fun println()",
             insertText = "println",
             isSnippet = false,
         )
@@ -229,7 +301,7 @@ class CompletionTest {
             CompletionItem("filter", CompletionItemKind.FUNCTION, detail = "fun List<T>.filter(predicate: ...)", insertText = "filter", isSnippet = false),
         )
         val r = CompletionEnhancer.enhance(items, triggerCharacter = ".")
-        assertEquals(listOf("size", "filter"), r.map { it.label })
+        assertEquals(listOf("size", "filter(predicate)"), r.map { it.label })
     }
 
     @Test
@@ -281,7 +353,7 @@ class CompletionTest {
             CompletionItem("compareTo", CompletionItemKind.FUNCTION, detail = "inline infix fun <T> Comparable<T>.compareTo(other: T): Int", insertText = "compareTo", isSnippet = true),
         )
         val r = CompletionEnhancer.enhance(items, triggerCharacter = ".")
-        assertEquals(listOf("compareTo", "also"), r.map { it.label })
+        assertEquals(listOf("compareTo(other)", "also(block)"), r.map { it.label })
     }
 
     @Test
@@ -371,7 +443,7 @@ class CompletionTest {
         )
         val r = CompletionEnhancer.enhance(items, triggerCharacter = null, prefix = "p")
         assertEquals("printStackTrace", r[0].label)
-        assertEquals("plus", r[1].label)
+        assertEquals("plus(other)", r[1].label)
         assertEquals("println", r[2].label)
     }
 

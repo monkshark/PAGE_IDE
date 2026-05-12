@@ -61,6 +61,7 @@ import kotlinx.coroutines.delay
 import page.editor.BracketMatch
 import page.editor.FoldRegions
 import page.editor.Indent
+import page.editor.LineComment
 import page.editor.MarkdownFence
 import page.editor.SearchState
 import page.editor.SyntaxLexer
@@ -79,6 +80,8 @@ import page.lsp.DefinitionTarget
 import page.lsp.Diagnostic
 import page.lsp.DiagnosticSeverity
 import page.lsp.HoverInfo
+import page.lsp.SignatureActiveParam
+import page.lsp.SignatureHelpInfo
 import page.lsp.enrichForPropertyDecl
 import page.lsp.enrichWithKDocFromDefinition
 import page.lsp.needsKdocEnrichment
@@ -87,6 +90,7 @@ import page.ui.CompletionDisplay
 import page.ui.EditorDecoration
 import page.ui.EditorFontFamily
 import page.ui.GlassDarkSyntax
+import page.ui.SignatureHelpDisplay
 import page.ui.SyntaxPalette
 
 @Composable
@@ -112,6 +116,7 @@ fun EditorPanel(
     onRequestCompletion: ((line: Int, character: Int, triggerCharacter: String?) -> CompletableFuture<CompletionList>)? = null,
     onRequestHover: ((line: Int, character: Int) -> CompletableFuture<HoverInfo?>)? = null,
     onRequestDefinition: ((line: Int, character: Int) -> CompletableFuture<List<DefinitionTarget>>)? = null,
+    onRequestSignatureHelp: ((line: Int, character: Int, triggerCharacter: String?, isRetrigger: Boolean) -> CompletableFuture<SignatureHelpInfo?>)? = null,
     onGoToDefinition: ((DefinitionTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -119,6 +124,7 @@ fun EditorPanel(
         val name = activePath?.fileName?.toString()?.lowercase()
         name != null && (name.endsWith(".md") || name.endsWith(".markdown"))
     }
+    val commentPrefix = remember(activePath) { LineComment.prefixFor(activePath) }
     val buffer = remember(value.text) { TextBuffer(value.text) }
     val caretOffset = value.selection.start.coerceIn(0, buffer.length)
     val caret = buffer.lineColOf(caretOffset)
@@ -306,10 +312,15 @@ fun EditorPanel(
     var completionTriggerOffset by remember(activePath) { mutableStateOf(-1) }
     var completionRequestToken by remember(activePath) { mutableStateOf(0) }
     var lastSeenText by remember(activePath) { mutableStateOf(value.text) }
+    var lastSeenSelectionLen by remember(activePath) { mutableStateOf(0) }
     var activeTabstops by remember(activePath) { mutableStateOf<List<page.lsp.SnippetTabstop>>(emptyList()) }
     var activeTabstopIndex by remember(activePath) { mutableStateOf(0) }
     var activeTabstopBase by remember(activePath) { mutableStateOf(0) }
     var activeTabstopBaseTextLen by remember(activePath) { mutableStateOf(0) }
+
+    var lspSignatureInfo by remember(activePath) { mutableStateOf<SignatureHelpInfo?>(null) }
+    var lspSignatureActiveParam by remember(activePath) { mutableStateOf(0) }
+    var lspSignatureRequestToken by remember(activePath) { mutableStateOf(0) }
 
     val completionPrefix = run {
         val trig = completionTriggerOffset
@@ -339,6 +350,43 @@ fun EditorPanel(
         completionItems = emptyList()
         completionSelectedIndex = 0
         completionTriggerOffset = -1
+    }
+
+    val closeSignatureHelp: () -> Unit = {
+        lspSignatureInfo = null
+        lspSignatureRequestToken += 1
+    }
+
+    val triggerSignatureHelp: (Int, String?, Boolean) -> Unit = lambda@{ requestOffset, trig, retrigger ->
+        val cb = onRequestSignatureHelp ?: return@lambda
+        if (activePath == null) return@lambda
+        val req = requestOffset.coerceIn(0, value.text.length)
+        val pos = TextBuffer(value.text).lineColOf(req)
+        lspSignatureRequestToken += 1
+        val token = lspSignatureRequestToken
+        fun apply(info: SignatureHelpInfo?) {
+            if (info == null || info.isEmpty) {
+                lspSignatureInfo = null
+            } else {
+                lspSignatureInfo = info
+                lspSignatureActiveParam = info.effectiveActiveParameter()
+            }
+        }
+        cb(pos.line, pos.col, trig, retrigger).whenComplete { info, _ ->
+            if (token != lspSignatureRequestToken) return@whenComplete
+            if (info != null && !info.isEmpty) {
+                apply(info)
+                return@whenComplete
+            }
+            completionScope.launch {
+                delay(180)
+                if (token != lspSignatureRequestToken) return@launch
+                cb(pos.line, pos.col, trig, true).whenComplete { retry, _ ->
+                    if (token != lspSignatureRequestToken) return@whenComplete
+                    apply(retry)
+                }
+            }
+        }
     }
 
     val triggerCompletion: (Int, Int, String?) -> Unit = lambda@{ triggerOffset, requestOffset, triggerChar ->
@@ -478,9 +526,12 @@ fun EditorPanel(
         val newText = value.text
         val newCaret = value.selection.end
         val oldText = lastSeenText
+        val prevSelLen = lastSeenSelectionLen
         lastSeenText = newText
+        lastSeenSelectionLen = value.selection.end - value.selection.start
         val shrink = oldText.length - newText.length
-        if (activeTabstops.isNotEmpty() && shrink >= 2) {
+        val typedOverSelection = prevSelLen >= 2 && shrink <= prevSelLen
+        if (activeTabstops.isNotEmpty() && shrink >= 2 && !typedOverSelection) {
             clearTabstops()
         }
         val isInsertOne = newText.length == oldText.length + 1 && newCaret > 0
@@ -490,10 +541,11 @@ fun EditorPanel(
             val isWordChar = inserted.isLetter() || inserted == '_'
             val prevIsBoundary = newCaret < 2 ||
                 !(newText[newCaret - 2].isLetterOrDigit() || newText[newCaret - 2] == '_')
+            val insideString = isInsideStringLiteral(newText, newCaret - 1)
             when {
-                inserted == '.' -> { triggerCompletion(newCaret, newCaret, "."); didTrigger = true }
-                inserted == ':' -> { triggerCompletion(newCaret, newCaret, null); didTrigger = true }
-                isWordChar && completionTriggerOffset < 0 && prevIsBoundary -> {
+                inserted == '.' && !insideString -> { triggerCompletion(newCaret, newCaret, "."); didTrigger = true }
+                inserted == ':' && !insideString -> { triggerCompletion(newCaret, newCaret, null); didTrigger = true }
+                isWordChar && !insideString && completionTriggerOffset < 0 && prevIsBoundary -> {
                     triggerCompletion(newCaret - 1, newCaret, null); didTrigger = true
                 }
             }
@@ -508,6 +560,29 @@ fun EditorPanel(
                     closeCompletion()
                 } else if (isInsertOne) {
                     refreshCompletion()
+                }
+            }
+        }
+
+        if (onRequestSignatureHelp != null && activePath != null) {
+            val sigBuf = TextBuffer(newText)
+            val sigPos = sigBuf.lineColOf(newCaret.coerceIn(0, newText.length))
+            val sigLine = if (sigPos.line < sigBuf.lineCount) sigBuf.lineAt(sigPos.line) else ""
+            val activeP = SignatureActiveParam.fromLineText(sigLine, sigPos.col)
+            if (activeP == null) {
+                if (lspSignatureInfo != null) closeSignatureHelp()
+            } else {
+                val triggerChar = if (isInsertOne) {
+                    when (newText[newCaret - 1]) {
+                        '(' -> "("
+                        ',' -> ","
+                        else -> null
+                    }
+                } else null
+                if (triggerChar != null) {
+                    triggerSignatureHelp(newCaret, triggerChar, false)
+                } else {
+                    lspSignatureActiveParam = activeP
                 }
             }
         }
@@ -685,11 +760,20 @@ fun EditorPanel(
                         clearTabstops()
                         return@CodeEditor true
                     }
+                    if (event.isCtrlPressed && event.isShiftPressed && event.key == Key.Spacebar) {
+                        val caret = value.selection.end.coerceIn(0, value.text.length)
+                        triggerSignatureHelp(caret, null, lspSignatureInfo != null)
+                        return@CodeEditor true
+                    }
                     if (event.isCtrlPressed && event.key == Key.Spacebar) {
                         val text = value.text
                         val caret = value.selection.end.coerceIn(0, text.length)
                         val wordStart = wordStartAt(text, caret)
                         triggerCompletion(wordStart, caret, null)
+                        return@CodeEditor true
+                    }
+                    if (event.key == Key.Escape && lspSignatureInfo != null) {
+                        closeSignatureHelp()
                         return@CodeEditor true
                     }
                     if (event.key == Key.F12 && !event.isCtrlPressed && !event.isShiftPressed) {
@@ -705,6 +789,26 @@ fun EditorPanel(
                             }
                             return@CodeEditor true
                         }
+                    }
+                    if (
+                        event.isCtrlPressed && !event.isShiftPressed &&
+                        event.key == Key.Slash && commentPrefix != null
+                    ) {
+                        val r = LineComment.toggle(
+                            value.text,
+                            value.selection.start,
+                            value.selection.end,
+                            commentPrefix,
+                        )
+                        if (r.text != value.text) {
+                            onValueChange(
+                                value.copy(
+                                    text = r.text,
+                                    selection = TextRange(r.selectionStart, r.selectionEnd),
+                                ),
+                            )
+                        }
+                        return@CodeEditor true
                     }
                     if (
                         event.key == Key.Tab && !event.isShiftPressed &&
@@ -760,6 +864,19 @@ fun EditorPanel(
                 completionItems = completionDisplay,
                 completionSelectedIndex = completionSelectedIndex,
                 completionAnchorOffset = completionTriggerOffset.takeIf { it >= 0 },
+                signatureHelp = lspSignatureInfo?.let { info ->
+                    val sig = info.active ?: return@let null
+                    val activeIdx = lspSignatureActiveParam.coerceAtLeast(0)
+                    val param = sig.parameters.getOrNull(activeIdx)
+                    SignatureHelpDisplay(
+                        label = sig.label,
+                        activeParamRange = param?.labelRange,
+                        documentation = sig.documentation,
+                        activeParamDoc = param?.documentation,
+                        signatureIndex = info.activeSignature,
+                        signatureCount = info.signatures.size,
+                    )
+                },
             )
         }
         EditorStatusBar(
@@ -819,6 +936,24 @@ private fun wordStartAt(text: String, caret: Int): Int {
         if (ch.isLetterOrDigit() || ch == '_') i-- else break
     }
     return i
+}
+
+private fun isInsideStringLiteral(text: String, caret: Int): Boolean {
+    val end = caret.coerceIn(0, text.length)
+    var lineStart = end
+    while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--
+    var inString = false
+    var i = lineStart
+    while (i < end) {
+        val ch = text[i]
+        if (ch == '\\' && inString) {
+            i += 2
+            continue
+        }
+        if (ch == '"') inString = !inString
+        i++
+    }
+    return inString
 }
 
 private fun readDefinitionFileText(uri: String): String? {
@@ -926,6 +1061,7 @@ private class CombinedHighlightTransformation(
         TokenKind.COMMENT -> palette.comment
         TokenKind.ANNOTATION -> palette.annotation
         TokenKind.TYPE -> palette.type
+        TokenKind.IDENTIFIER -> palette.identifier
         TokenKind.PUNCT -> null
     }
 }

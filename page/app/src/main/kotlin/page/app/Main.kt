@@ -1037,6 +1037,9 @@ private fun PaneRegion(
                     onRequestDefinition = active?.path?.let { p ->
                         { line, ch -> lsp.definition(p, line, ch) }
                     },
+                    onRequestSignatureHelp = active?.path?.let { p ->
+                        { line, ch, trig, retrig -> lsp.signatureHelp(p, pane.editorValue.text, line, ch, trig, retrig) }
+                    },
                     onGoToDefinition = { target ->
                         val path = runCatching {
                             java.nio.file.Paths.get(java.net.URI(target.uri))

@@ -5,8 +5,12 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.ParameterInformation
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.SignatureHelp
+import org.eclipse.lsp4j.SignatureHelpTriggerKind
+import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
@@ -139,6 +143,68 @@ class LspWorkspaceTest {
         assertEquals(5, targets[0].startLine)
         assertEquals(2, targets[0].startCharacter)
         assertEquals(8, targets[0].endCharacter)
+    }
+
+    @Test
+    fun `signatureHelp on unopened doc returns null without server call`() {
+        val result = workspace.signatureHelp("file:///nope.kt", 0, 0).get(2, TimeUnit.SECONDS)
+        assertNull(result)
+        assertTrue(harness.fakeServer.signatureHelpCalls.isEmpty())
+    }
+
+    @Test
+    fun `signatureHelp forwards trigger char context and parses response`() {
+        val uri = "file:///S.kt"
+        workspace.didOpen(uri, "kotlin", "addInts(")
+        harness.fakeServer.signatureHelpResponse = SignatureHelp().apply {
+            signatures = mutableListOf(
+                SignatureInformation().apply {
+                    label = "addInts(x: Int, y: Int): Int"
+                    parameters = mutableListOf(
+                        ParameterInformation("x: Int"),
+                        ParameterInformation("y: Int"),
+                    )
+                },
+            )
+            activeSignature = 0
+            activeParameter = 0
+        }
+
+        val info = workspace.signatureHelp(uri, 0, 8, triggerCharacter = "(").get(2, TimeUnit.SECONDS)
+        assertNotNull(info)
+        assertEquals(1, info!!.signatures.size)
+        assertEquals("addInts(x: Int, y: Int): Int", info.signatures[0].label)
+        assertEquals(2, info.signatures[0].parameters.size)
+        assertEquals(0, info.activeSignature)
+
+        waitUntil { harness.fakeServer.signatureHelpCalls.isNotEmpty() }
+        val sent = harness.fakeServer.signatureHelpCalls.first()
+        assertEquals(uri, sent.textDocument.uri)
+        assertEquals(0, sent.position.line)
+        assertEquals(8, sent.position.character)
+        assertEquals(SignatureHelpTriggerKind.TriggerCharacter, sent.context.triggerKind)
+        assertEquals("(", sent.context.triggerCharacter)
+    }
+
+    @Test
+    fun `signatureHelp invoked context when no trigger char`() {
+        val uri = "file:///SI.kt"
+        workspace.didOpen(uri, "kotlin", "x")
+        workspace.signatureHelp(uri, 0, 0).get(2, TimeUnit.SECONDS)
+        waitUntil { harness.fakeServer.signatureHelpCalls.isNotEmpty() }
+        val sent = harness.fakeServer.signatureHelpCalls.first()
+        assertEquals(SignatureHelpTriggerKind.Invoked, sent.context.triggerKind)
+    }
+
+    @Test
+    fun `signatureHelp retrigger context when isRetrigger`() {
+        val uri = "file:///SR.kt"
+        workspace.didOpen(uri, "kotlin", "x")
+        workspace.signatureHelp(uri, 0, 0, isRetrigger = true).get(2, TimeUnit.SECONDS)
+        waitUntil { harness.fakeServer.signatureHelpCalls.isNotEmpty() }
+        val sent = harness.fakeServer.signatureHelpCalls.first()
+        assertEquals(SignatureHelpTriggerKind.ContentChange, sent.context.triggerKind)
+        assertTrue(sent.context.isRetrigger)
     }
 
     private fun waitUntil(timeoutMs: Long = 2000, predicate: () -> Boolean) {

@@ -7,6 +7,7 @@ enum class TokenKind {
     COMMENT,
     ANNOTATION,
     TYPE,
+    IDENTIFIER,
     PUNCT,
 }
 
