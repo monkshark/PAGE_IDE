@@ -267,7 +267,7 @@ object CompletionEnhancer {
         return items.withIndex()
             .sortedWith(
                 compareBy(
-                    { prefixRank(it.value.label, prefix, lower) },
+                    { prefixRank(it.value, prefix, lower, prefixUppercase) },
                     { if (prefixUppercase) caseAffinityRank(it.value) else 0 },
                     { it.index },
                 )
@@ -275,10 +275,14 @@ object CompletionEnhancer {
             .map { it.value }
     }
 
-    private fun prefixRank(label: String, prefix: String, lowerPrefix: String): Int {
-        if (label.startsWith(prefix)) return 0
-        if (label.lowercase().startsWith(lowerPrefix)) return 1
-        return 2
+    private fun prefixRank(item: CompletionItem, prefix: String, lowerPrefix: String, prefixUppercase: Boolean): Int {
+        val label = item.label
+        val base = when {
+            label.startsWith(prefix) -> 0
+            label.lowercase().startsWith(lowerPrefix) -> 1
+            else -> 2
+        }
+        return if (prefixUppercase && item.kind == CompletionItemKind.KEYWORD) base + 1 else base
     }
 
     private val typeKinds = setOf(
