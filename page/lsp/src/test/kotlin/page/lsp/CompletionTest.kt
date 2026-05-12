@@ -429,9 +429,22 @@ class CompletionTest {
         )
         val r = CompletionEnhancer.enhance(items, triggerCharacter = null, prefix = "V")
         assertEquals("Volatile", r[0].label, "exact-case prefix match wins")
-        assertEquals("vararg", r[1].label, "case-insensitive prefix match second")
-        assertEquals("DeprecationLevel", r[2].label)
-        assertEquals("UnsafeVariance", r[3].label)
+        assertEquals("DeprecationLevel", r[1].label, "uppercase prefix demotes KEYWORD below type-kind fuzzy matches")
+        assertEquals("UnsafeVariance", r[2].label)
+        assertEquals("vararg", r[3].label, "KEYWORD shifted +1 prefix-rank under uppercase prefix")
+    }
+
+    @Test
+    fun `uppercase prefix shifts KEYWORD prefix-rank below stricter matches`() {
+        val items = listOf(
+            CompletionItem("file", CompletionItemKind.KEYWORD, detail = null, insertText = "file", isSnippet = false),
+            CompletionItem("filter", CompletionItemKind.FUNCTION, detail = "fun filter()", insertText = "filter", isSnippet = false),
+            CompletionItem("File", CompletionItemKind.CLASS, detail = "class File", insertText = "File", isSnippet = false),
+        )
+        val r = CompletionEnhancer.enhance(items, triggerCharacter = null, prefix = "File")
+        assertEquals("File", r[0].label, "exact-case prefix CLASS wins")
+        assertEquals("filter", r[1].label, "fuzzy FUNCTION beats shifted KEYWORD")
+        assertEquals("file", r[2].label, "KEYWORD demoted from rank 1 to rank 2 by shift")
     }
 
     @Test
