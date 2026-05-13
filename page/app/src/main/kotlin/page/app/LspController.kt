@@ -641,6 +641,12 @@ class LspController(
         val tStart = System.nanoTime()
         return ws.definition(uri, line, character).thenCompose { defs ->
             val target = defs.firstOrNull()
+            if (target != null && !isInWorkspace(target.uri)) {
+                println("  refused — definition points outside workspace: ${target.uri}")
+                return@thenCompose CompletableFuture.failedFuture<RenameWorkspaceEdit>(
+                    RenameException(EXTERNAL_SYMBOL_MESSAGE)
+                )
+            }
             val resolvedTarget = if (target != null && !ws.isOpen(target.uri)) {
                 if (openTargetFromDisk(ws, target.uri)) target else null
             } else target
@@ -659,6 +665,14 @@ class LspController(
             }
             runCatching { ws.reopen(rUri, ws.textOf(rUri) ?: text) }
             ws.rename(rUri, rLine, rChar, newName)
+        }.thenCompose { edit ->
+            val externalUri = edit.changes.firstOrNull { !isInWorkspace(it.uri) }?.uri
+            if (externalUri != null) {
+                println("  refused after KLS — edit targets outside workspace: $externalUri")
+                CompletableFuture.failedFuture(RenameException(EXTERNAL_SYMBOL_MESSAGE))
+            } else {
+                CompletableFuture.completedFuture(edit)
+            }
         }.whenComplete { edit, err ->
             val ms = (System.nanoTime() - tStart) / 1_000_000
             if (err != null) {
@@ -680,6 +694,7 @@ class LspController(
     private class RenameException(message: String) : RuntimeException(message)
 
     private fun renameErrorMessage(err: Throwable): String {
+        findRenameException(err)?.message?.let { return it }
         val raw = err.message ?: err.toString()
         return when {
             raw.contains("UnsupportedOperationException") -> "LSP 서버가 rename 을 지원하지 않습니다"
@@ -687,6 +702,27 @@ class LspController(
                 raw.contains("KotlinFrontEndException") ||
                 raw.contains("NoTopLevelDescriptorProvider") -> "LSP 서버 내부 오류 — 이 위치에서는 rename 을 처리할 수 없습니다"
             else -> raw.lineSequence().firstOrNull()?.take(160) ?: "rename 실패"
+        }
+    }
+
+    private fun findRenameException(err: Throwable): RenameException? {
+        var cur: Throwable? = err
+        while (cur != null) {
+            if (cur is RenameException) return cur
+            cur = cur.cause
+        }
+        return null
+    }
+
+    private fun isInWorkspace(uri: String): Boolean {
+        val root = workspaceRoot ?: return false
+        if (!uri.startsWith("file:")) return false
+        return try {
+            val p = java.nio.file.Paths.get(java.net.URI(uri)).toAbsolutePath().normalize()
+            val r = root.toAbsolutePath().normalize()
+            p.startsWith(r)
+        } catch (t: Throwable) {
+            false
         }
     }
 
@@ -852,6 +888,8 @@ class LspController(
     companion object {
         private const val COMPLETION_CACHE_MAX = 64
         private const val MAX_AUTO_OPEN_BYTES = 512L * 1024
+        private const val EXTERNAL_SYMBOL_MESSAGE =
+            "외부 라이브러리 심볼은 rename 할 수 없습니다 (kotlin-stdlib · 의존성 jar)"
         private val WORKSPACE_AUTO_OPEN_EXCLUDES = setOf(
             ".git", ".hg", ".svn", ".idea", ".idea_modules", ".vs", ".vscode",
             ".gradle", "build", "out", "bin", "target", "node_modules",
