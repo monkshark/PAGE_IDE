@@ -118,6 +118,7 @@ fun CodeEditor(
     signatureHelpAnchorOffset: Int? = null,
     manageHistory: Boolean = true,
     viewportHeightProvider: (() -> Float)? = null,
+    focusRequestVersion: Int = 0,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -143,6 +144,12 @@ fun CodeEditor(
 
     LaunchedEffect(focusRequester) {
         runCatching { focusRequester.requestFocus() }
+    }
+
+    LaunchedEffect(focusRequestVersion) {
+        if (focusRequestVersion > 0) {
+            runCatching { focusRequester.requestFocus() }
+        }
     }
 
     LaunchedEffect(isFocused, value.selection) {

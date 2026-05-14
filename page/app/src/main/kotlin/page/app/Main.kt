@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +66,8 @@ import page.editor.SplitOrientation
 import page.editor.SplitPaneState
 import page.editor.SyntaxLexers
 import page.editor.TabBook
+import kotlinx.coroutines.future.await
+import page.lsp.DocumentSymbolEntry
 import page.lsp.RenameApply
 import page.lsp.RenameWorkspaceEdit
 import page.ui.Glass
@@ -96,6 +99,11 @@ fun main() = application {
     var referencesHeight: Dp by remember { mutableStateOf(220.dp) }
     var palette: GlassPalette by remember { mutableStateOf(AppSettings.loadPalette()) }
     var paletteToastUntil: Long by remember { mutableStateOf(0L) }
+    var documentSymbolOpen by remember { mutableStateOf(false) }
+    var documentSymbolList by remember { mutableStateOf<List<DocumentSymbolEntry>>(emptyList()) }
+    var documentSymbolUri by remember { mutableStateOf("") }
+    var workspaceSymbolOpen by remember { mutableStateOf(false) }
+    var editorFocusVersion by remember { mutableStateOf(0) }
     val lsp = rememberLspController(workspaceRoot = rootDir)
     val currentLsp by rememberUpdatedState(lsp)
     val undoTrackerPrimary = remember { UndoGroupTracker() }
@@ -665,6 +673,31 @@ fun main() = application {
         paletteToastUntil = System.currentTimeMillis() + 1600L
         AppSettings.savePalette(palette)
     }
+    val openDocumentSymbol: () -> Unit = {
+        val active = focused().book.active
+        val activePath = active?.path
+        val isKt = activePath?.let(::isKotlinSource) == true
+        val status = currentLsp.status.value
+        if (activePath != null
+            && isKt
+            && status == LspController.Status.READY
+        ) {
+            val uri = activePath.toUri().toString()
+            currentLsp.documentSymbols(activePath).whenComplete { syms, err ->
+                if (err == null && syms != null) {
+                    documentSymbolUri = uri
+                    documentSymbolList = syms
+                    documentSymbolOpen = true
+                }
+            }
+        }
+    }
+    val openWorkspaceSymbol: () -> Unit = {
+        val status = currentLsp.status.value
+        if (status == LspController.Status.READY) {
+            workspaceSymbolOpen = true
+        }
+    }
     val frameRef = remember { mutableStateOf<java.awt.Frame?>(null) }
     val handleShortcut: (KeyEvent) -> Boolean = handler@{ event ->
         if (event.type != KeyEventType.KeyDown) return@handler false
@@ -697,6 +730,8 @@ fun main() = application {
                 event.key == Key.F -> { openSearch(); true }
                 event.key == Key.R -> { openReplace(); true }
                 event.key == Key.P -> { openQuickOpen(); true }
+                event.key == Key.T -> { openWorkspaceSymbol(); true }
+                event.key == Key.F12 -> { openDocumentSymbol(); true }
                 event.key == Key.Backslash && event.isShiftPressed -> {
                     splitOrientation = if (splitOrientation == SplitOrientation.HORIZONTAL)
                         SplitOrientation.VERTICAL else SplitOrientation.HORIZONTAL
@@ -732,6 +767,32 @@ fun main() = application {
         onKeyEvent = handleShortcut,
     ) {
         LaunchedEffect(Unit) { frameRef.value = window }
+        val openWsRef = rememberUpdatedState(openWorkspaceSymbol)
+        val openDocRef = rememberUpdatedState(openDocumentSymbol)
+        DisposableEffect(window) {
+            val frame = window
+            val dispatcher = java.awt.KeyEventDispatcher { e ->
+                if (e.id != java.awt.event.KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
+                if (!frame.isFocused) return@KeyEventDispatcher false
+                val ctrl = (e.modifiersEx and java.awt.event.InputEvent.CTRL_DOWN_MASK) != 0
+                val alt = (e.modifiersEx and java.awt.event.InputEvent.ALT_DOWN_MASK) != 0
+                if (!ctrl) return@KeyEventDispatcher false
+                when {
+                    !alt && e.keyCode == java.awt.event.KeyEvent.VK_T -> {
+                        openWsRef.value()
+                        true
+                    }
+                    e.keyCode == java.awt.event.KeyEvent.VK_F12 -> {
+                        openDocRef.value()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            val fm = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+            fm.addKeyEventDispatcher(dispatcher)
+            onDispose { fm.removeKeyEventDispatcher(dispatcher) }
+        }
         val showWelcome = rootDir == null &&
             primaryPane.book.tabs.isEmpty() &&
             secondaryPane.book.tabs.isEmpty()
@@ -825,6 +886,7 @@ fun main() = application {
                         referencesHeight = (referencesHeight + delta).coerceIn(80.dp, 600.dp)
                     },
                     linePreviewFor = { uri, line -> currentLsp.linePreviewFor(uri, line) },
+                    editorFocusVersion = editorFocusVersion,
                 )
                 if (findInFiles) {
                     FindInFilesDialog(
@@ -850,6 +912,48 @@ fun main() = application {
                 openInTab(f.path)
             },
             onDismiss = { quickOpen = false },
+        )
+    }
+
+    if (documentSymbolOpen) {
+        DocumentSymbolDialog(
+            uri = documentSymbolUri,
+            symbols = documentSymbolList,
+            onPick = { pick ->
+                documentSymbolOpen = false
+                val pickedPath = runCatching { Path.of(java.net.URI(pick.uri)) }.getOrNull()
+                if (pickedPath != null) {
+                    jumpToProblem(pickedPath, pick.startLine, pick.startCharacter)
+                }
+                frameRef.value?.requestFocus()
+                editorFocusVersion += 1
+            },
+            onDismiss = {
+                documentSymbolOpen = false
+                frameRef.value?.requestFocus()
+            },
+        )
+    }
+
+    if (workspaceSymbolOpen) {
+        WorkspaceSymbolDialog(
+            queryFor = { q ->
+                runCatching { currentLsp.workspaceSymbolsLocated(q).await() }
+                    .getOrDefault(emptyList())
+            },
+            onPick = { pick ->
+                workspaceSymbolOpen = false
+                val pickedPath = runCatching { Path.of(java.net.URI(pick.uri)) }.getOrNull()
+                if (pickedPath != null) {
+                    jumpToProblem(pickedPath, pick.startLine, pick.startCharacter)
+                }
+                frameRef.value?.requestFocus()
+                editorFocusVersion += 1
+            },
+            onDismiss = {
+                workspaceSymbolOpen = false
+                frameRef.value?.requestFocus()
+            },
         )
     }
 
@@ -956,6 +1060,7 @@ private fun Shell(
     referencesHeight: Dp,
     onReferencesResizeDelta: (Dp) -> Unit,
     linePreviewFor: (String, Int) -> String?,
+    editorFocusVersion: Int = 0,
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
     Column(modifier = Modifier.fillMaxSize()) {
@@ -1006,6 +1111,7 @@ private fun Shell(
                                 onJumpToProblem = onJumpToProblem,
                                 onApplyRename = onApplyRename,
                                 onRequestReferences = onRequestReferences,
+                                editorFocusVersion = if (focusedPane == PaneSide.PRIMARY) editorFocusVersion else 0,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -1036,6 +1142,7 @@ private fun Shell(
                                 onJumpToProblem = onJumpToProblem,
                                 onApplyRename = onApplyRename,
                                 onRequestReferences = onRequestReferences,
+                                editorFocusVersion = if (focusedPane == PaneSide.SECONDARY) editorFocusVersion else 0,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -1065,6 +1172,7 @@ private fun Shell(
                         onJumpToProblem = onJumpToProblem,
                         onApplyRename = onApplyRename,
                         onRequestReferences = onRequestReferences,
+                        editorFocusVersion = editorFocusVersion,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1122,6 +1230,7 @@ private fun PaneRegion(
     onJumpToProblem: (Path, Int, Int) -> Unit = { _, _, _ -> },
     onApplyRename: (RenameWorkspaceEdit) -> Unit = {},
     onRequestReferences: (Path, Int, Int, String) -> Unit = { _, _, _, _ -> },
+    editorFocusVersion: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val active = pane.book.active
@@ -1230,6 +1339,7 @@ private fun PaneRegion(
                     onRequestReferences = active?.path?.let { p ->
                         { line, ch, sym -> onRequestReferences(p, line, ch, sym) }
                     },
+                    editorFocusVersion = editorFocusVersion,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }

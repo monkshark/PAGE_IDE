@@ -7,6 +7,8 @@ import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
+import org.eclipse.lsp4j.DocumentSymbol
+import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
@@ -23,8 +25,11 @@ import org.eclipse.lsp4j.RenameParams
 import org.eclipse.lsp4j.ServerCapabilities
 import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureHelpParams
+import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.TextDocumentSyncKind
 import org.eclipse.lsp4j.WorkspaceEdit
+import org.eclipse.lsp4j.WorkspaceSymbol
+import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.jsonrpc.messages.Either3
 import org.eclipse.lsp4j.services.LanguageServer
@@ -46,12 +51,16 @@ class FakeLanguageServer : LanguageServer {
     val signatureHelpCalls = ConcurrentLinkedQueue<SignatureHelpParams>()
     val prepareRenameCalls = ConcurrentLinkedQueue<PrepareRenameParams>()
     val renameCalls = ConcurrentLinkedQueue<RenameParams>()
+    val documentSymbolCalls = ConcurrentLinkedQueue<DocumentSymbolParams>()
+    val workspaceSymbolCalls = ConcurrentLinkedQueue<WorkspaceSymbolParams>()
     @Volatile var hoverResponse: Hover? = null
     @Volatile var definitionResponse: Either<MutableList<out Location>, MutableList<out LocationLink>>? = null
     @Volatile var referencesResponse: MutableList<out Location>? = null
     @Volatile var signatureHelpResponse: SignatureHelp? = null
     @Volatile var prepareRenameResponse: Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>? = null
     @Volatile var renameResponse: WorkspaceEdit? = null
+    @Volatile var documentSymbolResponse: MutableList<Either<SymbolInformation, DocumentSymbol>>? = null
+    @Volatile var workspaceSymbolResponse: Either<MutableList<out SymbolInformation>, MutableList<out WorkspaceSymbol>>? = null
     @Volatile var shutdownCalled = false
     @Volatile var exitCalled = false
 
@@ -88,11 +97,24 @@ class FakeLanguageServer : LanguageServer {
             renameCalls += params
             return CompletableFuture.completedFuture(renameResponse)
         }
+        override fun documentSymbol(
+            params: DocumentSymbolParams,
+        ): CompletableFuture<MutableList<Either<SymbolInformation, DocumentSymbol>>> {
+            documentSymbolCalls += params
+            return CompletableFuture.completedFuture(documentSymbolResponse)
+        }
     }
 
     private val workspaceService = object : WorkspaceService {
         override fun didChangeConfiguration(params: DidChangeConfigurationParams) {}
         override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {}
+        @Suppress("DEPRECATION")
+        override fun symbol(
+            params: WorkspaceSymbolParams,
+        ): CompletableFuture<Either<MutableList<out SymbolInformation>, MutableList<out WorkspaceSymbol>>> {
+            workspaceSymbolCalls += params
+            return CompletableFuture.completedFuture(workspaceSymbolResponse)
+        }
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {

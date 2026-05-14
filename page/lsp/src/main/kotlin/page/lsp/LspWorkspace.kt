@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PrepareRenameParams
@@ -180,6 +181,56 @@ class LspWorkspace(private val client: LspClient) {
                 }
                 else -> either.right.orEmpty().map {
                     WorkspaceSymbolEntry(it.name ?: "", it.containerName, it.kind)
+                }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun workspaceSymbolsLocated(query: String): CompletableFuture<List<WorkspaceSymbolLocated>> {
+        val params = WorkspaceSymbolParams(query)
+        return client.server().workspaceService.symbol(params).thenApply { either ->
+            when {
+                either == null -> emptyList()
+                either.isLeft -> either.left.orEmpty().map { si ->
+                    val loc = si.location
+                    WorkspaceSymbolLocated(
+                        name = si.name ?: "",
+                        containerName = si.containerName,
+                        kind = si.kind,
+                        location = if (loc != null && loc.uri != null) {
+                            SymbolLocation(loc.uri, loc.range.toSymbolRange())
+                        } else null,
+                    )
+                }
+                else -> either.right.orEmpty().map { ws ->
+                    val locEither = ws.location
+                    val loc: SymbolLocation? = when {
+                        locEither == null -> null
+                        locEither.isLeft -> locEither.left?.let { SymbolLocation(it.uri, it.range.toSymbolRange()) }
+                        else -> locEither.right?.uri?.let { SymbolLocation(it, SymbolRange(0, 0, 0, 0)) }
+                    }
+                    WorkspaceSymbolLocated(
+                        name = ws.name ?: "",
+                        containerName = ws.containerName,
+                        kind = ws.kind,
+                        location = loc,
+                    )
+                }
+            }
+        }
+    }
+
+    fun documentSymbols(uri: String): CompletableFuture<List<DocumentSymbolEntry>> {
+        if (!openDocs.containsKey(uri)) return CompletableFuture.completedFuture(emptyList())
+        val params = DocumentSymbolParams(TextDocumentIdentifier(uri))
+        return client.server().textDocumentService.documentSymbol(params).thenApply { results ->
+            results.orEmpty().mapNotNull { either ->
+                when {
+                    either == null -> null
+                    either.isLeft -> DocumentSymbolEntry.fromLspSymbolInformation(either.left)
+                    either.isRight -> DocumentSymbolEntry.fromLspDocumentSymbol(either.right)
+                    else -> null
                 }
             }
         }

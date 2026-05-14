@@ -37,7 +37,9 @@ import page.lsp.ReferenceLocation
 import page.lsp.RenamePrepare
 import page.lsp.RenameWorkspaceEdit
 import page.lsp.SignatureHelpInfo
+import page.lsp.DocumentSymbolEntry
 import page.lsp.WorkspaceSymbolEntry
+import page.lsp.WorkspaceSymbolLocated
 import page.lsp.parseKlsActivity
 import page.editor.SyntaxLexers
 import page.editor.Token
@@ -624,6 +626,40 @@ class LspController(
                 if (list.size > 5) println("  … (+${list.size - 5} more)")
             }
         }
+    }
+
+    fun documentSymbols(path: Path): CompletableFuture<List<DocumentSymbolEntry>> {
+        if (status.value != Status.READY) return CompletableFuture.completedFuture(emptyList())
+        val ws = workspace ?: return CompletableFuture.completedFuture(emptyList())
+        val uri = path.toUri().toString()
+        if (!ws.isOpen(uri)) return CompletableFuture.completedFuture(emptyList())
+        val tStart = System.nanoTime()
+        return ws.documentSymbols(uri)
+            .whenComplete { syms, err ->
+                val ms = (System.nanoTime() - tStart) / 1_000_000
+                if (err != null) {
+                    println("[lsp] documentSymbols ✗ $uri: ${err.message} [${ms}ms]")
+                } else {
+                    val list = syms.orEmpty()
+                    println("[lsp] documentSymbols ✓ $uri — ${list.size} top-level sym(s) [${ms}ms]")
+                }
+            }
+    }
+
+    fun workspaceSymbolsLocated(query: String): CompletableFuture<List<WorkspaceSymbolLocated>> {
+        if (status.value != Status.READY) return CompletableFuture.completedFuture(emptyList())
+        val ws = workspace ?: return CompletableFuture.completedFuture(emptyList())
+        val tStart = System.nanoTime()
+        return ws.workspaceSymbolsLocated(query)
+            .whenComplete { syms, err ->
+                val ms = (System.nanoTime() - tStart) / 1_000_000
+                if (err != null) {
+                    println("[lsp] workspaceSymbolsLocated('$query') ✗ ${err.message} [${ms}ms]")
+                } else {
+                    val list = syms.orEmpty()
+                    println("[lsp] workspaceSymbolsLocated('$query') ✓ ${list.size} sym(s) [${ms}ms]")
+                }
+            }
     }
 
     private data class ReferenceScope(val uri: String, val range: IntRange)
