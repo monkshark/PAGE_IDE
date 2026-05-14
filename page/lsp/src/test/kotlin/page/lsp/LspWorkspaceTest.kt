@@ -1,5 +1,6 @@
 package page.lsp
 
+import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
@@ -12,8 +13,12 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureHelpTriggerKind
 import org.eclipse.lsp4j.SignatureInformation
+import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
+import org.eclipse.lsp4j.WorkspaceSymbol
+import org.eclipse.lsp4j.WorkspaceSymbolLocation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.jsonrpc.messages.Either3
 import java.util.concurrent.TimeUnit
@@ -335,6 +340,143 @@ class LspWorkspaceTest {
         val r = workspace.rename("file:///nope.kt", 0, 0, "x").get(2, TimeUnit.SECONDS)
         assertTrue(r.isEmpty)
         assertTrue(harness.fakeServer.renameCalls.isEmpty())
+    }
+
+    @Test
+    fun `documentSymbols on unopened doc returns empty without server call`() {
+        val result = workspace.documentSymbols("file:///nope.kt").get(2, TimeUnit.SECONDS)
+        assertTrue(result.isEmpty())
+        assertTrue(harness.fakeServer.documentSymbolCalls.isEmpty())
+    }
+
+    @Test
+    fun `documentSymbols maps hierarchical DocumentSymbol with children`() {
+        val uri = "file:///DS.kt"
+        workspace.didOpen(uri, "kotlin", "class A { fun b() {} }")
+        val childRange = Range(Position(0, 10), Position(0, 21))
+        val child = DocumentSymbol("b", SymbolKind.Method, childRange, childRange)
+        val classRange = Range(Position(0, 0), Position(0, 22))
+        val parent = DocumentSymbol("A", SymbolKind.Class, classRange, Range(Position(0, 6), Position(0, 7))).apply {
+            children = mutableListOf(child)
+        }
+        harness.fakeServer.documentSymbolResponse = mutableListOf(Either.forRight(parent))
+
+        val syms = workspace.documentSymbols(uri).get(2, TimeUnit.SECONDS)
+        assertEquals(1, syms.size)
+        val top = syms[0]
+        assertEquals("A", top.name)
+        assertEquals(SymbolKind.Class, top.kind)
+        assertEquals(0, top.range.startLine)
+        assertEquals(6, top.selectionRange.startCharacter)
+        assertEquals(1, top.children.size)
+        assertEquals("b", top.children[0].name)
+        assertEquals(SymbolKind.Method, top.children[0].kind)
+
+        val flat = syms.flatMap { it.flatten() }
+        assertEquals(2, flat.size)
+        assertEquals("A", flat[0].name)
+        assertEquals("b", flat[1].name)
+        assertEquals("A", flat[1].containerName)
+
+        waitUntil { harness.fakeServer.documentSymbolCalls.isNotEmpty() }
+        assertEquals(uri, harness.fakeServer.documentSymbolCalls.first().textDocument.uri)
+    }
+
+    @Test
+    fun `documentSymbols maps legacy SymbolInformation flat list`() {
+        val uri = "file:///DSI.kt"
+        workspace.didOpen(uri, "kotlin", "val x = 1")
+        @Suppress("DEPRECATION")
+        val si = SymbolInformation(
+            "x", SymbolKind.Variable,
+            Location(uri, Range(Position(0, 4), Position(0, 5))),
+            "OuterContainer",
+        )
+        harness.fakeServer.documentSymbolResponse = mutableListOf(Either.forLeft(si))
+
+        val syms = workspace.documentSymbols(uri).get(2, TimeUnit.SECONDS)
+        assertEquals(1, syms.size)
+        assertEquals("x", syms[0].name)
+        assertEquals(SymbolKind.Variable, syms[0].kind)
+        assertEquals("OuterContainer", syms[0].containerName)
+        assertEquals(0, syms[0].range.startLine)
+        assertEquals(4, syms[0].range.startCharacter)
+    }
+
+    @Test
+    fun `workspaceSymbolsLocated maps modern WorkspaceSymbol with Location`() {
+        val sym = WorkspaceSymbol(
+            "Widget", SymbolKind.Class,
+            Either.forLeft(Location("file:///pkg/Widget.kt", Range(Position(3, 6), Position(3, 12)))),
+            "com.example",
+        )
+        @Suppress("DEPRECATION")
+        harness.fakeServer.workspaceSymbolResponse =
+            Either.forRight<MutableList<out SymbolInformation>, MutableList<out WorkspaceSymbol>>(mutableListOf(sym))
+
+        val list = workspace.workspaceSymbolsLocated("Widget").get(2, TimeUnit.SECONDS)
+        assertEquals(1, list.size)
+        assertEquals("Widget", list[0].name)
+        assertEquals("com.example", list[0].containerName)
+        assertEquals(SymbolKind.Class, list[0].kind)
+        val loc = list[0].location
+        assertNotNull(loc)
+        assertEquals("file:///pkg/Widget.kt", loc!!.uri)
+        assertEquals(3, loc.range.startLine)
+        assertEquals(6, loc.range.startCharacter)
+        assertEquals(12, loc.range.endCharacter)
+
+        waitUntil { harness.fakeServer.workspaceSymbolCalls.isNotEmpty() }
+        assertEquals("Widget", harness.fakeServer.workspaceSymbolCalls.first().query)
+    }
+
+    @Test
+    fun `workspaceSymbolsLocated maps WorkspaceSymbol with WorkspaceSymbolLocation (uri-only)`() {
+        val sym = WorkspaceSymbol(
+            "Lazy", SymbolKind.Function,
+            Either.forRight(WorkspaceSymbolLocation("file:///pkg/Lazy.kt")),
+            "com.example",
+        )
+        @Suppress("DEPRECATION")
+        harness.fakeServer.workspaceSymbolResponse =
+            Either.forRight<MutableList<out SymbolInformation>, MutableList<out WorkspaceSymbol>>(mutableListOf(sym))
+
+        val list = workspace.workspaceSymbolsLocated("Lazy").get(2, TimeUnit.SECONDS)
+        assertEquals(1, list.size)
+        val loc = list[0].location
+        assertNotNull(loc)
+        assertEquals("file:///pkg/Lazy.kt", loc!!.uri)
+        assertEquals(0, loc.range.startLine)
+        assertEquals(0, loc.range.startCharacter)
+    }
+
+    @Test
+    fun `workspaceSymbolsLocated maps legacy SymbolInformation list`() {
+        @Suppress("DEPRECATION")
+        val si = SymbolInformation(
+            "Helper", SymbolKind.Class,
+            Location("file:///pkg/Helper.kt", Range(Position(1, 0), Position(1, 6))),
+            "com.example",
+        )
+        @Suppress("DEPRECATION")
+        harness.fakeServer.workspaceSymbolResponse =
+            Either.forLeft<MutableList<out SymbolInformation>, MutableList<out WorkspaceSymbol>>(mutableListOf(si))
+
+        val list = workspace.workspaceSymbolsLocated("Helper").get(2, TimeUnit.SECONDS)
+        assertEquals(1, list.size)
+        assertEquals("Helper", list[0].name)
+        assertEquals("com.example", list[0].containerName)
+        val loc = list[0].location
+        assertNotNull(loc)
+        assertEquals("file:///pkg/Helper.kt", loc!!.uri)
+        assertEquals(1, loc.range.startLine)
+    }
+
+    @Test
+    fun `workspaceSymbolsLocated returns empty for null server response`() {
+        harness.fakeServer.workspaceSymbolResponse = null
+        val list = workspace.workspaceSymbolsLocated("X").get(2, TimeUnit.SECONDS)
+        assertTrue(list.isEmpty())
     }
 
     private fun waitUntil(timeoutMs: Long = 2000, predicate: () -> Boolean) {

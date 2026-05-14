@@ -124,6 +124,7 @@ fun EditorPanel(
     onRequestRename: ((line: Int, character: Int, newName: String) -> CompletableFuture<RenameWorkspaceEdit>)? = null,
     onApplyRename: ((RenameWorkspaceEdit) -> Unit)? = null,
     onRequestReferences: ((line: Int, character: Int, symbolName: String) -> Unit)? = null,
+    editorFocusVersion: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val isMarkdown = remember(activePath) {
@@ -897,6 +898,7 @@ fun EditorPanel(
                 },
                 manageHistory = false,
                 viewportHeightProvider = { scrollState.viewportSize.toFloat() },
+                focusRequestVersion = editorFocusVersion,
                 decorations = decorations,
                 onHover = { origOff ->
                     pendingHoverDiagnostic = if (origOff == null) null
