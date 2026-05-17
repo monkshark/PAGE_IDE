@@ -121,6 +121,18 @@ fun main() = application {
     DisposableEffect(terminalManager) {
         onDispose { terminalManager.closeAll() }
     }
+    var runState: RunConfigsState by remember { mutableStateOf(RunConfigsState()) }
+    var runDialogOpen by remember { mutableStateOf(false) }
+    var outputOpen by remember { mutableStateOf(false) }
+    var outputHeight: Dp by remember { mutableStateOf(220.dp) }
+    val outputState = remember { OutputPanelState() }
+    val runScope = rememberCoroutineScope()
+    val runController = remember {
+        RunController(runScope) { event -> outputState.onEvent(event) }
+    }
+    DisposableEffect(runController) {
+        onDispose { runController.stop() }
+    }
     var referencesState: ReferencesQueryState? by remember { mutableStateOf(null) }
     var referencesHeight: Dp by remember { mutableStateOf(220.dp) }
     var palette: GlassPalette by remember { mutableStateOf(AppSettings.loadPalette()) }
@@ -203,6 +215,20 @@ fun main() = application {
         todo.scanWorkspaceAsync()
     }
 
+    LaunchedEffect(rootDir) {
+        val root = rootDir ?: run {
+            runState = RunConfigsState()
+            return@LaunchedEffect
+        }
+        runState = runCatching { RunConfigStore.load(root) }.getOrDefault(RunConfigsState())
+    }
+
+    LaunchedEffect(rootDir, runState) {
+        val root = rootDir ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        runCatching { RunConfigStore.save(root, runState) }
+    }
+
     var sessionLoaded by remember { mutableStateOf(false) }
     var foldByPath by remember { mutableStateOf<Map<String, Set<Int>>>(emptyMap()) }
     var historyFile by remember { mutableStateOf(HistoryFile()) }
@@ -236,6 +262,8 @@ fun main() = application {
             todoFileOrder = session.todoFileOrder
             terminalOpen = session.terminalOpen
             terminalHeight = session.terminalHeight.coerceIn(120f, 600f).dp
+            outputOpen = session.outputOpen
+            outputHeight = session.outputHeight.coerceIn(120f, 600f).dp
             if (session.terminalTabs.isNotEmpty()) {
                 terminalManager.restoreFrom(
                     names = session.terminalTabs.map { it.name },
@@ -280,6 +308,8 @@ fun main() = application {
         terminalHeight = terminalHeight.value,
         terminalTabs = terminalManager.snapshotNames().map { SessionTerminalTab(name = it) },
         terminalActiveIndex = terminalManager.activeIndex(),
+        outputOpen = outputOpen,
+        outputHeight = outputHeight.value,
         foldedStartLinesByPath = foldByPath.mapValues { it.value.toList().sorted() },
         expandedDirs = expanded.map { it.toString() }.sorted(),
     )
@@ -1133,6 +1163,19 @@ fun main() = application {
             if (terminalOpen && terminalManager.tabs.isEmpty()) terminalManager.newTab()
         }
         val toggleTerminalRef = rememberUpdatedState(toggleTerminal)
+        val startActiveRun: () -> Unit = run@{
+            val cfg = runState.active ?: return@run
+            if (runController.isRunning) return@run
+            outputOpen = true
+            runController.start(cfg)
+        }
+        val stopActiveRun: () -> Unit = {
+            runController.stop()
+        }
+        val openRunDialog: () -> Unit = { runDialogOpen = true }
+        val startActiveRunRef = rememberUpdatedState(startActiveRun)
+        val stopActiveRunRef = rememberUpdatedState(stopActiveRun)
+        val openRunDialogRef = rememberUpdatedState(openRunDialog)
         DisposableEffect(window) {
             val frame = window
             val dispatcher = java.awt.KeyEventDispatcher { e ->
@@ -1199,6 +1242,18 @@ fun main() = application {
                     }
                     !ctrl && alt && !shift && e.keyCode == java.awt.event.KeyEvent.VK_ENTER -> {
                         triggerCodeActionRef.value()
+                        true
+                    }
+                    !ctrl && !alt && shift && e.keyCode == java.awt.event.KeyEvent.VK_F10 -> {
+                        startActiveRunRef.value()
+                        true
+                    }
+                    ctrl && !alt && !shift && e.keyCode == java.awt.event.KeyEvent.VK_F2 -> {
+                        stopActiveRunRef.value()
+                        true
+                    }
+                    ctrl && alt && !shift && e.keyCode == java.awt.event.KeyEvent.VK_R -> {
+                        openRunDialogRef.value()
                         true
                     }
                     else -> false
@@ -1318,6 +1373,21 @@ fun main() = application {
                     onTerminalResizeDelta = { delta ->
                         terminalHeight = (terminalHeight + delta).coerceIn(120.dp, 600.dp)
                     },
+                    runState = runState,
+                    onSelectRunConfig = { id -> runState = runState.select(id) },
+                    onStartRun = startActiveRun,
+                    onStopRun = stopActiveRun,
+                    onOpenRunDialog = openRunDialog,
+                    runIsRunning = outputState.running,
+                    outputOpen = outputOpen,
+                    outputState = outputState,
+                    onOutputToggle = { outputOpen = !outputOpen },
+                    onOutputClose = { outputOpen = false },
+                    onOutputClear = { outputState.clear() },
+                    outputHeight = outputHeight,
+                    onOutputResizeDelta = { delta ->
+                        outputHeight = (outputHeight + delta).coerceIn(120.dp, 600.dp)
+                    },
                     referencesState = referencesState,
                     onRequestReferences = requestReferences,
                     onReferencesClose = { referencesState = null },
@@ -1397,6 +1467,19 @@ fun main() = application {
                 documentSymbolOpen = false
                 frameRef.value?.requestFocus()
             },
+        )
+    }
+
+    if (runDialogOpen) {
+        RunConfigDialog(
+            state = runState,
+            activeFile = focused().book.active?.path,
+            workspaceRoot = rootDir,
+            onSave = { saved ->
+                runState = saved
+                runDialogOpen = false
+            },
+            onDismiss = { runDialogOpen = false },
         )
     }
 
@@ -1560,6 +1643,19 @@ private fun Shell(
     onTerminalClose: () -> Unit,
     terminalHeight: Dp,
     onTerminalResizeDelta: (Dp) -> Unit,
+    runState: RunConfigsState,
+    onSelectRunConfig: (String) -> Unit,
+    onStartRun: () -> Unit,
+    onStopRun: () -> Unit,
+    onOpenRunDialog: () -> Unit,
+    runIsRunning: Boolean,
+    outputOpen: Boolean,
+    outputState: OutputPanelState,
+    onOutputToggle: () -> Unit,
+    onOutputClose: () -> Unit,
+    onOutputClear: () -> Unit,
+    outputHeight: Dp,
+    onOutputResizeDelta: (Dp) -> Unit,
     referencesState: ReferencesQueryState?,
     onRequestReferences: (Path, Int, Int, String) -> Unit,
     onReferencesClose: () -> Unit,
@@ -1584,6 +1680,14 @@ private fun Shell(
             path = paneFor(focusedPane, primary, secondary).book.active?.path,
             terminalOpen = terminalOpen,
             onTerminalToggle = onTerminalToggle,
+            runState = runState,
+            onSelectRunConfig = onSelectRunConfig,
+            runIsRunning = runIsRunning,
+            onStartRun = onStartRun,
+            onStopRun = onStopRun,
+            onOpenRunDialog = onOpenRunDialog,
+            outputOpen = outputOpen,
+            onOutputToggle = onOutputToggle,
         )
         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
             FileTreePanel(
@@ -1768,6 +1872,16 @@ private fun Shell(
                 onPanelClose = onTerminalClose,
                 height = terminalHeight,
                 onResizeDelta = onTerminalResizeDelta,
+            )
+        }
+        if (outputOpen) {
+            OutputPanel(
+                state = outputState,
+                onClose = onOutputClose,
+                onClear = onOutputClear,
+                onStop = onStopRun,
+                height = outputHeight,
+                onResizeDelta = onOutputResizeDelta,
             )
         }
     }
@@ -1955,6 +2069,14 @@ private fun TitleBar(
     path: Path?,
     terminalOpen: Boolean,
     onTerminalToggle: () -> Unit,
+    runState: RunConfigsState,
+    onSelectRunConfig: (String) -> Unit,
+    runIsRunning: Boolean,
+    onStartRun: () -> Unit,
+    onStopRun: () -> Unit,
+    onOpenRunDialog: () -> Unit,
+    outputOpen: Boolean,
+    onOutputToggle: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().height(36.dp),
@@ -1982,12 +2104,123 @@ private fun TitleBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
+            RunDropdown(
+                state = runState,
+                onSelect = onSelectRunConfig,
+                onEdit = onOpenRunDialog,
+            )
+            Spacer(Modifier.width(4.dp))
+            val canStart = runState.active != null && !runIsRunning
+            TitleBarAction(
+                label = "▶ 실행",
+                enabled = canStart,
+                onClick = onStartRun,
+            )
+            TitleBarAction(
+                label = "■ 정지",
+                enabled = runIsRunning,
+                onClick = onStopRun,
+            )
+            Spacer(Modifier.width(8.dp))
+            TitleBarToggle(
+                label = "출력",
+                selected = outputOpen,
+                onClick = onOutputToggle,
+            )
             TitleBarToggle(
                 label = "터미널",
                 selected = terminalOpen,
                 onClick = onTerminalToggle,
             )
         }
+    }
+}
+
+@Composable
+private fun RunDropdown(
+    state: RunConfigsState,
+    onSelect: (String) -> Unit,
+    onEdit: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val active = state.active
+    val label = active?.name?.takeIf { it.isNotBlank() } ?: "실행 구성"
+    Box {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 2.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "▾",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        androidx.compose.material3.DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            if (state.configs.isEmpty()) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("구성이 없습니다", style = MaterialTheme.typography.labelSmall) },
+                    onClick = { expanded = false; onEdit() },
+                )
+            } else {
+                for (cfg in state.configs) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = cfg.name.ifBlank { cfg.command },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(cfg.id)
+                        },
+                    )
+                }
+            }
+            androidx.compose.material3.HorizontalDivider()
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("구성 편집…", style = MaterialTheme.typography.labelSmall) },
+                onClick = { expanded = false; onEdit() },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TitleBarAction(label: String, enabled: Boolean, onClick: () -> Unit) {
+    val fg = if (enabled) MaterialTheme.colorScheme.onSurface
+    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(4.dp),
+        modifier = Modifier
+            .padding(horizontal = 2.dp)
+            .let { if (enabled) it.clickable { onClick() } else it },
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = fg,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }
 
