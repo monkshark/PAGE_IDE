@@ -513,14 +513,15 @@ private fun StatusLabel(
         stats == null -> ""
         stats.hits == 0 -> "결과 없음"
         else -> {
-            val base = "${stats.hits}건 / 파일 ${stats.files}개"
-            if (stats.truncated) "$base (잘림)" else base
+            val plus = if (stats.truncated) "+" else ""
+            "${stats.hits}${plus}건 · ${stats.files}파일"
         }
     }
-    val color = if (patternInvalid)
-        MaterialTheme.colorScheme.error
-    else
-        MaterialTheme.colorScheme.onSurfaceVariant
+    val color = when {
+        patternInvalid -> MaterialTheme.colorScheme.error
+        stats?.truncated == true -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Text(
         text = text,
         color = color,
@@ -528,7 +529,7 @@ private fun StatusLabel(
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
         ),
-        modifier = Modifier.width(120.dp),
+        modifier = Modifier.width(140.dp),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
