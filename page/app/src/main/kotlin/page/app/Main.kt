@@ -63,13 +63,16 @@ import page.editor.FileKinds
 import page.editor.IndexedFile
 import page.editor.OpenTab
 import page.editor.ProjectFileIndex
+import page.editor.ProjectGrep
 import page.editor.Replace
 import page.editor.SearchState
 import page.editor.SplitOrientation
 import page.editor.SplitPaneState
 import page.editor.SyntaxLexers
 import page.editor.TabBook
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.withContext
 import page.lsp.CodeActionEntry
 import page.lsp.DocumentSymbolEntry
 import page.lsp.RenameApply
@@ -402,6 +405,54 @@ fun main() = application {
                 }
             }
         }
+    }
+
+    val onReplaceInFiles: suspend (ReplaceRequest) -> ReplaceOutcome = { req ->
+        data class Outcome(val filesChanged: Int, val replacements: Int, val updates: Map<Path, String>)
+        val result = withContext(Dispatchers.IO) {
+            var filesChanged = 0
+            var replacements = 0
+            val updates = HashMap<Path, String>()
+            for (target in req.targets) {
+                val original = FileDocument.loadOrNull(target) ?: continue
+                val (newText, count) = ProjectGrep.applyReplace(
+                    text = original,
+                    query = req.query,
+                    replacement = req.replacement,
+                    caseSensitive = req.caseSensitive,
+                    regex = req.regex,
+                    wholeWord = req.wholeWord,
+                )
+                if (count == 0 || newText == original) continue
+                try {
+                    FileDocument.save(target, newText)
+                } catch (_: java.io.IOException) {
+                    continue
+                }
+                updates[target] = newText
+                filesChanged += 1
+                replacements += count
+            }
+            Outcome(filesChanged, replacements, updates)
+        }
+        if (result.updates.isNotEmpty()) {
+            mutatePane(PaneSide.PRIMARY) { pane ->
+                val newBook = applyReplaceToBook(pane.book, result.updates)
+                if (newBook === pane.book) pane else pane.copy(book = newBook)
+            }
+            mutatePane(PaneSide.SECONDARY) { pane ->
+                val newBook = applyReplaceToBook(pane.book, result.updates)
+                if (newBook === pane.book) pane else pane.copy(book = newBook)
+            }
+            for (side in listOf(PaneSide.PRIMARY, PaneSide.SECONDARY)) {
+                val pane = paneOf(side)
+                val active = pane.book.active ?: continue
+                if (!result.updates.containsKey(active.path)) continue
+                val caret = active.caret.coerceAtMost(active.text.length)
+                setPane(side, pane.copy(editorValue = TextFieldValue(active.text, TextRange(caret))))
+            }
+        }
+        ReplaceOutcome(filesChanged = result.filesChanged, replacements = result.replacements)
     }
 
     val jumpToProblem: (Path, Int, Int) -> Unit = { picked, line, character ->
@@ -1308,6 +1359,7 @@ fun main() = application {
                             findInFiles = false
                             openInTabAt(path, offset)
                         },
+                        onReplace = onReplaceInFiles,
                         onDismiss = { findInFiles = false },
                     )
                 }
@@ -1415,6 +1467,16 @@ fun main() = application {
 private fun windowTitle(path: Path?): String {
     val name = path?.fileName?.toString() ?: "untitled"
     return "$name — ${PageIdentity.NAME}"
+}
+
+private fun applyReplaceToBook(book: TabBook, updates: Map<Path, String>): TabBook {
+    if (book.tabs.none { updates.containsKey(it.path) }) return book
+    val newTabs = book.tabs.map { tab ->
+        val newText = updates[tab.path] ?: return@map tab
+        val caret = tab.caret.coerceAtMost(newText.length)
+        tab.copy(text = newText, savedText = newText, caret = caret)
+    }
+    return book.copy(tabs = newTabs)
 }
 
 private fun offsetToLineChar(text: String, offset: Int): Pair<Int, Int> {
