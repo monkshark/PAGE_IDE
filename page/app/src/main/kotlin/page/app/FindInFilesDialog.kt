@@ -109,8 +109,9 @@ internal fun FindInFilesDialog(
     var busy by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(0) }
     var popupOffset by remember { mutableStateOf(IntOffset(0, 56)) }
+    var refreshTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(query, caseSensitive, regex, wholeWord, files) {
+    LaunchedEffect(query, caseSensitive, regex, wholeWord, files, refreshTick) {
         if (query.isEmpty()) {
             report = null
             busy = false
@@ -249,6 +250,7 @@ internal fun FindInFilesDialog(
                                         )
                                         replaceBusy = false
                                         replaceMessage = "${outcome.replacements}건 치환 · 파일 ${outcome.filesChanged}개"
+                                        if (outcome.replacements > 0) refreshTick += 1
                                     }
                                 },
                             )
