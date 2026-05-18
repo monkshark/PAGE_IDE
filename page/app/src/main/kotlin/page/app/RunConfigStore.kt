@@ -14,8 +14,9 @@ object RunConfigStore {
         val persisted = PageIdeStore.read(workspaceRoot, FILE_NAME, Persisted::class.java)
             ?: return RunConfigsState()
         val sanitized = persisted.configs.filter { it.id.isNotBlank() && it.command.isNotBlank() }
-        val active = persisted.activeId?.takeIf { id -> sanitized.any { it.id == id } }
-            ?: sanitized.firstOrNull()?.id
+        val active = persisted.activeId?.takeIf { id ->
+            id == CURRENT_FILE_ID || sanitized.any { it.id == id }
+        } ?: sanitized.firstOrNull()?.id
         return RunConfigsState(configs = sanitized, activeId = active)
     }
 

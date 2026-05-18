@@ -79,6 +79,8 @@ import page.lsp.RenameApply
 import page.lsp.RenameFileChange
 import page.lsp.RenameWorkspaceEdit
 import page.lsp.pickSingleOtherReference
+import page.ui.CompactDropdown
+import page.ui.CompactMenuItem
 import page.ui.Glass
 import page.ui.GlassPalette
 import page.ui.GlassTheme
@@ -518,7 +520,7 @@ fun main() = application {
                         results = emptyList(),
                         isLoading = false,
                         errorMessage = err.message?.lineSequence()?.firstOrNull()?.take(160)
-                            ?: "참조 검색 실패",
+                            ?: "Find references failed",
                     )
                     return@whenComplete
                 }
@@ -1164,8 +1166,13 @@ fun main() = application {
         }
         val toggleTerminalRef = rememberUpdatedState(toggleTerminal)
         val startActiveRun: () -> Unit = run@{
-            val cfg = runState.active ?: return@run
             if (runController.isRunning) return@run
+            val cfg = if (runState.isCurrentFileActive) {
+                val file = focused().book.active?.path ?: return@run
+                LanguageRunDefaults.buildConfig(file, rootDir) ?: return@run
+            } else {
+                runState.active ?: return@run
+            }
             outputOpen = true
             runController.start(cfg)
         }
@@ -1473,7 +1480,6 @@ fun main() = application {
     if (runDialogOpen) {
         RunConfigDialog(
             state = runState,
-            activeFile = focused().book.active?.path,
             workspaceRoot = rootDir,
             onSave = { saved ->
                 runState = saved
@@ -1579,8 +1585,8 @@ private fun isKotlinSource(path: Path): Boolean {
 
 @androidx.compose.runtime.Composable
 private fun lspStatusLineText(lsp: LspController): String? = when (lsp.status.value) {
-    LspController.Status.MISSING -> "LSP · kotlin-language-server 누락"
-    LspController.Status.FAILED -> "LSP · 시작 실패"
+    LspController.Status.MISSING -> "LSP · kotlin-language-server missing"
+    LspController.Status.FAILED -> "LSP · failed to start"
     else -> null
 }
 
@@ -1681,6 +1687,7 @@ private fun Shell(
             terminalOpen = terminalOpen,
             onTerminalToggle = onTerminalToggle,
             runState = runState,
+            activeFilePath = paneFor(focusedPane, primary, secondary).book.active?.path,
             onSelectRunConfig = onSelectRunConfig,
             runIsRunning = runIsRunning,
             onStartRun = onStartRun,
@@ -2070,6 +2077,7 @@ private fun TitleBar(
     terminalOpen: Boolean,
     onTerminalToggle: () -> Unit,
     runState: RunConfigsState,
+    activeFilePath: Path?,
     onSelectRunConfig: (String) -> Unit,
     runIsRunning: Boolean,
     onStartRun: () -> Unit,
@@ -2104,31 +2112,37 @@ private fun TitleBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
+            val currentFileTemplate = activeFilePath?.let { LanguageRunDefaults.forFile(it) }
             RunDropdown(
                 state = runState,
+                activeFilePath = activeFilePath,
+                currentFileTemplate = currentFileTemplate,
                 onSelect = onSelectRunConfig,
                 onEdit = onOpenRunDialog,
             )
             Spacer(Modifier.width(4.dp))
-            val canStart = runState.active != null && !runIsRunning
+            val canStart = !runIsRunning && when {
+                runState.isCurrentFileActive -> currentFileTemplate != null
+                else -> runState.active != null
+            }
             TitleBarAction(
-                label = "▶ 실행",
+                label = "Run",
                 enabled = canStart,
                 onClick = onStartRun,
             )
             TitleBarAction(
-                label = "■ 정지",
+                label = "Stop",
                 enabled = runIsRunning,
                 onClick = onStopRun,
             )
             Spacer(Modifier.width(8.dp))
             TitleBarToggle(
-                label = "출력",
+                label = "Output",
                 selected = outputOpen,
                 onClick = onOutputToggle,
             )
             TitleBarToggle(
-                label = "터미널",
+                label = "Terminal",
                 selected = terminalOpen,
                 onClick = onTerminalToggle,
             )
@@ -2139,15 +2153,22 @@ private fun TitleBar(
 @Composable
 private fun RunDropdown(
     state: RunConfigsState,
+    activeFilePath: Path?,
+    currentFileTemplate: LanguageRunTemplate?,
     onSelect: (String) -> Unit,
     onEdit: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val active = state.active
-    val label = active?.name?.takeIf { it.isNotBlank() } ?: "실행 구성"
+    val activeFileName = activeFilePath?.fileName?.toString()
+    val label = when {
+        state.isCurrentFileActive -> activeFileName?.let { "Current file · $it" } ?: "Current file"
+        active != null -> active.name.takeIf { it.isNotBlank() } ?: "Run config"
+        else -> "Run config"
+    }
     Box {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            color = Color.Transparent,
             shape = RoundedCornerShape(4.dp),
             modifier = Modifier
                 .clickable { expanded = !expanded }
@@ -2160,34 +2181,44 @@ private fun RunDropdown(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = "▾",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
             }
         }
-        androidx.compose.material3.DropdownMenu(
+        CompactDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            if (state.configs.isEmpty()) {
-                androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("구성이 없습니다", style = MaterialTheme.typography.labelSmall) },
-                    onClick = { expanded = false; onEdit() },
-                )
-            } else {
+            val currentFileLabel = when {
+                activeFileName == null -> "Current file (no file open)"
+                currentFileTemplate == null -> "Current file (${activeFileName} — unsupported)"
+                else -> "Current file · $activeFileName"
+            }
+            CompactMenuItem(
+                label = currentFileLabel,
+                onClick = {
+                    expanded = false
+                    onSelect(CURRENT_FILE_ID)
+                },
+            )
+            if (state.configs.isNotEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant),
+                    )
+                }
                 for (cfg in state.configs) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = cfg.name.ifBlank { cfg.command },
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
+                    CompactMenuItem(
+                        label = cfg.name.ifBlank { cfg.command },
                         onClick = {
                             expanded = false
                             onSelect(cfg.id)
@@ -2195,9 +2226,16 @@ private fun RunDropdown(
                     )
                 }
             }
-            androidx.compose.material3.HorizontalDivider()
-            androidx.compose.material3.DropdownMenuItem(
-                text = { Text("구성 편집…", style = MaterialTheme.typography.labelSmall) },
+            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant),
+                )
+            }
+            CompactMenuItem(
+                label = "Edit configurations…",
                 onClick = { expanded = false; onEdit() },
             )
         }

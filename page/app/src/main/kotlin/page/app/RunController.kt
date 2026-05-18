@@ -34,7 +34,7 @@ class RunController(
     fun start(config: RunConfig) {
         if (alive.get()) return
         if (!config.isRunnable()) {
-            emit(RunEvent.Failed("실행 명령이 비어있습니다"))
+            emit(RunEvent.Failed("Run command is empty"))
             return
         }
         val command = listOf(config.command) + config.args
@@ -45,10 +45,10 @@ class RunController(
         val started = try {
             builder.start()
         } catch (e: IOException) {
-            emit(RunEvent.Failed(e.message ?: "프로세스 시작 실패"))
+            emit(RunEvent.Failed(e.message ?: "Failed to start process"))
             return
         } catch (e: SecurityException) {
-            emit(RunEvent.Failed(e.message ?: "권한 거부"))
+            emit(RunEvent.Failed(e.message ?: "Permission denied"))
             return
         }
         process = started

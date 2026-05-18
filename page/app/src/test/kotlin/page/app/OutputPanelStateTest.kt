@@ -60,4 +60,22 @@ class OutputPanelStateTest {
         assertNull(s.lastError)
         assertNull(s.lastDurationMs)
     }
+
+    @Test
+    fun `restart clears previous run output`() {
+        val s = OutputPanelState()
+        s.onEvent(RunEvent.Started("ls", emptyList(), null))
+        s.onEvent(RunEvent.Stdout("first run line 1\n"))
+        s.onEvent(RunEvent.Stdout("first run line 2\n"))
+        s.onEvent(RunEvent.Exited(0, 10))
+        val firstRunTextBefore = s.lines.joinToString("\n") { it.plain }
+        assertTrue(firstRunTextBefore.contains("first run line 1"))
+
+        s.onEvent(RunEvent.Started("ls", listOf("-a"), null))
+        val afterRestartText = s.lines.joinToString("\n") { it.plain }
+        assertFalse(afterRestartText.contains("first run line 1"))
+        assertFalse(afterRestartText.contains("first run line 2"))
+        assertTrue(s.running)
+        assertNull(s.lastExitCode)
+    }
 }

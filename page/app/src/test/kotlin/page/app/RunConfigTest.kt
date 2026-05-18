@@ -93,4 +93,40 @@ class RunConfigTest {
     fun `active returns null on empty state`() {
         assertNull(RunConfigsState().active)
     }
+
+    @Test
+    fun `select CURRENT_FILE_ID works on empty state`() {
+        val s = RunConfigsState().select(CURRENT_FILE_ID)
+        assertEquals(CURRENT_FILE_ID, s.activeId)
+        assertTrue(s.isCurrentFileActive)
+        assertNull(s.active)
+    }
+
+    @Test
+    fun `select CURRENT_FILE_ID switches from saved config`() {
+        val s = RunConfigsState().add(cfg("a")).select(CURRENT_FILE_ID)
+        assertEquals(CURRENT_FILE_ID, s.activeId)
+        assertTrue(s.isCurrentFileActive)
+        assertEquals(1, s.configs.size)
+    }
+
+    @Test
+    fun `select existing id switches back from CURRENT_FILE_ID`() {
+        val s = RunConfigsState().add(cfg("a")).select(CURRENT_FILE_ID).select("a")
+        assertEquals("a", s.activeId)
+        assertFalse(s.isCurrentFileActive)
+    }
+
+    @Test
+    fun `isCurrentFileActive false by default`() {
+        assertFalse(RunConfigsState().isCurrentFileActive)
+        assertFalse(RunConfigsState().add(cfg("a")).isCurrentFileActive)
+    }
+
+    @Test
+    fun `add does not override CURRENT_FILE_ID active`() {
+        val s = RunConfigsState().select(CURRENT_FILE_ID).add(cfg("a"))
+        assertEquals(CURRENT_FILE_ID, s.activeId)
+        assertEquals(1, s.configs.size)
+    }
 }

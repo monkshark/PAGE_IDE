@@ -1,5 +1,7 @@
 package page.app
 
+const val CURRENT_FILE_ID = "__current_file__"
+
 data class RunConfig(
     val id: String,
     val name: String,
@@ -17,9 +19,12 @@ data class RunConfigsState(
 ) {
     val active: RunConfig? get() = configs.firstOrNull { it.id == activeId }
 
+    val isCurrentFileActive: Boolean get() = activeId == CURRENT_FILE_ID
+
     fun add(config: RunConfig): RunConfigsState {
         if (configs.any { it.id == config.id }) return this
-        return copy(configs = configs + config, activeId = activeId ?: config.id)
+        val newActive = activeId ?: config.id
+        return copy(configs = configs + config, activeId = newActive)
     }
 
     fun remove(id: String): RunConfigsState {
@@ -39,6 +44,7 @@ data class RunConfigsState(
     }
 
     fun select(id: String): RunConfigsState {
+        if (id == CURRENT_FILE_ID) return copy(activeId = CURRENT_FILE_ID)
         if (configs.none { it.id == id }) return this
         return copy(activeId = id)
     }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,13 +44,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.DialogWindowScope
 import androidx.compose.ui.window.rememberDialogState
 import java.nio.file.Path
+import page.ui.GlassTheme
 
 @Composable
 fun RunConfigDialog(
     state: RunConfigsState,
-    activeFile: Path?,
     workspaceRoot: Path?,
     onSave: (RunConfigsState) -> Unit,
     onDismiss: () -> Unit,
@@ -68,8 +70,9 @@ fun RunConfigDialog(
     DialogWindow(
         onCloseRequest = onDismiss,
         state = dialogState,
-        title = "실행 구성",
+        title = "Run Configurations",
         resizable = true,
+        undecorated = true,
         onPreviewKeyEvent = { event ->
             if (event.type != KeyEventType.KeyDown) false
             else when (event.key) {
@@ -78,8 +81,16 @@ fun RunConfigDialog(
             }
         },
     ) {
-        Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(12.dp)) {
+        GlassTheme {
+        Surface(
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier
+                .fillMaxSize()
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                DialogTitleBar(title = "Run Configurations", onClose = onDismiss)
+                Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     verticalAlignment = Alignment.Top,
@@ -100,11 +111,10 @@ fun RunConfigDialog(
                 Spacer(Modifier.height(12.dp))
                 ListActions(
                     canDelete = selectedConfig() != null,
-                    canAutoDetect = activeFile != null,
                     onAdd = {
                         val cfg = RunConfig(
                             id = "cfg-${System.nanoTime()}",
-                            name = "새 구성",
+                            name = "New configuration",
                             command = "",
                             args = emptyList(),
                             workingDir = workspaceRoot?.toString(),
@@ -116,7 +126,7 @@ fun RunConfigDialog(
                         val current = selectedConfig() ?: return@ListActions
                         val cfg = current.copy(
                             id = "cfg-${System.nanoTime()}",
-                            name = "${current.name} (복제)",
+                            name = "${current.name} (copy)",
                         )
                         draft = draft.add(cfg)
                         selected = cfg.id
@@ -125,12 +135,6 @@ fun RunConfigDialog(
                         val current = selectedConfig() ?: return@ListActions
                         draft = draft.remove(current.id)
                         selected = draft.activeId
-                    },
-                    onAutoDetect = {
-                        val file = activeFile ?: return@ListActions
-                        val cfg = LanguageRunDefaults.buildConfig(file, workspaceRoot) ?: return@ListActions
-                        draft = draft.add(cfg).select(cfg.id)
-                        selected = cfg.id
                     },
                 )
                 Spacer(Modifier.height(12.dp))
@@ -141,9 +145,52 @@ fun RunConfigDialog(
                         onSave(sanitized)
                     },
                 )
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+private fun DialogWindowScope.DialogTitleBar(
+    title: String,
+    onClose: () -> Unit,
+) {
+    WindowDraggableArea(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .padding(start = 12.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            Surface(
+                color = Color.Transparent,
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.clickable { onClose() }.padding(horizontal = 2.dp),
+            ) {
+                Text(
+                    text = "Close",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
             }
         }
     }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+    )
 }
 
 @Composable
@@ -162,7 +209,7 @@ private fun ConfigList(
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(4.dp)) {
             if (configs.isEmpty()) {
                 Text(
-                    text = "구성이 없습니다",
+                    text = "No configurations",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(8.dp),
@@ -184,11 +231,11 @@ private fun ConfigList(
                 ) {
                     Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                         Text(
-                            text = cfg.name.ifBlank { "(이름 없음)" },
+                            text = cfg.name.ifBlank { "(unnamed)" },
                             style = MaterialTheme.typography.labelMedium,
                             color = fg,
                         )
-                        val subtitle = if (cfg.command.isBlank()) "명령 미설정"
+                        val subtitle = if (cfg.command.isBlank()) "no command set"
                         else "${cfg.command} ${cfg.args.joinToString(" ")}".trim()
                         Text(
                             text = subtitle,
@@ -213,7 +260,7 @@ private fun ConfigForm(
     if (config == null) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(
-                text = "왼쪽에서 구성을 선택하거나 추가하세요",
+                text = "Select a configuration or add a new one",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -223,33 +270,33 @@ private fun ConfigForm(
     val scroll = rememberScrollState()
     Column(modifier = modifier.verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FormField(
-            label = "이름",
+            label = "Name",
             value = config.name,
             onValueChange = { onChange(config.copy(name = it)) },
         )
         FormField(
-            label = "명령",
+            label = "Command",
             value = config.command,
-            placeholder = "예: python · npx · cargo",
+            placeholder = "e.g. python · npx · cargo",
             onValueChange = { onChange(config.copy(command = it)) },
             mono = true,
         )
         FormField(
-            label = "인자 (공백 구분)",
+            label = "Arguments (space-separated)",
             value = config.args.joinToString(" "),
-            placeholder = "예: run main.py",
+            placeholder = "e.g. run main.py",
             onValueChange = { raw -> onChange(config.copy(args = parseArgs(raw))) },
             mono = true,
         )
         FormField(
-            label = "작업 디렉터리",
+            label = "Working directory",
             value = config.workingDir.orEmpty(),
-            placeholder = "비워두면 워크스페이스 루트 사용",
+            placeholder = "Leave empty to use workspace root",
             onValueChange = { onChange(config.copy(workingDir = it.ifBlank { null })) },
             mono = true,
         )
         FormField(
-            label = "환경 변수 (KEY=VALUE, 한 줄에 하나)",
+            label = "Environment variables (KEY=VALUE, one per line)",
             value = envToText(config.env),
             placeholder = "PORT=8080\nNODE_ENV=development",
             onValueChange = { raw -> onChange(config.copy(env = parseEnv(raw))) },
@@ -320,26 +367,22 @@ private fun FormField(
 @Composable
 private fun ListActions(
     canDelete: Boolean,
-    canAutoDetect: Boolean,
     onAdd: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
-    onAutoDetect: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        ActionButton(label = "+ 추가", enabled = true, onClick = onAdd)
-        ActionButton(label = "복제", enabled = canDelete, onClick = onDuplicate)
-        ActionButton(label = "삭제", enabled = canDelete, onClick = onDelete)
-        Spacer(Modifier.width(8.dp))
-        ActionButton(label = "현재 파일에서 자동 감지", enabled = canAutoDetect, onClick = onAutoDetect)
+        ActionButton(label = "+ Add", enabled = true, onClick = onAdd)
+        ActionButton(label = "Duplicate", enabled = canDelete, onClick = onDuplicate)
+        ActionButton(label = "Delete", enabled = canDelete, onClick = onDelete)
     }
 }
 
 @Composable
 private fun DialogFooter(onCancel: () -> Unit, onSave: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        ActionButton(label = "취소", enabled = true, onClick = onCancel)
-        ActionButton(label = "저장", enabled = true, emphasized = true, onClick = onSave)
+        ActionButton(label = "Cancel", enabled = true, onClick = onCancel)
+        ActionButton(label = "Save", enabled = true, emphasized = true, onClick = onSave)
     }
 }
 
@@ -352,13 +395,13 @@ private fun ActionButton(
 ) {
     val bg = when {
         !enabled -> Color.Transparent
-        emphasized -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        emphasized -> MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        else -> Color.Transparent
     }
     val fg = when {
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
         emphasized -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Surface(
         color = bg,
@@ -369,9 +412,9 @@ private fun ActionButton(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = fg,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
     }
 }

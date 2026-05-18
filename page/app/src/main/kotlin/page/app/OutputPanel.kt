@@ -70,6 +70,7 @@ class OutputPanelState {
     fun onEvent(event: RunEvent) {
         when (event) {
             is RunEvent.Started -> {
+                buffer.feed(Char(0x1B).toString() + "[2J")
                 buffer.feed(formatStarted(event))
                 commandLabel = buildString {
                     append(event.command)
@@ -123,23 +124,23 @@ class OutputPanelState {
         val reset = esc + "[0m"
         val argsText = if (event.args.isEmpty()) "" else " " + event.args.joinToString(" ")
         val cwd = event.workingDir?.let { " (cwd: $it)" } ?: ""
-        return "${dim}▶ 실행 — ${event.command}$argsText$cwd$reset\n"
+        return "${dim}> Run — ${event.command}$argsText$cwd$reset\n"
     }
 
     private fun formatExited(event: RunEvent.Exited): String {
         val esc = Char(0x1B).toString()
         val reset = esc + "[0m"
         val color = if (event.code == 0) esc + "[32m" else esc + "[31m"
-        val label = if (event.code == 0) "정상 종료" else "비정상 종료"
+        val label = if (event.code == 0) "Finished" else "Exited with error"
         val seconds = String.format("%.2f", event.durationMs / 1000.0)
-        return "\n$color■ $label · exit ${event.code} · ${seconds}s$reset\n"
+        return "\n$color$label · exit ${event.code} · ${seconds}s$reset\n"
     }
 
     private fun formatFailed(event: RunEvent.Failed): String {
         val esc = Char(0x1B).toString()
         val reset = esc + "[0m"
         val red = esc + "[31m"
-        return "$red✖ 실패 — ${event.message}$reset\n"
+        return "${red}Failed — ${event.message}$reset\n"
     }
 }
 
@@ -185,7 +186,7 @@ private fun OutputHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "출력",
+            text = "Output",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -203,20 +204,20 @@ private fun OutputHeader(
         StatusChip(state = state)
         Spacer(Modifier.width(8.dp))
         HeaderAction(
-            label = if (state.running) "정지" else "정지",
+            label = "Stop",
             enabled = state.running,
             onClick = onStop,
         )
-        HeaderAction(label = "지우기", enabled = true, onClick = onClear)
-        HeaderAction(label = "닫기", enabled = true, onClick = onClose)
+        HeaderAction(label = "Clear", enabled = true, onClick = onClear)
+        HeaderAction(label = "Close", enabled = true, onClick = onClose)
     }
 }
 
 @Composable
 private fun StatusChip(state: OutputPanelState) {
     val (text, color) = when {
-        state.running -> "실행 중" to MaterialTheme.colorScheme.primary
-        state.lastError != null -> "실패" to MaterialTheme.colorScheme.error
+        state.running -> "Running" to MaterialTheme.colorScheme.primary
+        state.lastError != null -> "Failed" to MaterialTheme.colorScheme.error
         state.lastExitCode != null -> {
             val code = state.lastExitCode
             val ms = state.lastDurationMs ?: 0L

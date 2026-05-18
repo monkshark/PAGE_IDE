@@ -91,4 +91,26 @@ class RunConfigStoreTest {
         val loaded = RunConfigStore.load(ws)
         assertEquals("a", loaded.activeId)
     }
+
+    @Test
+    fun `load preserves CURRENT_FILE_ID active across save round-trip`() {
+        val ws = newWorkspace()
+        val state = RunConfigsState(
+            configs = listOf(RunConfig(id = "a", name = "a", command = "ls")),
+            activeId = CURRENT_FILE_ID,
+        )
+        RunConfigStore.save(ws, state)
+        val loaded = RunConfigStore.load(ws)
+        assertEquals(CURRENT_FILE_ID, loaded.activeId)
+        assertEquals(1, loaded.configs.size)
+    }
+
+    @Test
+    fun `load preserves CURRENT_FILE_ID even with no saved configs`() {
+        val ws = newWorkspace()
+        RunConfigStore.save(ws, RunConfigsState(activeId = CURRENT_FILE_ID))
+        val loaded = RunConfigStore.load(ws)
+        assertEquals(CURRENT_FILE_ID, loaded.activeId)
+        assertTrue(loaded.configs.isEmpty())
+    }
 }
