@@ -84,6 +84,7 @@ import page.ui.CompactMenuItem
 import page.ui.Glass
 import page.ui.GlassPalette
 import page.ui.GlassTheme
+import page.ui.GlassTooltip
 import page.ui.SplitPane
 import java.awt.Cursor
 import java.nio.file.Path
@@ -2129,11 +2130,13 @@ private fun TitleBar(
                 label = "Run",
                 enabled = canStart,
                 onClick = onStartRun,
+                shortcut = "Shift+F10",
             )
             TitleBarAction(
                 label = "Stop",
                 enabled = runIsRunning,
                 onClick = onStopRun,
+                shortcut = "Ctrl+F2",
             )
             Spacer(Modifier.width(8.dp))
             TitleBarToggle(
@@ -2145,6 +2148,7 @@ private fun TitleBar(
                 label = "Terminal",
                 selected = terminalOpen,
                 onClick = onTerminalToggle,
+                shortcut = "Ctrl+`",
             )
         }
     }
@@ -2243,29 +2247,50 @@ private fun RunDropdown(
 }
 
 @Composable
-private fun TitleBarAction(label: String, enabled: Boolean, onClick: () -> Unit) {
+private fun TitleBarAction(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    shortcut: String? = null,
+) {
     val fg = if (enabled) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-    Surface(
-        color = Color.Transparent,
-        shape = RoundedCornerShape(4.dp),
-        modifier = Modifier
-            .padding(horizontal = 2.dp)
-            .let { if (enabled) it.clickable { onClick() } else it },
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
+    val tooltipText = when {
+        shortcut.isNullOrBlank() -> ""
+        else -> "$label · $shortcut"
+    }
+    GlassTooltip(text = tooltipText) {
+        Surface(
+            color = Color.Transparent,
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier
+                .padding(horizontal = 2.dp)
+                .let { if (enabled) it.clickable { onClick() } else it },
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = fg,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
     }
 }
 
 @Composable
-private fun TitleBarToggle(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TitleBarToggle(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    shortcut: String? = null,
+) {
     val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
     val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val tooltipText = when {
+        shortcut.isNullOrBlank() -> ""
+        else -> "$label · $shortcut"
+    }
+    GlassTooltip(text = tooltipText) {
     Surface(
         color = bg,
         shape = RoundedCornerShape(4.dp),
@@ -2279,6 +2304,7 @@ private fun TitleBarToggle(label: String, selected: Boolean, onClick: () -> Unit
             color = fg,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
+    }
     }
 }
 
