@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -2914,14 +2915,21 @@ private fun isKotlinSource(path: Path): Boolean {
 }
 
 @androidx.compose.runtime.Composable
-private fun lspStatusLineText(lsp: LspController): String? = when (lsp.status.value) {
-    LspController.Status.MISSING -> {
-        val def = lsp.missingDefinition.value
-        if (def != null) "LSP · ${def.displayName} missing — click to install"
-        else "LSP · kotlin-language-server missing"
+private fun lspStatusLineText(lsp: LspController): String? {
+    val installer = LspInstallers.forId("kotlin") ?: return when (lsp.status.value) {
+        LspController.Status.MISSING -> "LSP · kotlin-language-server missing"
+        LspController.Status.FAILED -> "LSP · failed to start"
+        else -> null
     }
-    LspController.Status.FAILED -> "LSP · failed to start"
-    else -> null
+    val installed = installer.installedVersion()
+    val suffix = when (lsp.status.value) {
+        LspController.Status.FAILED -> " · failed"
+        LspController.Status.STARTING -> " · starting"
+        LspController.Status.MISSING -> " · not installed"
+        else -> ""
+    }
+    val core = if (installed != null) "Kotlin $installed" else "Kotlin (not installed)"
+    return "$core$suffix"
 }
 
 @Composable
@@ -3036,6 +3044,8 @@ private fun Shell(
     tabContextActionsFor: (PaneSide) -> TabContextActions? = { null },
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
+    val installGuideOpen by lsp.installGuideOpen.collectAsState()
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
         TitleBar(
             path = paneFor(focusedPane, primary, secondary).book.active?.path,
@@ -3273,6 +3283,21 @@ private fun Shell(
             )
         }
     }
+    if (installGuideOpen) {
+        val def = lsp.missingDefinition.value
+            ?: page.lsp.LanguageRegistry.byId("kotlin")
+        if (def != null) {
+            InstallGuideDialog(
+                definition = def,
+                attempted = lsp.missingAttempted.value,
+                onDismiss = { lsp.closeInstallGuide() },
+                onInstalled = { lsp.retry() },
+            )
+        } else {
+            lsp.closeInstallGuide()
+        }
+    }
+    }
 }
 
 private fun paneFor(side: PaneSide, primary: EditorPaneState, secondary: EditorPaneState) =
@@ -3319,9 +3344,8 @@ private fun PaneRegion(
     val active = pane.book.active
     val kind = active?.let { FileKinds.classify(it.path) }
     val activeLexer = active?.path?.let { SyntaxLexers.forPath(it) }
-    var lspInstallGuideVisible by remember { mutableStateOf(false) }
     Column(
-        modifier = modifier
+        modifier = modifier.fillMaxSize()
             .pointerInput(side) {
                 awaitPointerEventScope {
                     while (true) {
@@ -3397,9 +3421,7 @@ private fun PaneRegion(
                     diagnostics = activeDiagnostics,
                     lspStatusText = lspStatusText,
                     lspActivities = lspActivities,
-                    onLspStatusClick = if (lsp.status.value == LspController.Status.MISSING && lsp.missingDefinition.value != null) {
-                        { lspInstallGuideVisible = true }
-                    } else null,
+                    onLspStatusClick = { lsp.openInstallGuide() },
                     onProblemsToggle = onProblemsToggle,
                     todoCount = todoCount,
                     onTodoToggle = onTodoToggle,
@@ -3450,18 +3472,6 @@ private fun PaneRegion(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }
-        }
-    }
-    if (lspInstallGuideVisible) {
-        val def = lsp.missingDefinition.value
-        if (def != null) {
-            InstallGuideDialog(
-                definition = def,
-                attempted = lsp.missingAttempted.value,
-                onDismiss = { lspInstallGuideVisible = false },
-            )
-        } else {
-            lspInstallGuideVisible = false
         }
     }
 }

@@ -14,6 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import page.lsp.CompletionEdit
@@ -68,6 +70,11 @@ class LspController(
     val statusDetail: MutableState<String> = mutableStateOf("")
     val missingDefinition: MutableState<LanguageDefinition?> = mutableStateOf(null)
     val missingAttempted: MutableState<List<String>> = mutableStateOf(emptyList())
+    private val _installGuideOpen = MutableStateFlow(false)
+    val installGuideOpen: StateFlow<Boolean> = _installGuideOpen
+
+    fun openInstallGuide() { _installGuideOpen.value = true }
+    fun closeInstallGuide() { _installGuideOpen.value = false }
     val activities: SnapshotStateMap<String, Activity> = androidx.compose.runtime.mutableStateMapOf()
     val diagnosticsByUri: SnapshotStateMap<String, List<Diagnostic>> = androidx.compose.runtime.mutableStateMapOf()
 
@@ -209,6 +216,18 @@ class LspController(
         status.value = Status.MISSING
         statusDetail.value = detail
         println("[lsp] MISSING — $detail")
+    }
+
+    fun retry() {
+        if (status.value != Status.MISSING && status.value != Status.FAILED) return
+        println("[lsp] retry requested (previous status=${status.value})")
+        startAttempted = false
+        missingDefinition.value = null
+        missingAttempted.value = emptyList()
+        status.value = Status.IDLE
+        statusDetail.value = ""
+        _installGuideOpen.value = false
+        ensureStarted()
     }
 
     private fun applyActivityEvent(event: KlsActivity?) {
