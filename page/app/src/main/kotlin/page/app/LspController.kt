@@ -113,6 +113,8 @@ class LspController(
 
     @Volatile private var prepareRenameSupported: Boolean = false
 
+    @Volatile private var clientGeneration: Long = 0L
+
     fun ensureStarted() {
         if (startAttempted) return
         startAttempted = true
@@ -130,9 +132,10 @@ class LspController(
         statusDetail.value = "starting (${resolution.origin}: ${resolution.executable})"
         startActivity(STARTUP_KIND, "Starting…")
         println("[lsp] STARTING — ${resolution.origin}: ${resolution.executable}")
+        val myGeneration = ++clientGeneration
         try {
             val c = KotlinLsp.spawn(resolution.executable, workspaceRoot, onStderrLine = ::onLspStderr)
-            c.onDiagnostics(::onDiagnostics)
+            c.onDiagnostics { params -> if (myGeneration == clientGeneration) onDiagnostics(params) }
             c.onLogMessage { mp ->
                 val rendered = if (mp.type == org.eclipse.lsp4j.MessageType.Error) condenseStackTrace(mp.message ?: "") else mp.message
                 println("[lsp:log/${mp.type}] $rendered")
@@ -1477,6 +1480,74 @@ class LspController(
         if (ws.isOpen(uri)) {
             runCatching { ws.didChange(uri, newText) }
         }
+    }
+
+    fun notifyFilesRenamed(moves: List<Pair<Path, Path>>) {
+        if (moves.isEmpty()) return
+        val ws = workspace ?: return
+        val events = mutableListOf<Pair<String, org.eclipse.lsp4j.FileChangeType>>()
+        val toOpen = mutableListOf<Pair<String, String>>()
+        for ((oldPath, newPath) in moves) {
+            val oldUri = oldPath.toUri().toString()
+            val newUri = newPath.toUri().toString()
+            pendingChanges.remove(oldUri)?.cancel()
+            invalidateCompletionCache(oldUri)
+            invalidateInlayHintCache(oldUri)
+            if (ws.isOpen(oldUri)) runCatching { ws.didClose(oldUri) }
+            diagnosticsByUri.remove(oldUri)
+            events.add(oldUri to org.eclipse.lsp4j.FileChangeType.Deleted)
+            events.add(newUri to org.eclipse.lsp4j.FileChangeType.Created)
+            if (!ws.isOpen(newUri)) {
+                val text = runCatching { java.nio.file.Files.readString(newPath) }.getOrNull()
+                if (text != null) toOpen.add(newUri to text)
+            }
+        }
+        runCatching { ws.didChangeWatchedFiles(events) }
+        for ((uri, text) in toOpen) {
+            runCatching { ws.didOpen(uri, "kotlin", text) }
+        }
+    }
+
+    fun restart(reason: String) {
+        runWithClientDown(reason) { /* no-op between teardown and bring-up */ }
+    }
+
+    fun runWithClientDown(reason: String, releaseDelayMs: Long = 350L, block: () -> Unit) {
+        println("[lsp] client down requested ($reason)")
+        val ws = workspace
+        val openSnapshot = mutableListOf<Triple<Path, String, String>>()
+        if (ws != null) {
+            for (uri in ws.openUris()) {
+                val text = ws.textOf(uri) ?: continue
+                val path = runCatching { java.nio.file.Paths.get(java.net.URI(uri)) }.getOrNull() ?: continue
+                openSnapshot.add(Triple(path, "kotlin", text))
+            }
+        }
+        pendingChanges.values.forEach { it.cancel() }
+        pendingChanges.clear()
+        synchronized(completionCache) { completionCache.clear() }
+        lastCompletionByLine.clear()
+        synchronized(inlayHintCache) { inlayHintCache.clear() }
+        diagnosticsByUri.clear()
+        clearActivities("client down: $reason")
+        val shutdownFuture = runCatching { client?.shutdown() }.getOrNull()
+        if (shutdownFuture != null) {
+            runCatching { shutdownFuture.get(3, java.util.concurrent.TimeUnit.SECONDS) }
+        }
+        client = null
+        workspace = null
+        status.value = Status.IDLE
+        statusDetail.value = "restarting ($reason)"
+        startAttempted = false
+        if (releaseDelayMs > 0L) {
+            runCatching { Thread.sleep(releaseDelayMs) }
+        }
+        runCatching { block() }
+        for ((path, lang, text) in openSnapshot) {
+            val uri = path.toUri().toString()
+            pendingOpens[uri] = PendingOpen(path, lang, text)
+        }
+        ensureStarted()
     }
 
     fun shutdown() {

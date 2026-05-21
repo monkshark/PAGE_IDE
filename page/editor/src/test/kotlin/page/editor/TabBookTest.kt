@@ -322,6 +322,139 @@ class TabBookTest {
     }
 
     @Test
+    fun `togglePinned flips isPinned on the indicated tab`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .togglePinned(0)
+        assertTrue(book.tabs[0].isPinned)
+        assertFalse(book.tabs[1].isPinned)
+        val unpinned = book.togglePinned(0)
+        assertFalse(unpinned.tabs[0].isPinned)
+    }
+
+    @Test
+    fun `togglePinned out of range is identity`() {
+        val book = TabBook().openOrFocus(p("a.txt"), "A")
+        assertSame(book, book.togglePinned(5))
+        assertSame(book, book.togglePinned(-1))
+    }
+
+    @Test
+    fun `closeOthers removes every non-pinned tab except the kept one`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .openOrFocus(p("c.txt"), "C")
+            .openOrFocus(p("d.txt"), "D")
+            .activate(2)
+            .closeOthers(keepIndex = 2)
+        assertEquals(listOf(p("c.txt")), book.tabs.map { it.path })
+        assertEquals(0, book.activeIndex)
+    }
+
+    @Test
+    fun `closeOthers keeps pinned tabs by default`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .openOrFocus(p("c.txt"), "C")
+            .togglePinned(0)
+            .activate(2)
+            .closeOthers(keepIndex = 2)
+        assertEquals(listOf(p("a.txt"), p("c.txt")), book.tabs.map { it.path })
+        assertEquals(1, book.activeIndex)
+    }
+
+    @Test
+    fun `closeOthers with keepPinned false drops everything else`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .togglePinned(0)
+            .activate(1)
+            .closeOthers(keepIndex = 1, keepPinned = false)
+        assertEquals(listOf(p("b.txt")), book.tabs.map { it.path })
+        assertEquals(0, book.activeIndex)
+    }
+
+    @Test
+    fun `closeToLeft drops tabs before the index, respecting pins`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .openOrFocus(p("c.txt"), "C")
+            .openOrFocus(p("d.txt"), "D")
+            .togglePinned(0)
+            .activate(3)
+            .closeToLeft(of = 3)
+        assertEquals(listOf(p("a.txt"), p("d.txt")), book.tabs.map { it.path })
+        assertEquals(1, book.activeIndex)
+    }
+
+    @Test
+    fun `closeToRight drops tabs after the index, respecting pins`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .openOrFocus(p("c.txt"), "C")
+            .openOrFocus(p("d.txt"), "D")
+            .togglePinned(3)
+            .activate(1)
+            .closeToRight(of = 1)
+        assertEquals(listOf(p("a.txt"), p("b.txt"), p("d.txt")), book.tabs.map { it.path })
+        assertEquals(1, book.activeIndex)
+    }
+
+    @Test
+    fun `closeAll empties when no pinned tabs`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .closeAll()
+        assertTrue(book.tabs.isEmpty())
+        assertEquals(-1, book.activeIndex)
+    }
+
+    @Test
+    fun `closeAll keeps pinned tabs by default`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .togglePinned(1)
+            .closeAll()
+        assertEquals(listOf(p("b.txt")), book.tabs.map { it.path })
+        assertEquals(0, book.activeIndex)
+    }
+
+    @Test
+    fun `closeUnmodified drops clean tabs and keeps dirty + pinned`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .openOrFocus(p("c.txt"), "C")
+            .updateActive("C-edited", caret = 1)
+            .activate(0)
+            .togglePinned(0)
+            .activate(1)
+            .closeUnmodified()
+        assertEquals(listOf(p("a.txt"), p("c.txt")), book.tabs.map { it.path })
+    }
+
+    @Test
+    fun `closeMany re-anchors active to nearest survivor`() {
+        val book = TabBook()
+            .openOrFocus(p("a.txt"), "A")
+            .openOrFocus(p("b.txt"), "B")
+            .openOrFocus(p("c.txt"), "C")
+            .openOrFocus(p("d.txt"), "D")
+            .activate(2)
+            .closeMany(listOf(1, 2))
+        assertEquals(listOf(p("a.txt"), p("d.txt")), book.tabs.map { it.path })
+        assertEquals(1, book.activeIndex)
+    }
+
+    @Test
     fun `refocusing an open path does not reset dirty`() {
         val book = TabBook()
             .openOrFocus(p("a.txt"), "A")

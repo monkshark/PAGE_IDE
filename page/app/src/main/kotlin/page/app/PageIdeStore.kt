@@ -51,7 +51,7 @@ object PageIdeStore {
         }
     }
 
-    private fun ensureGitignore(workspaceRoot: Path) {
+    internal fun ensureGitignore(workspaceRoot: Path) {
         runCatching {
             val gitignore = workspaceRoot.resolve(".gitignore")
             val marker = DIR_NAME

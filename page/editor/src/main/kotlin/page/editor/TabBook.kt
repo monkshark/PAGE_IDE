@@ -8,6 +8,7 @@ data class OpenTab(
     val savedText: String = text,
     val caret: Int = 0,
     val history: EditHistory = EditHistory(),
+    val isPinned: Boolean = false,
 ) {
     val dirty: Boolean get() = text != savedText
 }
@@ -134,6 +135,66 @@ data class TabBook(
             it[activeIndex] = current.copy(savedText = current.text)
         }
         return copy(tabs = updated)
+    }
+
+    fun togglePinned(index: Int): TabBook {
+        if (index !in tabs.indices) return this
+        val tab = tabs[index]
+        val updated = tabs.toMutableList().also {
+            it[index] = tab.copy(isPinned = !tab.isPinned)
+        }
+        return copy(tabs = updated)
+    }
+
+    fun closeMany(indices: Collection<Int>): TabBook {
+        if (indices.isEmpty()) return this
+        val drop = indices.toSet().filter { it in tabs.indices }.toSet()
+        if (drop.isEmpty()) return this
+        val newTabs = tabs.filterIndexed { i, _ -> i !in drop }
+        if (newTabs.isEmpty()) return TabBook()
+        val newActive = when {
+            activeIndex !in tabs.indices -> -1
+            activeIndex !in drop -> activeIndex - drop.count { it < activeIndex }
+            else -> {
+                val above = (activeIndex + 1 until tabs.size).firstOrNull { it !in drop }
+                val below = (activeIndex - 1 downTo 0).firstOrNull { it !in drop }
+                val target = above ?: below ?: return TabBook()
+                target - drop.count { it < target }
+            }
+        }
+        return TabBook(tabs = newTabs, activeIndex = newActive.coerceIn(0, newTabs.lastIndex))
+    }
+
+    fun closeOthers(keepIndex: Int, keepPinned: Boolean = true): TabBook {
+        if (keepIndex !in tabs.indices) return this
+        val toClose = tabs.indices.filter { i ->
+            i != keepIndex && !(keepPinned && tabs[i].isPinned)
+        }
+        return closeMany(toClose)
+    }
+
+    fun closeToLeft(of: Int, keepPinned: Boolean = true): TabBook {
+        if (of !in tabs.indices) return this
+        val toClose = (0 until of).filter { i -> !(keepPinned && tabs[i].isPinned) }
+        return closeMany(toClose)
+    }
+
+    fun closeToRight(of: Int, keepPinned: Boolean = true): TabBook {
+        if (of !in tabs.indices) return this
+        val toClose = ((of + 1) until tabs.size).filter { i -> !(keepPinned && tabs[i].isPinned) }
+        return closeMany(toClose)
+    }
+
+    fun closeAll(keepPinned: Boolean = true): TabBook {
+        val toClose = tabs.indices.filter { i -> !(keepPinned && tabs[i].isPinned) }
+        return closeMany(toClose)
+    }
+
+    fun closeUnmodified(keepPinned: Boolean = true): TabBook {
+        val toClose = tabs.indices.filter { i ->
+            !tabs[i].dirty && !(keepPinned && tabs[i].isPinned)
+        }
+        return closeMany(toClose)
     }
 
     fun move(from: Int, to: Int): TabBook {

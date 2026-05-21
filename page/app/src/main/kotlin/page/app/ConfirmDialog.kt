@@ -69,6 +69,7 @@ internal fun ConfirmDialog(
         title = title,
         resizable = false,
         undecorated = true,
+        alwaysOnTop = true,
         onPreviewKeyEvent = { event ->
             if (event.type != KeyEventType.KeyDown) false
             else when (event.key) {
@@ -154,19 +155,26 @@ private fun DialogButton(
         primary -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurface
     }
-    Box(
+    Row(
         modifier = Modifier
-            .height(26.dp)
+            .height(28.dp)
             .background(bg)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
             color = fg,
-            style = LocalTextStyle.current.copy(fontSize = 11.sp),
+            style = LocalTextStyle.current.copy(
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+                ),
+            ),
         )
     }
 }

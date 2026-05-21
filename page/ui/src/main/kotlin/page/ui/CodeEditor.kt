@@ -122,6 +122,7 @@ fun CodeEditor(
     manageHistory: Boolean = true,
     viewportHeightProvider: (() -> Float)? = null,
     focusRequestVersion: Int = 0,
+    caretBringIntoViewEnabled: Boolean = true,
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
@@ -248,7 +249,9 @@ fun CodeEditor(
         latestLayout.getCursorRect(caretTrans)
     }
 
+    val caretBringEnabledLatest by rememberUpdatedState(caretBringIntoViewEnabled)
     LaunchedEffect(value.selection.end, layout) {
+        if (!caretBringEnabledLatest) return@LaunchedEffect
         val caretTrans = mapping.originalToTransformed(value.selection.end)
         if (caretTrans !in 0..displayText.length) return@LaunchedEffect
         val rect = layout.getCursorRect(caretTrans)

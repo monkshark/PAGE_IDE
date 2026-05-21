@@ -1,8 +1,10 @@
 package page.app
 
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.LocalContextMenuRepresentation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -25,6 +27,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -34,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -41,7 +45,6 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -49,9 +52,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import page.editor.OpenTab
 import page.editor.TabBook
+import page.ui.CompactContextMenuRepresentation
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -63,6 +68,22 @@ private val CenterTight = LineHeightStyle(
 
 enum class CrossPaneSide { LEFT, RIGHT }
 
+data class TabContextActions(
+    val onClose: (Int) -> Unit,
+    val onCloseOthers: (Int) -> Unit,
+    val onCloseToLeft: (Int) -> Unit,
+    val onCloseToRight: (Int) -> Unit,
+    val onCloseAll: () -> Unit,
+    val onCloseUnmodified: () -> Unit,
+    val onCopyAbsolutePath: (Int) -> Unit,
+    val onCopyRelativePath: (Int) -> Unit,
+    val onShowInExplorer: (Int) -> Unit,
+    val onTogglePin: (Int) -> Unit,
+    val onMoveToOtherPane: ((Int) -> Unit)?,
+    val onSplit: ((Int) -> Unit)?,
+    val onRename: (Int) -> Unit,
+)
+
 @Composable
 fun TabBar(
     book: TabBook,
@@ -73,6 +94,7 @@ fun TabBar(
     crossPaneSide: CrossPaneSide? = null,
     onDragStart: () -> Unit = {},
     onDragEnd: () -> Unit = {},
+    contextActions: TabContextActions? = null,
     modifier: Modifier = Modifier,
 ) {
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
@@ -120,7 +142,7 @@ fun TabBar(
                     .pointerInput(book.tabs.size) {
                         val touchSlop = viewConfiguration.touchSlop
                         awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = true)
+                            val down = awaitFirstDown(requireUnconsumed = false)
                             val tappedIndex = findTabAt(
                                 down.position.x + scrollState.value,
                                 tabBounds,
@@ -190,23 +212,53 @@ fun TabBar(
                         }
                     },
             ) {
-                Row(
-                    modifier = Modifier.horizontalScroll(scrollState),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    book.tabs.forEachIndexed { index, tab ->
-                        val isDragged = index == draggingIndex
-                        TabChip(
-                            tab = tab,
-                            isActive = index == book.activeIndex,
-                            offsetPx = 0,
-                            elevated = false,
-                            alpha = if (isDragged) 0f else 1f,
-                            onClose = { onClose(index) },
-                            onBoundsChanged = { left, right ->
-                                tabBounds[index] = left..right
-                            },
-                        )
+                CompositionLocalProvider(LocalContextMenuRepresentation provides CompactContextMenuRepresentation) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(scrollState),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        book.tabs.forEachIndexed { index, tab ->
+                            val isDragged = index == draggingIndex
+                            val menuItems = contextActions?.let {
+                                buildTabMenuItems(
+                                    index = index,
+                                    tab = tab,
+                                    bookSize = book.tabs.size,
+                                    actions = it,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .onGloballyPositioned { coords ->
+                                        val left = coords.positionInParent().x.toInt()
+                                        val right = left + coords.size.width
+                                        tabBounds[index] = left..right
+                                    },
+                            ) {
+                                if (menuItems != null) {
+                                    ContextMenuArea(items = { menuItems }) {
+                                        TabChip(
+                                            tab = tab,
+                                            isActive = index == book.activeIndex,
+                                            offsetPx = 0,
+                                            elevated = false,
+                                            alpha = if (isDragged) 0f else 1f,
+                                            onClose = { onClose(index) },
+                                        )
+                                    }
+                                } else {
+                                    TabChip(
+                                        tab = tab,
+                                        isActive = index == book.activeIndex,
+                                        offsetPx = 0,
+                                        elevated = false,
+                                        alpha = if (isDragged) 0f else 1f,
+                                        onClose = { onClose(index) },
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 val di = draggingIndex
@@ -224,7 +276,6 @@ fun TabBar(
                             elevated = true,
                             alpha = 1f,
                             onClose = {},
-                            onBoundsChanged = { _, _ -> },
                         )
                     }
                 }
@@ -236,6 +287,41 @@ fun TabBar(
             }
         }
     }
+}
+
+private fun buildTabMenuItems(
+    index: Int,
+    tab: OpenTab,
+    bookSize: Int,
+    actions: TabContextActions,
+): List<ContextMenuItem> {
+    val items = mutableListOf<ContextMenuItem>()
+    items += ContextMenuItem("Close\tCtrl+W") { actions.onClose(index) }
+    if (bookSize > 1) {
+        items += ContextMenuItem("Close Others") { actions.onCloseOthers(index) }
+        if (index > 0) items += ContextMenuItem("Close Tabs to the Left") {
+            actions.onCloseToLeft(index)
+        }
+        if (index < bookSize - 1) items += ContextMenuItem("Close Tabs to the Right") {
+            actions.onCloseToRight(index)
+        }
+        items += ContextMenuItem("Close All") { actions.onCloseAll() }
+        items += ContextMenuItem("Close Unmodified") { actions.onCloseUnmodified() }
+    }
+    items += ContextMenuItem(if (tab.isPinned) "Unpin Tab" else "Pin Tab") {
+        actions.onTogglePin(index)
+    }
+    items += ContextMenuItem("Copy Path") { actions.onCopyAbsolutePath(index) }
+    items += ContextMenuItem("Copy Relative Path") { actions.onCopyRelativePath(index) }
+    items += ContextMenuItem("Show in Explorer") { actions.onShowInExplorer(index) }
+    actions.onMoveToOtherPane?.let { fn ->
+        items += ContextMenuItem("Move to Other Pane") { fn(index) }
+    }
+    actions.onSplit?.let { fn ->
+        items += ContextMenuItem("Split with This Tab") { fn(index) }
+    }
+    items += ContextMenuItem("Rename File…") { actions.onRename(index) }
+    return items
 }
 
 private fun widthOf(range: IntRange?): Float? =
@@ -265,7 +351,6 @@ private fun TabChip(
     elevated: Boolean,
     alpha: Float,
     onClose: () -> Unit,
-    onBoundsChanged: (Int, Int) -> Unit,
 ) {
     val name = tab.path.fileName?.toString() ?: tab.path.toString()
     val bg = if (isActive) MaterialTheme.colorScheme.background else Color.Transparent
@@ -277,11 +362,6 @@ private fun TabChip(
         modifier = Modifier
             .fillMaxHeight()
             .zIndex(if (elevated) 1f else 0f)
-            .onGloballyPositioned { coords ->
-                val left = coords.positionInParent().x.toInt()
-                val right = left + coords.size.width
-                onBoundsChanged(left, right)
-            }
             .offset { IntOffset(offsetPx, 0) }
             .alpha(alpha),
         verticalAlignment = Alignment.CenterVertically,
@@ -293,6 +373,10 @@ private fun TabChip(
                 .padding(start = 12.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (tab.isPinned) {
+                PinIndicator()
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 text = name,
                 style = LocalTextStyle.current.copy(
@@ -315,6 +399,17 @@ private fun TabChip(
                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
         )
     }
+}
+
+@Composable
+private fun PinIndicator() {
+    val color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    Box(
+        modifier = Modifier
+            .width(6.dp)
+            .height(6.dp)
+            .background(color = color, shape = androidx.compose.foundation.shape.CircleShape),
+    )
 }
 
 @Composable

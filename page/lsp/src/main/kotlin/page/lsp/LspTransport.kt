@@ -45,10 +45,33 @@ class ProcessTransport(
         try { output.close() } catch (_: Throwable) {}
         try { errorStream.close() } catch (_: Throwable) {}
         try { stderrPump.interrupt() } catch (_: Throwable) {}
-        if (process.isAlive) {
-            process.destroy()
-            if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+        val isWindows = System.getProperty("os.name").orEmpty().lowercase().contains("win")
+        val pid = runCatching { process.pid() }.getOrNull()
+        if (isWindows && pid != null && process.isAlive) {
+            val killed = runCatching {
+                val tk = ProcessBuilder("taskkill", "/F", "/T", "/PID", pid.toString())
+                    .redirectErrorStream(true)
+                    .start()
+                tk.inputStream.close()
+                tk.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            }.getOrDefault(false)
+            if (!killed) {
                 process.destroyForcibly()
+            }
+            runCatching { process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS) }
+        } else {
+            val descendants = runCatching { process.descendants().toList() }.getOrDefault(emptyList())
+            if (process.isAlive) {
+                process.destroy()
+                if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    process.destroyForcibly()
+                }
+            }
+            for (ph in descendants) {
+                runCatching { if (ph.isAlive) ph.destroy() }
+            }
+            for (ph in descendants) {
+                runCatching { ph.onExit().get(2, java.util.concurrent.TimeUnit.SECONDS) }
             }
         }
     }
