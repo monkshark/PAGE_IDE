@@ -7,8 +7,11 @@ import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.CompletionTriggerKind
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
+import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.FileChangeType
+import org.eclipse.lsp4j.FileEvent
 import org.eclipse.lsp4j.DocumentFormattingParams
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.FormattingOptions
@@ -75,6 +78,12 @@ class LspWorkspace(private val client: LspClient) {
         client.server().textDocumentService.didClose(
             DidCloseTextDocumentParams(TextDocumentIdentifier(uri))
         )
+    }
+
+    fun didChangeWatchedFiles(events: List<Pair<String, FileChangeType>>) {
+        if (events.isEmpty()) return
+        val lspEvents = events.map { (uri, type) -> FileEvent(uri, type) }
+        client.server().workspaceService.didChangeWatchedFiles(DidChangeWatchedFilesParams(lspEvents))
     }
 
     fun reopen(uri: String, newText: String) {

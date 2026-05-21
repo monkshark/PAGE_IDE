@@ -83,10 +83,11 @@ fun CompactMenuItem(
             color = fg,
         )
         if (trailing != null) {
+            androidx.compose.foundation.layout.Spacer(Modifier.width(24.dp))
             Text(
                 text = trailing,
                 style = MaterialTheme.typography.labelSmall,
-                color = muted,
+                color = muted.copy(alpha = 0.65f),
             )
         }
     }
@@ -121,8 +122,12 @@ object CompactContextMenuRepresentation : ContextMenuRepresentation {
             ) {
                 CompactMenuContainer {
                     for (item in items()) {
+                        val parts = item.label.split('\t', limit = 2)
+                        val name = parts[0]
+                        val shortcut = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
                         CompactMenuItem(
-                            label = item.label,
+                            label = name,
+                            trailing = shortcut,
                             onClick = {
                                 state.status = ContextMenuState.Status.Closed
                                 item.onClick()

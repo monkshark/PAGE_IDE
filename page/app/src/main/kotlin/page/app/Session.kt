@@ -10,10 +10,16 @@ import java.nio.file.Path
 data class SessionTabState(
     val path: String,
     val caret: Int = 0,
+    val pinned: Boolean = false,
 )
 
 data class SessionTerminalTab(
     val name: String,
+)
+
+data class SessionScrollSnapshot(
+    val vertical: Int = 0,
+    val horizontal: Int = 0,
 )
 
 data class SessionPane(
@@ -46,6 +52,7 @@ data class SessionFile(
     val outputHeight: Float = 220f,
     val foldedStartLinesByPath: Map<String, List<Int>> = emptyMap(),
     val expandedDirs: List<String> = emptyList(),
+    val editorScrollByPath: Map<String, SessionScrollSnapshot> = emptyMap(),
 )
 
 internal fun restoreExpandedDirs(snapshot: List<String>): Set<Path> {
@@ -71,7 +78,13 @@ object SessionStore {
 
 internal fun paneSnapshot(pane: EditorPaneState): SessionPane =
     SessionPane(
-        tabs = pane.book.tabs.map { SessionTabState(path = it.path.toString(), caret = it.caret) },
+        tabs = pane.book.tabs.map {
+            SessionTabState(
+                path = it.path.toString(),
+                caret = it.caret,
+                pinned = it.isPinned,
+            )
+        },
         activeIndex = pane.book.activeIndex,
     )
 
@@ -82,7 +95,7 @@ internal fun restoreTabBook(snapshot: SessionPane): TabBook {
         if (!Files.exists(path)) return@mapNotNull null
         val text = FileDocument.loadOrNull(path) ?: return@mapNotNull null
         val caret = ts.caret.coerceIn(0, text.length)
-        OpenTab(path = path, text = text, savedText = text, caret = caret)
+        OpenTab(path = path, text = text, savedText = text, caret = caret, isPinned = ts.pinned)
     }
     if (restored.isEmpty()) return TabBook()
     val active = snapshot.activeIndex.coerceIn(0, restored.lastIndex)

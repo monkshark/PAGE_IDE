@@ -64,6 +64,7 @@ internal fun UnsavedChangesDialog(
         title = TITLE,
         resizable = false,
         undecorated = true,
+        alwaysOnTop = true,
         onPreviewKeyEvent = { event ->
             if (event.type != KeyEventType.KeyDown) false
             else when (event.key) {

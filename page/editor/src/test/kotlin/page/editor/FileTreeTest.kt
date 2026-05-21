@@ -137,4 +137,49 @@ class FileTreeTest {
         val file = Files.createFile(dir.resolve("f.txt"))
         assertEquals(emptySet(), FileTree.singleChildChain(file))
     }
+
+    @Test
+    fun `descendantDirs is empty for empty dir`(@TempDir dir: Path) {
+        assertEquals(emptySet(), FileTree.descendantDirs(dir))
+    }
+
+    @Test
+    fun `descendantDirs is empty for non-directory input`(@TempDir dir: Path) {
+        val file = Files.createFile(dir.resolve("f.txt"))
+        assertEquals(emptySet(), FileTree.descendantDirs(file))
+    }
+
+    @Test
+    fun `descendantDirs skips files and collects only sub-directories`(@TempDir dir: Path) {
+        val a = Files.createDirectory(dir.resolve("a"))
+        Files.createFile(dir.resolve("file.txt"))
+        Files.createFile(a.resolve("inner.txt"))
+        assertEquals(setOf(a), FileTree.descendantDirs(dir))
+    }
+
+    @Test
+    fun `descendantDirs collects deep nested directories recursively`(@TempDir dir: Path) {
+        val a = Files.createDirectory(dir.resolve("a"))
+        val b = Files.createDirectory(a.resolve("b"))
+        val c = Files.createDirectory(b.resolve("c"))
+        Files.createFile(c.resolve("leaf.txt"))
+        assertEquals(setOf(a, b, c), FileTree.descendantDirs(dir))
+    }
+
+    @Test
+    fun `descendantDirs collects branching directories`(@TempDir dir: Path) {
+        val a = Files.createDirectory(dir.resolve("a"))
+        val b1 = Files.createDirectory(a.resolve("b1"))
+        val b2 = Files.createDirectory(a.resolve("b2"))
+        val c = Files.createDirectory(b1.resolve("c"))
+        assertEquals(setOf(a, b1, b2, c), FileTree.descendantDirs(dir))
+    }
+
+    @Test
+    fun `descendantDirs excludes the input directory itself`(@TempDir dir: Path) {
+        val a = Files.createDirectory(dir.resolve("a"))
+        val result = FileTree.descendantDirs(dir)
+        assertEquals(setOf(a), result)
+        assertTrue(dir !in result)
+    }
 }

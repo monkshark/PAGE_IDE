@@ -78,6 +78,7 @@ fun RunConfigDialog(
         title = "Run Configurations",
         resizable = true,
         undecorated = true,
+        alwaysOnTop = true,
         onPreviewKeyEvent = { event ->
             if (event.type != KeyEventType.KeyDown) false
             else when (event.key) {

@@ -29,6 +29,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -135,6 +141,9 @@ fun EditorPanel(
     editorFocusVersion: Int = 0,
     initialFoldedStartLines: Set<Int> = emptySet(),
     onFoldStartLinesChange: (Set<Int>) -> Unit = {},
+    initialVScroll: Int = 0,
+    initialHScroll: Int = 0,
+    onScrollChange: (vertical: Int, horizontal: Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val isMarkdown = remember(activePath) {
@@ -423,7 +432,30 @@ fun EditorPanel(
     )
     val scrollState = rememberScrollState()
     val horizontalScrollState = rememberScrollState()
-    var savedScrollOnPress by remember { mutableStateOf(0) }
+    val pendingInitialV by rememberUpdatedState(initialVScroll)
+    val pendingInitialH by rememberUpdatedState(initialHScroll)
+    var caretBringArmed by remember(activePath) { mutableStateOf(false) }
+    LaunchedEffect(activePath) {
+        if (activePath == null) return@LaunchedEffect
+        val targetV = pendingInitialV
+        val targetH = pendingInitialH
+        if (targetV > 0) {
+            withTimeoutOrNull(3000L) {
+                snapshotFlow { scrollState.maxValue }
+                    .first { it >= targetV }
+            }
+        }
+        val finalV = targetV.coerceAtMost(scrollState.maxValue)
+        val finalH = targetH.coerceAtMost(horizontalScrollState.maxValue)
+        scrollState.scrollTo(finalV)
+        horizontalScrollState.scrollTo(finalH)
+        caretBringArmed = true
+        snapshotFlow { scrollState.value to horizontalScrollState.value }
+            .distinctUntilChanged()
+            .drop(1)
+            .collect { (v, h) -> onScrollChange(v, h) }
+    }
+    var savedScrollOnPress by remember { mutableStateOf(-1) }
     var focusGainVersion by remember { mutableStateOf(0) }
     val latestValue by rememberUpdatedState(value)
     val latestActiveFolds by rememberUpdatedState(activeFolds)
@@ -791,7 +823,7 @@ fun EditorPanel(
     val decorations = diagnosticDecorations + tabstopDecorations
 
     LaunchedEffect(focusGainVersion) {
-        if (focusGainVersion > 0) {
+        if (focusGainVersion > 0 && savedScrollOnPress >= 0) {
             val target = savedScrollOnPress
             scrollState.scroll(MutatePriority.PreventUserInput) {
                 val end = System.nanoTime() + 250_000_000L
@@ -1102,6 +1134,7 @@ fun EditorPanel(
                 manageHistory = false,
                 viewportHeightProvider = { scrollState.viewportSize.toFloat() },
                 focusRequestVersion = editorFocusVersion,
+                caretBringIntoViewEnabled = caretBringArmed,
                 decorations = decorations,
                 onHover = { origOff ->
                     pendingHoverDiagnostic = if (origOff == null) null

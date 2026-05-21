@@ -1,5 +1,6 @@
 package page.app
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,6 +34,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -105,6 +111,7 @@ fun main() = application {
     var expanded: Set<Path> by remember { mutableStateOf(emptySet()) }
     var treeSelection: Set<Path> by remember { mutableStateOf(emptySet()) }
     var treeRevision by remember { mutableStateOf(0) }
+    var editorScrollByPath: Map<Path, EditorScrollSnapshot> by remember { mutableStateOf(emptyMap()) }
     var sidebarWidth: Dp by remember { mutableStateOf(260.dp) }
     var pendingClose: PendingClose? by remember { mutableStateOf(null) }
     var quickOpen by remember { mutableStateOf(false) }
@@ -135,7 +142,13 @@ fun main() = application {
     var runState: RunConfigsState by remember { mutableStateOf(RunConfigsState()) }
     var runDialogOpen by remember { mutableStateOf(false) }
     var outputOpen by remember { mutableStateOf(false) }
-    var outputHeight: Dp by remember { mutableStateOf(220.dp) }
+    var outputHeight: Dp by remember {
+        mutableStateOf(
+            (java.awt.Toolkit.getDefaultToolkit().screenSize.height / 2f)
+                .coerceIn(240f, 1200f)
+                .dp,
+        )
+    }
     val outputState = remember { OutputPanelState() }
     val runScope = rememberCoroutineScope()
     val runController = remember {
@@ -149,8 +162,17 @@ fun main() = application {
     var createDialog: CreateEntryDialogState? by remember { mutableStateOf(null) }
     var renameDialog: RenameEntryDialogState? by remember { mutableStateOf(null) }
     var deleteDialog: DeleteEntryDialogState? by remember { mutableStateOf(null) }
+    var pasteDialog: PasteEntryDialogState? by remember { mutableStateOf(null) }
+    var largeCopyState: LargeCopyDialogState? by remember { mutableStateOf(null) }
+    val largeCopyScope = rememberCoroutineScope()
+    val fileOpHistory = remember { FileOpHistory.Stack() }
+    var fileOpHistoryVersion by remember { mutableStateOf(0) }
+    var fileTreeFocused by remember { mutableStateOf(false) }
+    var fileOpConfirm: FileOpConfirmState? by remember { mutableStateOf(null) }
+    var pendingTreeFocusTick by remember { mutableStateOf(0) }
     var palette: GlassPalette by remember { mutableStateOf(AppSettings.loadPalette()) }
     var paletteToastUntil: Long by remember { mutableStateOf(0L) }
+    var dropResultToast: DropResultToastState? by remember { mutableStateOf(null) }
     var documentSymbolOpen by remember { mutableStateOf(false) }
     var documentSymbolList by remember { mutableStateOf<List<DocumentSymbolEntry>>(emptyList()) }
     var documentSymbolUri by remember { mutableStateOf("") }
@@ -224,8 +246,36 @@ fun main() = application {
         if (!splitEnabled) focusedPane = PaneSide.PRIMARY
     }
 
+    val anyFileDialogOpen = createDialog != null || renameDialog != null || deleteDialog != null ||
+        pasteDialog != null || largeCopyState != null || fileOpConfirm != null
+    var hadFileDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(anyFileDialogOpen) {
+        if (anyFileDialogOpen) {
+            hadFileDialog = true
+        } else if (hadFileDialog) {
+            hadFileDialog = false
+            pendingTreeFocusTick++
+        }
+    }
+
     LaunchedEffect(rootDir) {
-        if (rootDir != null) lsp.ensureStarted()
+        val root = rootDir
+        if (root != null) {
+            val recovery = runCatching { RenameTransaction.recover(root) }.getOrNull()
+            val logHint = "see ${RenameTransaction.logFile(root)}"
+            when (recovery) {
+                is RenameTransaction.RecoveryResult.Resumed ->
+                    println("[rename] recovered: resumed ${recovery.marker.from.fileName} → ${recovery.marker.to.fileName} ($logHint)")
+                is RenameTransaction.RecoveryResult.RolledBack ->
+                    println("[rename] recovered: rolled back partial ${recovery.marker.to.fileName} ($logHint)")
+                is RenameTransaction.RecoveryResult.Skipped ->
+                    println("[rename] recovered: skipped (${recovery.reason}) ($logHint)")
+                is RenameTransaction.RecoveryResult.Failed ->
+                    println("[rename] recovery failed: ${recovery.message} ($logHint)")
+                else -> {}
+            }
+            lsp.ensureStarted()
+        }
         todo.scanWorkspaceAsync()
     }
 
@@ -277,7 +327,7 @@ fun main() = application {
             terminalOpen = session.terminalOpen
             terminalHeight = session.terminalHeight.coerceIn(120f, 600f).dp
             outputOpen = session.outputOpen
-            outputHeight = session.outputHeight.coerceIn(120f, 600f).dp
+            outputHeight = session.outputHeight.coerceIn(120f, 1200f).dp
             if (session.terminalTabs.isNotEmpty()) {
                 terminalManager.restoreFrom(
                     names = session.terminalTabs.map { it.name },
@@ -288,6 +338,12 @@ fun main() = application {
             foldByPath = session.foldedStartLinesByPath.mapValues { it.value.toSet() }
             val restoredExpanded = restoreExpandedDirs(session.expandedDirs)
             if (restoredExpanded.isNotEmpty()) expanded = restoredExpanded
+            editorScrollByPath = session.editorScrollByPath
+                .mapNotNull { (s, snap) ->
+                    val p = runCatching { java.nio.file.Path.of(s) }.getOrNull() ?: return@mapNotNull null
+                    p to EditorScrollSnapshot(vertical = snap.vertical, horizontal = snap.horizontal)
+                }
+                .toMap()
         } else {
             foldByPath = emptyMap()
         }
@@ -326,6 +382,9 @@ fun main() = application {
         outputHeight = outputHeight.value,
         foldedStartLinesByPath = foldByPath.mapValues { it.value.toList().sorted() },
         expandedDirs = expanded.map { it.toString() }.sorted(),
+        editorScrollByPath = editorScrollByPath
+            .mapKeys { it.key.toString() }
+            .mapValues { SessionScrollSnapshot(vertical = it.value.vertical, horizontal = it.value.horizontal) },
     )
     LaunchedEffect(rootDir, sessionLoaded, sessionSnapshot) {
         if (!sessionLoaded) return@LaunchedEffect
@@ -365,15 +424,31 @@ fun main() = application {
         kotlinx.coroutines.delay(500)
         runCatching { HistoryStore.save(root, historyFile) }
     }
-    LaunchedEffect(rootDir, expanded) {
+    val fileTreeWatcherHolder = remember { java.util.concurrent.atomic.AtomicReference<FileTreeWatcher?>(null) }
+    var fileTreeWatcherEpoch by remember { mutableStateOf(0) }
+    LaunchedEffect(rootDir, expanded, fileTreeWatcherEpoch) {
         val dirs = watchableDirs(rootDir, expanded)
         if (dirs.isEmpty()) return@LaunchedEffect
         val watcher = FileTreeWatcher(dirs)
         if (!watcher.active) { watcher.close(); return@LaunchedEffect }
+        fileTreeWatcherHolder.set(watcher)
         try {
             watcher.runLoop { treeRevision++ }
         } finally {
             watcher.close()
+            fileTreeWatcherHolder.compareAndSet(watcher, null)
+        }
+    }
+    val withFileTreeWatcherClosed: (() -> Unit) -> Unit = { block ->
+        val w = fileTreeWatcherHolder.getAndSet(null)
+        runCatching { w?.close() }
+        if (w != null) {
+            runCatching { Thread.sleep(200L) }
+        }
+        try {
+            block()
+        } finally {
+            fileTreeWatcherEpoch++
         }
     }
     val addRecentFile: (Path) -> Unit = { p ->
@@ -656,6 +731,10 @@ fun main() = application {
             expanded = setOf(picked) + page.editor.FileTree.singleChildChain(picked)
         }
     }
+    val openFolderPath: (Path) -> Unit = { picked ->
+        rootDir = picked
+        expanded = setOf(picked) + page.editor.FileTree.singleChildChain(picked)
+    }
     val newFile: (java.awt.Frame) -> Unit = { parent ->
         val target = FileDialogs.saveAs(parent)
         if (target != null) {
@@ -690,6 +769,47 @@ fun main() = application {
     val onRenameEntry: (Path) -> Unit = { path ->
         renameDialog = RenameEntryDialogState(path)
     }
+    val onPasteInto: (Path) -> Unit = { destParent ->
+        val content = FileTreeClipboard.read()
+        if (content != null && content.paths.isNotEmpty()) {
+            val target = if (java.nio.file.Files.isDirectory(destParent)) destParent else destParent.parent
+            if (target != null) {
+                pasteDialog = PasteEntryDialogState(
+                    remaining = content.paths,
+                    destParent = target,
+                    mode = content.mode,
+                )
+            }
+        }
+    }
+    val showDropResultToast: (String, DropResultToastTone, (() -> Unit)?) -> Unit = { msg, tone, undo ->
+        dropResultToast = DropResultToastState(
+            message = msg,
+            visibleUntilMs = System.currentTimeMillis() + 5000L,
+            tone = tone,
+            undo = undo,
+        )
+    }
+    val onDropPlanReceived: (TreeDragController.DropPlan) -> Unit = { plan ->
+        val mode = when (plan.mode) {
+            TreeDragController.Mode.Move -> FileTreeClipboard.Mode.Cut
+            TreeDragController.Mode.Copy -> FileTreeClipboard.Mode.Copy
+        }
+        pasteDialog = PasteEntryDialogState(
+            remaining = plan.sources,
+            destParent = plan.target,
+            mode = mode,
+        )
+    }
+    val onExternalDropReceived: (List<Path>, Path) -> Unit = { sources, target ->
+        if (sources.isNotEmpty() && java.nio.file.Files.isDirectory(target)) {
+            pasteDialog = PasteEntryDialogState(
+                remaining = sources,
+                destParent = target,
+                mode = FileTreeClipboard.Mode.Copy,
+            )
+        }
+    }
     val onDeleteEntry: (Path) -> Unit = { path ->
         deleteDialog = DeleteEntryDialogState(listOf(path))
     }
@@ -698,6 +818,20 @@ fun main() = application {
         if (pruned.isNotEmpty()) {
             deleteDialog = DeleteEntryDialogState(pruned)
         }
+    }
+    val remapPathSet: (Set<Path>, Path, Path) -> Set<Path> = { paths, old, new ->
+        if (paths.isEmpty()) paths
+        else paths.map { p ->
+            when {
+                p == old -> new
+                p.startsWith(old) -> new.resolve(old.relativize(p))
+                else -> p
+            }
+        }.toSet()
+    }
+    val remapTreeStateAfterRename: (Path, Path) -> Unit = { old, new ->
+        expanded = remapPathSet(expanded, old, new)
+        treeSelection = remapPathSet(treeSelection, old, new)
     }
     val remapTabsAfterRename: (Path, Path) -> Unit = { old, new ->
         listOf(PaneSide.PRIMARY, PaneSide.SECONDARY).forEach { side ->
@@ -728,6 +862,180 @@ fun main() = application {
         affectedOldPaths.distinct().forEach { lsp.didClose(it) }
         affectedNewPaths.distinctBy { it.first }.forEach { (p, text) -> lsp.didOpen(p, "kotlin", text) }
     }
+    val readFileTextWithTabs: (Path) -> String? = { p ->
+        paneOf(PaneSide.PRIMARY).book.tabs.firstOrNull { it.path == p }?.text
+            ?: paneOf(PaneSide.SECONDARY).book.tabs.firstOrNull { it.path == p }?.text
+            ?: runCatching { java.nio.file.Files.readString(p) }.getOrNull()
+    }
+    val applyTextReplace: (Path, String) -> Unit = { path, newText ->
+        var inTab = false
+        for (side in listOf(PaneSide.PRIMARY, PaneSide.SECONDARY)) {
+            val p = paneOf(side)
+            val idx = p.book.tabs.indexOfFirst { it.path == path }
+            if (idx < 0) continue
+            inTab = true
+            val tab = p.book.tabs[idx]
+            if (tab.text == newText) continue
+            val isActive = idx == p.book.activeIndex
+            val updatedTabs = p.book.tabs.toMutableList().also { it[idx] = tab.copy(text = newText) }
+            val newEditorValue = if (isActive) {
+                val caret = p.editorValue.selection.start.coerceAtMost(newText.length)
+                TextFieldValue(newText, TextRange(caret))
+            } else p.editorValue
+            setPane(side, p.copy(book = p.book.copy(tabs = updatedTabs), editorValue = newEditorValue))
+        }
+        if (!inTab) {
+            runCatching { java.nio.file.Files.writeString(path, newText) }
+        }
+        runCatching { lsp.applyExternalChange(path.toUri().toString(), newText) }
+    }
+    fun postUndoRemapForOp(op: FileOpHistory.Op) {
+        when (op) {
+            is FileOpHistory.PasteCutOp -> op.moves.forEach { (origin, current) ->
+                remapTabsAfterRename(current, origin)
+                remapTreeStateAfterRename(current, origin)
+            }
+            is FileOpHistory.RenameOp -> {
+                remapTabsAfterRename(op.to, op.from)
+                remapTreeStateAfterRename(op.to, op.from)
+            }
+            is FileOpHistory.ReferenceRewriteOp -> op.rewrites.forEach { entry ->
+                applyTextReplace(entry.path, entry.original)
+            }
+            is FileOpHistory.CompositeOp -> op.parts.asReversed().forEach { postUndoRemapForOp(it) }
+            else -> Unit
+        }
+    }
+    val onUndoFileOp: () -> Boolean = {
+        val op = fileOpHistory.peek()
+        if (op == null) false
+        else when (val result = op.undo()) {
+            is FileOpHistory.UndoResult.Ok -> {
+                fileOpHistory.popForUndo()
+                fileOpHistoryVersion++
+                postUndoRemapForOp(op)
+                treeRevision++
+                true
+            }
+            is FileOpHistory.UndoResult.Err -> {
+                println("[filetree] undo failed: ${result.message}")
+                false
+            }
+        }
+    }
+    fun postRedoRemapForOp(op: FileOpHistory.Op) {
+        when (op) {
+            is FileOpHistory.PasteCutOp -> op.moves.forEach { (origin, current) ->
+                remapTabsAfterRename(origin, current)
+                remapTreeStateAfterRename(origin, current)
+            }
+            is FileOpHistory.RenameOp -> {
+                remapTabsAfterRename(op.from, op.to)
+                remapTreeStateAfterRename(op.from, op.to)
+            }
+            is FileOpHistory.ReferenceRewriteOp -> op.rewrites.forEach { entry ->
+                applyTextReplace(entry.path, entry.rewritten)
+            }
+            is FileOpHistory.CompositeOp -> op.parts.forEach { postRedoRemapForOp(it) }
+            else -> Unit
+        }
+    }
+    val onRedoFileOp: () -> Boolean = {
+        val op = fileOpHistory.peekRedo()
+        if (op == null) false
+        else when (val result = op.redo()) {
+            is FileOpHistory.UndoResult.Ok -> {
+                fileOpHistory.popForRedo()
+                fileOpHistoryVersion++
+                postRedoRemapForOp(op)
+                treeRevision++
+                true
+            }
+            is FileOpHistory.UndoResult.Err -> {
+                println("[filetree] redo failed: ${result.message}")
+                false
+            }
+        }
+    }
+    val applyFolderPackageSync: (Path, Path, Map<String, String>) -> List<FileOpHistory.RewriteEntry> = { _, newFolder, packageMap ->
+        val newFolderAbs = newFolder.toAbsolutePath().normalize()
+        val isKtFile: (Path) -> Boolean = { p ->
+            val name = p.fileName?.toString().orEmpty()
+            name.endsWith(".kt") || name.endsWith(".kts")
+        }
+        val rewriteList = mutableListOf<FileOpHistory.RewriteEntry>()
+        if (packageMap.isNotEmpty()) {
+            val rewrites = LinkedHashMap<Path, Pair<String, String>>()
+            runCatching {
+                java.nio.file.Files.walk(newFolder).use { stream ->
+                    stream.filter { java.nio.file.Files.isRegularFile(it) && isKtFile(it) }
+                        .forEach { p ->
+                            val abs = p.toAbsolutePath().normalize()
+                            val text = readFileTextWithTabs(abs) ?: return@forEach
+                            val rewritten = FolderPackageRename.rewriteFileInRenamedFolder(text, packageMap) ?: return@forEach
+                            rewrites[abs] = text to rewritten
+                        }
+                }
+            }
+            rootDir?.let { root ->
+                runCatching {
+                    java.nio.file.Files.walk(root).use { stream ->
+                        stream.filter { java.nio.file.Files.isRegularFile(it) && isKtFile(it) }
+                            .forEach { p ->
+                                val abs = p.toAbsolutePath().normalize()
+                                if (abs.startsWith(newFolderAbs)) return@forEach
+                                if (abs in rewrites) return@forEach
+                                val text = readFileTextWithTabs(abs) ?: return@forEach
+                                val rewritten = FolderPackageRename.rewriteImports(text, packageMap) ?: return@forEach
+                                rewrites[abs] = text to rewritten
+                            }
+                    }
+                }
+            }
+            for ((path, pair) in rewrites) {
+                val (original, rewritten) = pair
+                applyTextReplace(path, rewritten)
+                rewriteList.add(FileOpHistory.RewriteEntry(path, original, rewritten))
+            }
+        }
+        rewriteList
+    }
+    val applySingleFileMoveSync: (Path, FolderPackageRename.SingleFileMovePlan) -> List<FileOpHistory.RewriteEntry> = { newPath, plan ->
+        val isKtFile: (Path) -> Boolean = { p ->
+            val name = p.fileName?.toString().orEmpty()
+            name.endsWith(".kt") || name.endsWith(".kts")
+        }
+        val rewrites = LinkedHashMap<Path, Pair<String, String>>()
+        if (plan.newSelfText != null) {
+            val abs = newPath.toAbsolutePath().normalize()
+            val current = readFileTextWithTabs(abs)
+            if (current != null) rewrites[abs] = current to plan.newSelfText
+        }
+        rootDir?.let { root ->
+            val newPathAbs = newPath.toAbsolutePath().normalize()
+            runCatching {
+                java.nio.file.Files.walk(root).use { stream ->
+                    stream.filter { java.nio.file.Files.isRegularFile(it) && isKtFile(it) }
+                        .forEach { p ->
+                            val abs = p.toAbsolutePath().normalize()
+                            if (abs == newPathAbs) return@forEach
+                            if (abs in rewrites) return@forEach
+                            val text = readFileTextWithTabs(abs) ?: return@forEach
+                            val rewritten = FolderPackageRename.rewriteImports(text, plan.importRewriteMap)
+                                ?: return@forEach
+                            rewrites[abs] = text to rewritten
+                        }
+                }
+            }
+        }
+        val rewriteList = mutableListOf<FileOpHistory.RewriteEntry>()
+        for ((path, pair) in rewrites) {
+            val (original, rewritten) = pair
+            applyTextReplace(path, rewritten)
+            rewriteList.add(FileOpHistory.RewriteEntry(path, original, rewritten))
+        }
+        rewriteList
+    }
     val closeTabsUnderPath: (Path) -> Unit = { path ->
         listOf(PaneSide.PRIMARY, PaneSide.SECONDARY).forEach { side ->
             val pane = paneOf(side)
@@ -739,27 +1047,33 @@ fun main() = application {
                 val newBook = victims.sortedDescending().fold(pane.book) { acc, idx -> acc.close(idx) }
                 mutatePane(side) { it.copy(book = newBook) }
             }
-            closedPaths.filter(::isKotlinSource).forEach { p ->
+            closedPaths.forEach { p ->
                 val stillOpenAnywhere = primaryPane.book.tabs.any { it.path == p } ||
                     secondaryPane.book.tabs.any { it.path == p }
-                if (!stillOpenAnywhere) lsp.didClose(p)
+                if (!stillOpenAnywhere) {
+                    editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, p)
+                    if (isKotlinSource(p)) lsp.didClose(p)
+                }
             }
         }
     }
-    val toggleExpanded: (Path) -> Unit = { p ->
-        expanded = if (p in expanded) {
-            expanded - setOf(p)
-        } else {
-            expanded + setOf(p) + page.editor.FileTree.singleChildChain(p)
+    val toggleExpanded: (Path, Boolean) -> Unit = { p, recursive ->
+        expanded = when {
+            recursive -> expanded + setOf(p) + page.editor.FileTree.descendantDirs(p)
+            p in expanded -> expanded - setOf(p)
+            else -> expanded + setOf(p) + page.editor.FileTree.singleChildChain(p)
         }
     }
     val closeTabAt: (PaneSide, Int) -> Unit = { side, idx ->
         val tab = paneOf(side).book.tabs.getOrNull(idx)
         mutatePane(side) { it.copy(book = it.book.close(idx)) }
-        if (tab != null && isKotlinSource(tab.path)) {
+        if (tab != null) {
             val stillOpenAnywhere = primaryPane.book.tabs.any { it.path == tab.path } ||
                 secondaryPane.book.tabs.any { it.path == tab.path }
-            if (!stillOpenAnywhere) lsp.didClose(tab.path)
+            if (!stillOpenAnywhere) {
+                editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, tab.path)
+                if (isKotlinSource(tab.path)) lsp.didClose(tab.path)
+            }
         }
     }
     val isUnsavedText: (OpenTab) -> Boolean = { tab ->
@@ -771,6 +1085,73 @@ fun main() = application {
             pendingClose = PendingClose.Tab(side, idx)
         } else {
             closeTabAt(side, idx)
+        }
+    }
+    val closeManyOnPane: (PaneSide, List<Int>) -> Unit = { side, indices ->
+        if (indices.isNotEmpty()) {
+            val pane = paneOf(side)
+            val closedPaths = indices.mapNotNull { i -> pane.book.tabs.getOrNull(i)?.path }
+            mutatePane(side) { it.copy(book = it.book.closeMany(indices)) }
+            closedPaths.forEach { p ->
+                val stillOpen = primaryPane.book.tabs.any { it.path == p } ||
+                    secondaryPane.book.tabs.any { it.path == p }
+                if (!stillOpen) {
+                    editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, p)
+                    if (isKotlinSource(p)) lsp.didClose(p)
+                }
+            }
+        }
+    }
+    val requestBatchClose: (PaneSide, List<Int>) -> Unit = { side, indices ->
+        val pane = paneOf(side)
+        val valid = indices.filter { it in pane.book.tabs.indices }
+        val dirtyPairs = valid.mapNotNull { i ->
+            val t = pane.book.tabs[i]
+            if (isUnsavedText(t)) (side to t.path) else null
+        }
+        if (dirtyPairs.isEmpty()) {
+            closeManyOnPane(side, valid)
+        } else {
+            val cleanIndices = valid.filter { i ->
+                val t = pane.book.tabs[i]
+                !isUnsavedText(t)
+            }
+            val allPaths = valid.map { side to pane.book.tabs[it].path }
+            closeManyOnPane(side, cleanIndices)
+            pendingClose = PendingClose.Batch(allPaths.filter { (s, p) ->
+                val tab = paneOf(s).book.tabs.firstOrNull { it.path == p }
+                tab != null && isUnsavedText(tab)
+            })
+        }
+    }
+    val togglePin: (PaneSide, Int) -> Unit = { side, idx ->
+        mutatePane(side) { it.copy(book = it.book.togglePinned(idx)) }
+    }
+    val copyAbsolutePathOfTab: (PaneSide, Int) -> Unit = { side, idx ->
+        paneOf(side).book.tabs.getOrNull(idx)?.let { copyToClipboard(it.path.toAbsolutePath().toString()) }
+    }
+    val copyRelativePathOfTab: (PaneSide, Int) -> Unit = { side, idx ->
+        paneOf(side).book.tabs.getOrNull(idx)?.let {
+            copyToClipboard(FileTreeActions.relativeTo(rootDir, it.path))
+        }
+    }
+    val showInExplorerOfTab: (PaneSide, Int) -> Unit = { side, idx ->
+        paneOf(side).book.tabs.getOrNull(idx)?.let { onRevealInFiles(it.path) }
+    }
+    val renameTabFile: (PaneSide, Int) -> Unit = { side, idx ->
+        paneOf(side).book.tabs.getOrNull(idx)?.let { renameDialog = RenameEntryDialogState(it.path) }
+    }
+    val splitWithTab: (PaneSide, Int) -> Unit = { side, idx ->
+        val tab = paneOf(side).book.tabs.getOrNull(idx)
+        if (tab != null) {
+            if (!splitEnabled) splitEnabled = true
+            val target = if (side == PaneSide.PRIMARY) PaneSide.SECONDARY else PaneSide.PRIMARY
+            mutatePane(target) {
+                it.copy(book = it.book.appendTab(
+                    OpenTab(path = tab.path, text = tab.text, savedText = tab.savedText, caret = tab.caret)
+                ))
+            }
+            focusedPane = target
         }
     }
     val closeActiveTab: () -> Unit = {
@@ -1002,6 +1383,48 @@ fun main() = application {
         }
     } else null
 
+    val tabContextActionsFor: (PaneSide) -> TabContextActions = { side ->
+        TabContextActions(
+            onClose = { idx -> requestCloseTab(side, idx) },
+            onCloseOthers = { idx ->
+                val pane = paneOf(side)
+                val toClose = pane.book.tabs.indices.filter { i ->
+                    i != idx && !pane.book.tabs[i].isPinned
+                }
+                requestBatchClose(side, toClose)
+            },
+            onCloseToLeft = { idx ->
+                val pane = paneOf(side)
+                val toClose = (0 until idx).filter { i -> !pane.book.tabs[i].isPinned }
+                requestBatchClose(side, toClose)
+            },
+            onCloseToRight = { idx ->
+                val pane = paneOf(side)
+                val toClose = ((idx + 1) until pane.book.tabs.size).filter { i -> !pane.book.tabs[i].isPinned }
+                requestBatchClose(side, toClose)
+            },
+            onCloseAll = {
+                val pane = paneOf(side)
+                val toClose = pane.book.tabs.indices.filter { i -> !pane.book.tabs[i].isPinned }
+                requestBatchClose(side, toClose)
+            },
+            onCloseUnmodified = {
+                val pane = paneOf(side)
+                val toClose = pane.book.tabs.indices.filter { i ->
+                    !pane.book.tabs[i].dirty && !pane.book.tabs[i].isPinned
+                }
+                closeManyOnPane(side, toClose)
+            },
+            onCopyAbsolutePath = { idx -> copyAbsolutePathOfTab(side, idx) },
+            onCopyRelativePath = { idx -> copyRelativePathOfTab(side, idx) },
+            onShowInExplorer = { idx -> showInExplorerOfTab(side, idx) },
+            onTogglePin = { idx -> togglePin(side, idx) },
+            onMoveToOtherPane = moveTabAcross?.let { fn -> { idx -> fn(side, idx) } },
+            onSplit = { idx -> splitWithTab(side, idx) },
+            onRename = { idx -> renameTabFile(side, idx) },
+        )
+    }
+
     val openQuickOpen: () -> Unit = {
         val root = rootDir
         if (root != null) {
@@ -1207,13 +1630,40 @@ fun main() = application {
                     true
                 }
                 event.key == Key.Z && event.isShiftPressed -> {
-                    if (focusedSearch != null) false else { doRedo(); true }
+                    if (focusedSearch != null) false
+                    else {
+                        val redoOp = fileOpHistory.peekRedo()
+                        if (fileTreeFocused && redoOp != null) {
+                            fileOpConfirm = FileOpConfirmState(isRedo = true, op = redoOp)
+                        } else {
+                            doRedo()
+                        }
+                        true
+                    }
                 }
                 event.key == Key.Z -> {
-                    if (focusedSearch != null) false else { doUndo(); true }
+                    if (focusedSearch != null) false
+                    else {
+                        val undoOp = fileOpHistory.peek()
+                        if (fileTreeFocused && undoOp != null) {
+                            fileOpConfirm = FileOpConfirmState(isRedo = false, op = undoOp)
+                        } else {
+                            doUndo()
+                        }
+                        true
+                    }
                 }
                 event.key == Key.Y -> {
-                    if (focusedSearch != null) false else { doRedo(); true }
+                    if (focusedSearch != null) false
+                    else {
+                        val redoOp = fileOpHistory.peekRedo()
+                        if (fileTreeFocused && redoOp != null) {
+                            fileOpConfirm = FileOpConfirmState(isRedo = true, op = redoOp)
+                        } else {
+                            doRedo()
+                        }
+                        true
+                    }
                 }
                 else -> false
             }
@@ -1388,6 +1838,15 @@ fun main() = application {
                     WelcomeScreen(
                         onOpenFolder = { frameRef.value?.let { openFolder(it) } },
                         onNewFile = { frameRef.value?.let { newFile(it) } },
+                        onDropPaths = { dropped ->
+                            val folder = dropped.firstOrNull { java.nio.file.Files.isDirectory(it) }
+                            if (folder != null) {
+                                openFolderPath(folder)
+                            } else {
+                                val file = dropped.firstOrNull { java.nio.file.Files.isRegularFile(it) }
+                                if (file != null) openInTab(file)
+                            }
+                        },
                     )
                 } else Shell(
                     primary = primaryPane,
@@ -1449,6 +1908,19 @@ fun main() = application {
                     onRevealInFiles = onRevealInFiles,
                     onCopyPath = onCopyPath,
                     onCopyRelativePath = onCopyRelativePath,
+                    onPasteInto = onPasteInto,
+                    onDropPlan = onDropPlanReceived,
+                    onExternalDrop = onExternalDropReceived,
+                    onDropRejected = { msg ->
+                        showDropResultToast(msg, DropResultToastTone.Warning, null)
+                    },
+                    onUndoFileOp = onUndoFileOp,
+                    canUndoFileOp = run {
+                        fileOpHistoryVersion
+                        fileOpHistory.peek() != null
+                    },
+                    onTreeFocusChanged = { fileTreeFocused = it },
+                    pendingTreeFocusTick = pendingTreeFocusTick,
                     onQueryChange = onQueryChange,
                     onReplaceChange = onReplaceChange,
                     onToggleCase = onToggleCase,
@@ -1508,7 +1980,7 @@ fun main() = application {
                     onOutputClear = { outputState.clear() },
                     outputHeight = outputHeight,
                     onOutputResizeDelta = { delta ->
-                        outputHeight = (outputHeight + delta).coerceIn(120.dp, 600.dp)
+                        outputHeight = (outputHeight + delta).coerceIn(120.dp, 1200.dp)
                     },
                     referencesState = referencesState,
                     onRequestReferences = requestReferences,
@@ -1543,6 +2015,11 @@ fun main() = application {
                         frameRef.value?.requestFocus()
                         editorFocusVersion += 1
                     },
+                    editorScrollFor = { p -> editorScrollByPath[p] },
+                    onEditorScrollChange = { p, snap ->
+                        editorScrollByPath = EditorScrollMemory.put(editorScrollByPath, p, snap)
+                    },
+                    tabContextActionsFor = { side -> tabContextActionsFor(side) },
                 )
                 if (findInFiles) {
                     FindInFilesDialog(
@@ -1556,6 +2033,13 @@ fun main() = application {
                     )
                 }
                 PaletteToast(palette = palette, visibleUntilMs = paletteToastUntil)
+                val activeDropToast = dropResultToast
+                if (activeDropToast != null) {
+                    DropResultToast(
+                        state = activeDropToast,
+                        onDismiss = { dropResultToast = null },
+                    )
+                }
                 }
             }
         }
@@ -1624,6 +2108,8 @@ fun main() = application {
                         treeRevision++
                         expanded = expanded + activeCreateDialog.parent
                         if (isFile) openInTab(result.path)
+                        fileOpHistory.push(FileOpHistory.CreateOp(result.path, isDirectory = !isFile))
+                        fileOpHistoryVersion++
                         createDialog = null
                     }
                     is FileTreeActions.CreateResult.Err -> {
@@ -1651,7 +2137,8 @@ fun main() = application {
             scope = impactScope,
         )
     }
-    val impactTarget: Path? = activeRenameDialog?.path ?: deleteDialog?.primary
+    val renameImpactPath = activeRenameDialog?.path?.takeUnless { java.nio.file.Files.isDirectory(it) }
+    val impactTarget: Path? = renameImpactPath ?: deleteDialog?.primary
     val impactState: ImpactScanState = produceState<ImpactScanState>(ImpactScanState.Idle, impactTarget) {
         val t = impactTarget
         if (t == null) {
@@ -1692,10 +2179,50 @@ fun main() = application {
                     FileSymbolRename.isValidKotlinIdentifier(newStem)
 
                 fun finishFileRename() {
-                    when (val result = FileTreeActions.rename(oldPath, newName)) {
+                    val isDir = java.nio.file.Files.isDirectory(oldPath)
+                    val packageMap = if (isDir) {
+                        FolderPackageRename.computePackageMap(oldPath, newName, readFileTextWithTabs)
+                    } else emptyMap()
+                    var renameOriginals: List<FileOpHistory.RewriteEntry> = emptyList()
+                    val performAndProcess: () -> FileTreeActions.RenameResult = {
+                        val txRoot = if (isDir) rootDir else null
+                        var r = FileTreeActions.rename(oldPath, newName, txRoot)
+                        if (isDir && r is FileTreeActions.RenameResult.Err) {
+                            for (i in 1..5) {
+                                runCatching { Thread.sleep(250L) }
+                                r = FileTreeActions.rename(oldPath, newName, txRoot)
+                                if (r is FileTreeActions.RenameResult.Ok) break
+                            }
+                        }
+                        val ok = r as? FileTreeActions.RenameResult.Ok
+                        if (ok != null) {
+                            remapTabsAfterRename(oldPath, ok.path)
+                            remapTreeStateAfterRename(oldPath, ok.path)
+                            if (isDir) {
+                                renameOriginals = applyFolderPackageSync(oldPath, ok.path, packageMap)
+                            }
+                        }
+                        r
+                    }
+                    val result: FileTreeActions.RenameResult = if (isDir) {
+                        var captured: FileTreeActions.RenameResult? = null
+                        lsp.runWithClientDown("folder rename: ${oldPath.fileName} → $newName") {
+                            withFileTreeWatcherClosed {
+                                captured = performAndProcess()
+                            }
+                        }
+                        captured ?: FileTreeActions.RenameResult.Err("rename did not run")
+                    } else {
+                        performAndProcess()
+                    }
+                    when (result) {
                         is FileTreeActions.RenameResult.Ok -> {
-                            remapTabsAfterRename(oldPath, result.path)
                             treeRevision++
+                            val renameOp = FileOpHistory.RenameOp(from = oldPath, to = result.path)
+                            val composedOp: FileOpHistory.Op = if (renameOriginals.isEmpty()) renameOp
+                                else FileOpHistory.CompositeOp(listOf(FileOpHistory.ReferenceRewriteOp(renameOriginals), renameOp))
+                            fileOpHistory.push(composedOp)
+                            fileOpHistoryVersion++
                             renameDialog = null
                         }
                         is FileTreeActions.RenameResult.Err -> {
@@ -1841,18 +2368,343 @@ fun main() = application {
             confirmLabel = if (multi) "Delete all" else "Delete",
             danger = true,
             onConfirm = {
-                val outcome = FileTreeActions.deleteBatch(activeDeleteDialog.paths)
-                outcome.results.forEach { (path, result) ->
-                    if (result is FileTreeActions.DeleteResult.Ok) {
-                        closeTabsUnderPath(path)
-                    } else if (result is FileTreeActions.DeleteResult.Err) {
-                        println("[filetree] delete failed for $path: ${result.message}")
+                val workspace = rootDir
+                if (workspace != null) {
+                    val trashed = FileTreeActions.deleteToTrash(activeDeleteDialog.paths, workspace)
+                    val entries = when (trashed) {
+                        is FileTreeActions.TrashResult.Ok -> trashed.entries
+                        is FileTreeActions.TrashResult.Err -> {
+                            println("[filetree] trash failed: ${trashed.message}")
+                            trashed.partialEntries
+                        }
                     }
+                    entries.forEach { entry -> closeTabsUnderPath(entry.originalPath) }
+                    if (entries.isNotEmpty()) {
+                        fileOpHistory.push(FileOpHistory.DeleteOp(entries))
+                        fileOpHistoryVersion++
+                        treeRevision++
+                        FileTreeActions.purgeTrashOlderThan(workspace)
+                    }
+                } else {
+                    val outcome = FileTreeActions.deleteBatch(activeDeleteDialog.paths)
+                    outcome.results.forEach { (path, result) ->
+                        if (result is FileTreeActions.DeleteResult.Ok) {
+                            closeTabsUnderPath(path)
+                        } else if (result is FileTreeActions.DeleteResult.Err) {
+                            println("[filetree] delete failed for $path: ${result.message}")
+                        }
+                    }
+                    if (outcome.successCount > 0) treeRevision++
                 }
-                if (outcome.successCount > 0) treeRevision++
                 deleteDialog = null
             },
             onDismiss = { deleteDialog = null },
+        )
+    }
+
+    val activePasteDialog = pasteDialog
+    if (activePasteDialog != null && activePasteDialog.remaining.isNotEmpty()) {
+        val source = activePasteDialog.remaining.first()
+        val sourceName = source.fileName?.toString() ?: source.toString()
+        val destRel = FileTreeActions.relativeTo(rootDir, activePasteDialog.destParent)
+        val destLabel = if (destRel.isEmpty() || destRel == ".") "/" else destRel
+        val verb = if (activePasteDialog.mode == FileTreeClipboard.Mode.Cut) "Move" else "Copy"
+        val total = activePasteDialog.remaining.size
+        val countSuffix = if (total > 1) "  ($total remaining)" else ""
+        val skipOne: (() -> Unit)? = if (total > 1) {
+            {
+                val cur = activePasteDialog
+                val rest = cur.remaining.drop(1)
+                pasteDialog = if (rest.isEmpty()) null else cur.copy(remaining = rest, error = null)
+                if (rest.isEmpty()) {
+                    val pushedMoves = cur.movesSoFar
+                    val pushedCopies = cur.createdSoFar
+                    if (pushedMoves.isNotEmpty()) {
+                        fileOpHistory.push(FileOpHistory.PasteCutOp(pushedMoves))
+                        fileOpHistoryVersion++
+                        FileTreeClipboard.clearCutMarking()
+                        showDropResultToast(
+                            dropResultMessage("Moved", pushedMoves.size, dropDestLabel(rootDir, cur.destParent)),
+                            DropResultToastTone.Info,
+                        ) { onUndoFileOp() }
+                    } else if (pushedCopies.isNotEmpty()) {
+                        fileOpHistory.push(FileOpHistory.PasteCopyOp(pushedCopies))
+                        fileOpHistoryVersion++
+                        showDropResultToast(
+                            dropResultMessage("Copied", pushedCopies.size, dropDestLabel(rootDir, cur.destParent)),
+                            DropResultToastTone.Info,
+                        ) { onUndoFileOp() }
+                    }
+                }
+            }
+        } else null
+        val skipAll: (() -> Unit)? = if (total > 1) {
+            {
+                val cur = activePasteDialog
+                pasteDialog = null
+                val pushedMoves = cur.movesSoFar
+                val pushedCopies = cur.createdSoFar
+                if (pushedMoves.isNotEmpty()) {
+                    fileOpHistory.push(FileOpHistory.PasteCutOp(pushedMoves))
+                    fileOpHistoryVersion++
+                    FileTreeClipboard.clearCutMarking()
+                    showDropResultToast(
+                        dropResultMessage("Moved", pushedMoves.size, dropDestLabel(rootDir, cur.destParent)),
+                        DropResultToastTone.Info,
+                    ) { onUndoFileOp() }
+                } else if (pushedCopies.isNotEmpty()) {
+                    fileOpHistory.push(FileOpHistory.PasteCopyOp(pushedCopies))
+                    fileOpHistoryVersion++
+                    showDropResultToast(
+                        dropResultMessage("Copied", pushedCopies.size, dropDestLabel(rootDir, cur.destParent)),
+                        DropResultToastTone.Info,
+                    ) { onUndoFileOp() }
+                }
+            }
+        } else null
+        val performPaste: (String, Boolean) -> Unit = performPaste@ { newName, overwriteOnce ->
+            val current = pasteDialog ?: return@performPaste
+            val src = current.remaining.first()
+            val rest = current.remaining.drop(1)
+            val overwriteFlag = current.overwriteForAll || overwriteOnce
+            when (current.mode) {
+                FileTreeClipboard.Mode.Copy -> {
+                    val estimate = LargeCopyExecutor.estimate(src)
+                    if (estimate.isLarge) {
+                        val cancelToken = java.util.concurrent.atomic.AtomicBoolean(false)
+                        val destLabel = current.destParent.fileName?.toString()
+                            ?: current.destParent.toString()
+                        largeCopyState = LargeCopyDialogState(
+                            sourceName = src.fileName?.toString() ?: src.toString(),
+                            destName = destLabel,
+                            totalBytes = estimate.totalBytes,
+                            fileCount = estimate.fileCount,
+                            bytesCopied = 0L,
+                            filesCopied = 0,
+                            cancelToken = cancelToken,
+                        )
+                        pasteDialog = null
+                        val capturedCurrent = current
+                        val capturedRest = rest
+                        val capturedName = newName
+                        val capturedOverwrite = overwriteFlag
+                        val bytesAcc = java.util.concurrent.atomic.AtomicLong(0L)
+                        val filesAcc = java.util.concurrent.atomic.AtomicInteger(0)
+                        largeCopyScope.launch {
+                            val outcome = withContext(Dispatchers.IO) {
+                                LargeCopyExecutor.copyWithProgress(
+                                    source = src,
+                                    destParent = capturedCurrent.destParent,
+                                    newName = capturedName,
+                                    isCancelled = { cancelToken.get() },
+                                    onProgress = { deltaBytes, deltaFiles ->
+                                        val nb = bytesAcc.addAndGet(deltaBytes)
+                                        val nf = filesAcc.addAndGet(deltaFiles)
+                                        largeCopyState?.let { snap ->
+                                            largeCopyState = snap.copy(
+                                                bytesCopied = nb,
+                                                filesCopied = nf,
+                                            )
+                                        }
+                                    },
+                                    overwriteExisting = capturedOverwrite,
+                                )
+                            }
+                            largeCopyState = null
+                                when (outcome) {
+                                    is LargeCopyExecutor.CopyOutcome.Ok -> {
+                                        treeRevision++
+                                        val nextCreated = capturedCurrent.createdSoFar +
+                                            FileOpHistory.CopyEntry(source = src, dest = outcome.target)
+                                        if (capturedRest.isEmpty()) {
+                                            fileOpHistory.push(FileOpHistory.PasteCopyOp(nextCreated))
+                                            fileOpHistoryVersion++
+                                            val destLbl = dropDestLabel(rootDir, capturedCurrent.destParent)
+                                            showDropResultToast(
+                                                dropResultMessage("Copied", nextCreated.size, destLbl),
+                                                DropResultToastTone.Info,
+                                            ) { onUndoFileOp() }
+                                        } else {
+                                            pasteDialog = capturedCurrent.copy(
+                                                remaining = capturedRest,
+                                                error = null,
+                                                createdSoFar = nextCreated,
+                                            )
+                                        }
+                                    }
+                                    is LargeCopyExecutor.CopyOutcome.Cancelled -> {
+                                        treeRevision++
+                                        if (capturedCurrent.createdSoFar.isNotEmpty()) {
+                                            fileOpHistory.push(
+                                                FileOpHistory.PasteCopyOp(capturedCurrent.createdSoFar)
+                                            )
+                                            fileOpHistoryVersion++
+                                        }
+                                    }
+                                    is LargeCopyExecutor.CopyOutcome.Err -> {
+                                        pasteDialog = capturedCurrent.copy(error = outcome.message)
+                                    }
+                                }
+                            }
+                        } else {
+                            when (val result = FileTreeActions.copyFile(src, current.destParent, newName, overwriteFlag)) {
+                                is FileTreeActions.CopyResult.Ok -> {
+                                    treeRevision++
+                                    val nextCreated = current.createdSoFar +
+                                        FileOpHistory.CopyEntry(source = src, dest = result.path)
+                                    if (rest.isEmpty()) {
+                                        fileOpHistory.push(FileOpHistory.PasteCopyOp(nextCreated))
+                                        fileOpHistoryVersion++
+                                        pasteDialog = null
+                                        val destLbl = dropDestLabel(rootDir, current.destParent)
+                                        showDropResultToast(
+                                            dropResultMessage("Copied", nextCreated.size, destLbl),
+                                            DropResultToastTone.Info,
+                                        ) { onUndoFileOp() }
+                                    } else {
+                                        pasteDialog = current.copy(
+                                            remaining = rest,
+                                            error = null,
+                                            createdSoFar = nextCreated,
+                                        )
+                                    }
+                                }
+                                is FileTreeActions.CopyResult.Err -> {
+                                    pasteDialog = current.copy(error = result.message)
+                                }
+                            }
+                        }
+                    }
+                    FileTreeClipboard.Mode.Cut -> {
+                        val srcIsDir = java.nio.file.Files.isDirectory(src)
+                        val intendedNewPath = current.destParent.resolve(newName)
+                        val packageMap = if (srcIsDir) {
+                            val movingToDifferentParent = src.parent?.toAbsolutePath()?.normalize() !=
+                                current.destParent.toAbsolutePath().normalize()
+                            if (movingToDifferentParent) {
+                                FolderPackageRename.computePackageMapForMove(
+                                    oldFolder = src,
+                                    newFolder = intendedNewPath,
+                                    workspaceRoot = rootDir,
+                                    readText = readFileTextWithTabs,
+                                )
+                            } else {
+                                FolderPackageRename.computePackageMap(src, newName, readFileTextWithTabs)
+                            }
+                        } else emptyMap()
+                        val singleFilePlan = if (!srcIsDir && isKotlinSource(src) &&
+                            src.parent?.toAbsolutePath()?.normalize() !=
+                                current.destParent.toAbsolutePath().normalize()) {
+                            FolderPackageRename.planSingleFileMove(
+                                oldFile = src,
+                                newParent = current.destParent,
+                                workspaceRoot = rootDir,
+                                readText = readFileTextWithTabs,
+                            )
+                        } else null
+                        var moveOriginals: List<FileOpHistory.RewriteEntry> = emptyList()
+                        val performMove: () -> FileTreeActions.MoveResult = {
+                            val txRoot = if (srcIsDir) rootDir else null
+                            val r = FileTreeActions.moveFile(src, current.destParent, newName, txRoot, overwriteFlag)
+                            if (r is FileTreeActions.MoveResult.Ok) {
+                                remapTabsAfterRename(src, r.path)
+                                remapTreeStateAfterRename(src, r.path)
+                                if (srcIsDir) {
+                                    moveOriginals = applyFolderPackageSync(src, r.path, packageMap)
+                                } else if (singleFilePlan != null) {
+                                    moveOriginals = applySingleFileMoveSync(r.path, singleFilePlan)
+                                }
+                            }
+                            r
+                        }
+                        val result: FileTreeActions.MoveResult = if (srcIsDir) {
+                            var captured: FileTreeActions.MoveResult? = null
+                            lsp.runWithClientDown("folder move: ${src.fileName} → ${current.destParent.fileName}/$newName") {
+                                withFileTreeWatcherClosed {
+                                    captured = performMove()
+                                }
+                            }
+                            captured ?: FileTreeActions.MoveResult.Err("move did not run")
+                        } else {
+                            performMove()
+                        }
+                        when (result) {
+                            is FileTreeActions.MoveResult.Ok -> {
+                                treeRevision++
+                                val nextMoves = current.movesSoFar + (src to result.path)
+                                val nextRewriteOriginals = current.rewriteOriginalsSoFar + moveOriginals
+                                if (rest.isEmpty()) {
+                                    val cutOp = FileOpHistory.PasteCutOp(nextMoves)
+                                    val composedOp: FileOpHistory.Op = if (nextRewriteOriginals.isEmpty()) cutOp
+                                        else FileOpHistory.CompositeOp(listOf(FileOpHistory.ReferenceRewriteOp(nextRewriteOriginals), cutOp))
+                                    fileOpHistory.push(composedOp)
+                                    fileOpHistoryVersion++
+                                    FileTreeClipboard.clearCutMarking()
+                                    pasteDialog = null
+                                    val destLbl = dropDestLabel(rootDir, current.destParent)
+                                    showDropResultToast(
+                                        dropResultMessage("Moved", nextMoves.size, destLbl),
+                                        DropResultToastTone.Info,
+                                    ) { onUndoFileOp() }
+                                } else {
+                                    pasteDialog = current.copy(
+                                        remaining = rest,
+                                        error = null,
+                                        movesSoFar = nextMoves,
+                                        rewriteOriginalsSoFar = nextRewriteOriginals,
+                                    )
+                                }
+                            }
+                            is FileTreeActions.MoveResult.Err -> {
+                                pasteDialog = current.copy(error = result.message)
+                            }
+                        }
+                    }
+                }
+        }
+        NameInputDialog(
+            title = "$verb into $destLabel$countSuffix",
+            label = "$sourceName  →  $destLabel  /  name",
+            initial = sourceName,
+            error = activePasteDialog.error,
+            onSkip = skipOne,
+            onSkipRemaining = skipAll,
+            onOverwrite = { name -> performPaste(name, true) },
+            onOverwriteAll = { name ->
+                pasteDialog = activePasteDialog.copy(overwriteForAll = true)
+                performPaste(name, true)
+            },
+            onSubmit = { newName -> performPaste(newName, false) },
+            onDismiss = { pasteDialog = null },
+        )
+    }
+
+    val activeLargeCopy = largeCopyState
+    if (activeLargeCopy != null) {
+        LargeCopyDialog(
+            sourceName = activeLargeCopy.sourceName,
+            destName = activeLargeCopy.destName,
+            totalBytes = activeLargeCopy.totalBytes,
+            fileCount = activeLargeCopy.fileCount,
+            bytesCopied = activeLargeCopy.bytesCopied,
+            filesCopied = activeLargeCopy.filesCopied,
+            onCancel = { activeLargeCopy.cancelToken.set(true) },
+        )
+    }
+
+    val activeFileOpConfirm = fileOpConfirm
+    if (activeFileOpConfirm != null) {
+        val verb = if (activeFileOpConfirm.isRedo) "Redo" else "Undo"
+        ConfirmDialog(
+            title = "$verb file operation",
+            message = "$verb '${activeFileOpConfirm.op.describe()}'?",
+            confirmLabel = verb,
+            danger = false,
+            onConfirm = {
+                fileOpConfirm = null
+                if (activeFileOpConfirm.isRedo) onRedoFileOp() else onUndoFileOp()
+            },
+            onDismiss = { fileOpConfirm = null },
         )
     }
 
@@ -1893,9 +2745,37 @@ fun main() = application {
                     if (isUnsavedText(tab)) add(Triple(PaneSide.SECONDARY, idx, tab))
                 }
             }
+            is PendingClose.Batch -> buildList {
+                current.targets.forEach { (side, path) ->
+                    val idx = paneOf(side).book.tabs.indexOfFirst { it.path == path }
+                    val tab = paneOf(side).book.tabs.getOrNull(idx)
+                    if (tab != null && isUnsavedText(tab)) add(Triple(side, idx, tab))
+                }
+            }
         }
         val targetNames = targets.map { (_, _, t) ->
             t.path.fileName?.toString() ?: t.path.toString()
+        }
+        val finishBatch: (PendingClose.Batch) -> Unit = { batch ->
+            val grouped = batch.targets.groupBy({ it.first }) { it.second }
+            grouped.forEach { (side, paths) ->
+                val pane = paneOf(side)
+                val indices = paths.mapNotNull { p ->
+                    pane.book.tabs.indexOfFirst { it.path == p }.takeIf { it >= 0 }
+                }
+                if (indices.isNotEmpty()) {
+                    val closedPaths = indices.map { pane.book.tabs[it].path }
+                    mutatePane(side) { it.copy(book = it.book.closeMany(indices)) }
+                    closedPaths.forEach { p ->
+                        val stillOpen = primaryPane.book.tabs.any { it.path == p } ||
+                            secondaryPane.book.tabs.any { it.path == p }
+                        if (!stillOpen) {
+                            editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, p)
+                            if (isKotlinSource(p)) lsp.didClose(p)
+                        }
+                    }
+                }
+            }
         }
         UnsavedChangesDialog(
             fileNames = targetNames,
@@ -1906,6 +2786,7 @@ fun main() = application {
                 when (current) {
                     is PendingClose.Tab -> closeTabAt(current.side, current.index)
                     PendingClose.App -> exitApplication()
+                    is PendingClose.Batch -> finishBatch(current)
                 }
             },
             onDiscard = {
@@ -1913,6 +2794,7 @@ fun main() = application {
                 when (current) {
                     is PendingClose.Tab -> closeTabAt(current.side, current.index)
                     PendingClose.App -> exitApplication()
+                    is PendingClose.Batch -> finishBatch(current)
                 }
             },
             onCancel = { pendingClose = null },
@@ -1939,6 +2821,41 @@ private data class DeleteEntryDialogState(
     val primary: Path get() = paths.first()
     val isMulti: Boolean get() = paths.size > 1
 }
+
+private data class PasteEntryDialogState(
+    val remaining: List<Path>,
+    val destParent: Path,
+    val mode: FileTreeClipboard.Mode,
+    val error: String? = null,
+    val createdSoFar: List<FileOpHistory.CopyEntry> = emptyList(),
+    val movesSoFar: List<Pair<Path, Path>> = emptyList(),
+    val rewriteOriginalsSoFar: List<FileOpHistory.RewriteEntry> = emptyList(),
+    val overwriteForAll: Boolean = false,
+)
+
+private data class LargeCopyDialogState(
+    val sourceName: String,
+    val destName: String,
+    val totalBytes: Long,
+    val fileCount: Int,
+    val bytesCopied: Long,
+    val filesCopied: Int,
+    val cancelToken: java.util.concurrent.atomic.AtomicBoolean,
+)
+
+private data class FileOpConfirmState(
+    val isRedo: Boolean,
+    val op: FileOpHistory.Op,
+)
+
+private fun dropDestLabel(rootDir: Path?, dest: Path): String {
+    val rel = FileTreeActions.relativeTo(rootDir, dest)
+    return if (rel.isEmpty() || rel == ".") (dest.fileName?.toString() ?: dest.toString()) else rel
+}
+
+private fun dropResultMessage(verb: String, count: Int, destLabel: String): String =
+    if (count == 1) "$verb 1 item into $destLabel"
+    else "$verb $count items into $destLabel"
 
 private fun windowTitle(path: Path?): String {
     val name = path?.fileName?.toString() ?: "untitled"
@@ -1996,7 +2913,7 @@ private fun Shell(
     treeRevision: Int,
     sidebarWidth: Dp,
     onSidebarResize: (Dp) -> Unit,
-    onToggle: (Path) -> Unit,
+    onToggle: (Path, Boolean) -> Unit,
     onOpenFile: (Path) -> Unit,
     onCreateFileIn: (Path) -> Unit,
     onCreateFolderIn: (Path) -> Unit,
@@ -2006,6 +2923,14 @@ private fun Shell(
     onRevealInFiles: (Path) -> Unit,
     onCopyPath: (Path) -> Unit,
     onCopyRelativePath: (Path) -> Unit,
+    onPasteInto: (Path) -> Unit,
+    onDropPlan: (TreeDragController.DropPlan) -> Unit,
+    onExternalDrop: (List<Path>, Path) -> Unit,
+    onDropRejected: (String) -> Unit,
+    onUndoFileOp: () -> Boolean,
+    canUndoFileOp: Boolean,
+    onTreeFocusChanged: (Boolean) -> Unit = {},
+    pendingTreeFocusTick: Int = 0,
     onQueryChange: (PaneSide, String) -> Unit,
     onReplaceChange: (PaneSide, String) -> Unit,
     onToggleCase: (PaneSide) -> Unit,
@@ -2076,6 +3001,9 @@ private fun Shell(
     codeActionPreviewText: String? = null,
     onCodeActionApply: (CodeActionEntry) -> Unit = {},
     onCodeActionDismiss: () -> Unit = {},
+    editorScrollFor: (Path) -> EditorScrollSnapshot? = { null },
+    onEditorScrollChange: (Path, EditorScrollSnapshot) -> Unit = { _, _ -> },
+    tabContextActionsFor: (PaneSide) -> TabContextActions? = { null },
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
     Column(modifier = Modifier.fillMaxSize()) {
@@ -2109,6 +3037,14 @@ private fun Shell(
                 onReveal = onRevealInFiles,
                 onCopyPath = onCopyPath,
                 onCopyRelativePath = onCopyRelativePath,
+                onPasteInto = onPasteInto,
+                onUndo = onUndoFileOp,
+                canUndo = canUndoFileOp,
+                onDropPlan = onDropPlan,
+                onExternalDrop = onExternalDrop,
+                onDropRejected = onDropRejected,
+                onPanelFocusChanged = onTreeFocusChanged,
+                pendingFocusTick = pendingTreeFocusTick,
                 revision = treeRevision,
                 modifier = Modifier.width(sidebarWidth).fillMaxHeight(),
             )
@@ -2155,6 +3091,9 @@ private fun Shell(
                                 editorFocusVersion = if (focusedPane == PaneSide.PRIMARY) editorFocusVersion else 0,
                                 initialFoldedStartLines = foldedLinesFor(primary.book.active?.path),
                                 onFoldStartLinesChange = onFoldChange,
+                                editorScrollFor = editorScrollFor,
+                                onEditorScrollChange = onEditorScrollChange,
+                                tabContextActions = tabContextActionsFor(PaneSide.PRIMARY),
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -2191,6 +3130,9 @@ private fun Shell(
                                 editorFocusVersion = if (focusedPane == PaneSide.SECONDARY) editorFocusVersion else 0,
                                 initialFoldedStartLines = foldedLinesFor(secondary.book.active?.path),
                                 onFoldStartLinesChange = onFoldChange,
+                                editorScrollFor = editorScrollFor,
+                                onEditorScrollChange = onEditorScrollChange,
+                                tabContextActions = tabContextActionsFor(PaneSide.SECONDARY),
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -2226,6 +3168,9 @@ private fun Shell(
                         editorFocusVersion = editorFocusVersion,
                         initialFoldedStartLines = foldedLinesFor(primary.book.active?.path),
                         onFoldStartLinesChange = onFoldChange,
+                        editorScrollFor = editorScrollFor,
+                        onEditorScrollChange = onEditorScrollChange,
+                        tabContextActions = tabContextActionsFor(PaneSide.PRIMARY),
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -2336,6 +3281,9 @@ private fun PaneRegion(
     editorFocusVersion: Int = 0,
     initialFoldedStartLines: Set<Int> = emptySet(),
     onFoldStartLinesChange: (Path, Set<Int>) -> Unit = { _, _ -> },
+    editorScrollFor: (Path) -> EditorScrollSnapshot? = { null },
+    onEditorScrollChange: (Path, EditorScrollSnapshot) -> Unit = { _, _ -> },
+    tabContextActions: TabContextActions? = null,
     modifier: Modifier = Modifier,
 ) {
     val active = pane.book.active
@@ -2367,6 +3315,7 @@ private fun PaneRegion(
             },
             onDragStart = onTabDragStart,
             onDragEnd = onTabDragEnd,
+            contextActions = tabContextActions,
         )
         FocusIndicator(visible = isFocused)
         when (kind) {
@@ -2391,8 +3340,10 @@ private fun PaneRegion(
                 onWindowShortcut = onWindowShortcut,
                 modifier = Modifier.fillMaxWidth().weight(1f),
             )
-            else -> {
-                val activeDiagnostics = active?.path?.let { lsp.diagnosticsFor(it) }.orEmpty()
+            else -> if (active == null) {
+                EmptyPanePlaceholder(modifier = Modifier.fillMaxWidth().weight(1f))
+            } else {
+                val activeDiagnostics = active.path.let { lsp.diagnosticsFor(it) }
                 val lspStatusText = lspStatusLineText(lsp)
                 val lspActivities = lsp.activities.values
                     .sortedBy { it.startedAtMs }
@@ -2455,7 +3406,12 @@ private fun PaneRegion(
                     editorFocusVersion = editorFocusVersion,
                     initialFoldedStartLines = initialFoldedStartLines,
                     onFoldStartLinesChange = { lines ->
-                        active?.path?.let { p -> onFoldStartLinesChange(p, lines) }
+                        active.path.let { p -> onFoldStartLinesChange(p, lines) }
+                    },
+                    initialVScroll = editorScrollFor(active.path)?.vertical ?: 0,
+                    initialHScroll = editorScrollFor(active.path)?.horizontal ?: 0,
+                    onScrollChange = { v, h ->
+                        onEditorScrollChange(active.path, EditorScrollSnapshot(v, h))
                     },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -2475,6 +3431,20 @@ private fun FocusIndicator(visible: Boolean) {
                 else Color.Transparent,
             ),
     )
+}
+
+@Composable
+private fun EmptyPanePlaceholder(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "No file open",
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            fontSize = 12.sp,
+        )
+    }
 }
 
 @Composable
@@ -2536,24 +3506,30 @@ private fun TitleBar(
                 enabled = canStart,
                 onClick = onStartRun,
                 shortcut = "Shift+F10",
+                icon = { tint: Color -> PlayGlyph(tint = tint) },
+                enabledIconTint = Color(0xFF4CAF50),
             )
             TitleBarAction(
                 label = "Stop",
                 enabled = runIsRunning,
                 onClick = onStopRun,
                 shortcut = "Ctrl+F2",
+                icon = { tint: Color -> StopGlyph(tint = tint) },
+                enabledIconTint = Color(0xFFE53935),
             )
             Spacer(Modifier.width(8.dp))
             TitleBarToggle(
                 label = "Output",
                 selected = outputOpen,
                 onClick = onOutputToggle,
+                icon = { tint: Color -> OutputGlyph(tint = tint) },
             )
             TitleBarToggle(
                 label = "Terminal",
                 selected = terminalOpen,
                 onClick = onTerminalToggle,
                 shortcut = "Ctrl+`",
+                icon = { tint: Color -> TerminalGlyph(tint = tint) },
             )
         }
     }
@@ -2657,10 +3633,19 @@ private fun TitleBarAction(
     enabled: Boolean,
     onClick: () -> Unit,
     shortcut: String? = null,
+    icon: (@Composable (tint: Color) -> Unit)? = null,
+    enabledIconTint: Color? = null,
 ) {
-    val fg = if (enabled) MaterialTheme.colorScheme.onSurface
-    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    val disabledTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    val fg = if (enabled) MaterialTheme.colorScheme.onSurface else disabledTint
+    val iconTint = when {
+        !enabled -> disabledTint
+        enabledIconTint != null -> enabledIconTint
+        else -> MaterialTheme.colorScheme.onSurface
+    }
     val tooltipText = when {
+        icon != null && !shortcut.isNullOrBlank() -> "$label · $shortcut"
+        icon != null -> label
         shortcut.isNullOrBlank() -> ""
         else -> "$label · $shortcut"
     }
@@ -2672,12 +3657,21 @@ private fun TitleBarAction(
                 .padding(horizontal = 2.dp)
                 .let { if (enabled) it.clickable { onClick() } else it },
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = fg,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            )
+            if (icon != null) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    icon(iconTint)
+                }
+            } else {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = fg,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
         }
     }
 }
@@ -2688,28 +3682,121 @@ private fun TitleBarToggle(
     selected: Boolean,
     onClick: () -> Unit,
     shortcut: String? = null,
+    icon: (@Composable (tint: Color) -> Unit)? = null,
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
     val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     val tooltipText = when {
+        icon != null && !shortcut.isNullOrBlank() -> "$label · $shortcut"
+        icon != null -> label
         shortcut.isNullOrBlank() -> ""
         else -> "$label · $shortcut"
     }
     GlassTooltip(text = tooltipText) {
-    Surface(
-        color = bg,
-        shape = RoundedCornerShape(4.dp),
-        modifier = Modifier
-            .clickable { onClick() }
-            .padding(horizontal = 2.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = fg,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        Surface(
+            color = bg,
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier
+                .clickable { onClick() }
+                .padding(horizontal = 2.dp),
+        ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    icon(fg)
+                }
+            } else {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = fg,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayGlyph(tint: Color, size: Dp = 14.dp) {
+    Canvas(modifier = Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val p = androidx.compose.ui.graphics.Path().apply {
+            moveTo(w * 0.22f, h * 0.14f)
+            lineTo(w * 0.88f, h * 0.5f)
+            lineTo(w * 0.22f, h * 0.86f)
+            close()
+        }
+        drawPath(p, color = tint)
+    }
+}
+
+@Composable
+private fun StopGlyph(tint: Color, size: Dp = 14.dp) {
+    Canvas(modifier = Modifier.size(size)) {
+        val pad = this.size.width * 0.2f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(pad, pad),
+            size = Size(this.size.width - pad * 2, this.size.height - pad * 2),
+            cornerRadius = CornerRadius(this.size.width * 0.08f),
         )
     }
+}
+
+@Composable
+private fun TerminalGlyph(tint: Color, size: Dp = 14.dp) {
+    Canvas(modifier = Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val strokeW = w * 0.14f
+        val cx = w * 0.32f
+        val cy = h * 0.5f
+        val cs = w * 0.22f
+        val p = androidx.compose.ui.graphics.Path().apply {
+            moveTo(cx - cs, cy - cs * 0.95f)
+            lineTo(cx + cs * 0.35f, cy)
+            lineTo(cx - cs, cy + cs * 0.95f)
+        }
+        drawPath(
+            p,
+            color = tint,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeW,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round,
+            ),
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.55f, h * 0.64f),
+            size = Size(w * 0.34f, strokeW),
+            cornerRadius = CornerRadius(strokeW / 2),
+        )
+    }
+}
+
+@Composable
+private fun OutputGlyph(tint: Color, size: Dp = 14.dp) {
+    Canvas(modifier = Modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val lineH = h * 0.11f
+        val gap = h * 0.16f
+        val widths = listOf(0.82f, 0.58f, 0.82f)
+        var y = h * 0.22f
+        widths.forEach { wf ->
+            drawRoundRect(
+                color = tint,
+                topLeft = Offset(w * 0.09f, y),
+                size = Size(w * wf, lineH),
+                cornerRadius = CornerRadius(lineH / 2),
+            )
+            y += lineH + gap
+        }
     }
 }
 

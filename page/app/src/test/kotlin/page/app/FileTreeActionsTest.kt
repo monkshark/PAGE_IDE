@@ -178,6 +178,37 @@ class FileTreeActionsTest {
     }
 
     @Test
+    fun `rename works on nested directory tree`() {
+        val root = newDir()
+        val dir = Files.createDirectories(root.resolve("parent/inner"))
+        Files.writeString(Files.createFile(dir.resolve("a.kt")), "AAA")
+        Files.writeString(Files.createFile(root.resolve("parent").resolve("b.kt")), "BBB")
+        val result = FileTreeActions.rename(root.resolve("parent"), "lattice")
+        assertIs<FileTreeActions.RenameResult.Ok>(result)
+        assertTrue(Files.isDirectory(result.path))
+        assertTrue(!Files.exists(root.resolve("parent")))
+        assertEquals("AAA", Files.readString(result.path.resolve("inner/a.kt")))
+        assertEquals("BBB", Files.readString(result.path.resolve("b.kt")))
+    }
+
+    @Test
+    fun `renameDirectoryByCopy copies tree then deletes source`() {
+        val root = newDir()
+        val source = Files.createDirectories(root.resolve("complex"))
+        Files.writeString(Files.createFile(source.resolve("a.kt")), "alpha")
+        val inner = Files.createDirectories(source.resolve("inner"))
+        Files.writeString(Files.createFile(inner.resolve("b.kt")), "beta")
+        val target = root.resolve("lattice")
+
+        FileTreeActions.renameDirectoryByCopy(source, target)
+
+        assertTrue(!Files.exists(source))
+        assertTrue(Files.isDirectory(target))
+        assertEquals("alpha", Files.readString(target.resolve("a.kt")))
+        assertEquals("beta", Files.readString(target.resolve("inner/b.kt")))
+    }
+
+    @Test
     fun `delete removes file`() {
         val root = newDir()
         val file = Files.createFile(root.resolve("a.kt"))
@@ -275,5 +306,187 @@ class FileTreeActionsTest {
         assertTrue(!outcome.allOk)
         assertTrue(!Files.exists(a))
         assertTrue(!Files.exists(b))
+    }
+
+    @Test
+    fun `copyFile copies file with new name`() {
+        val root = newDir()
+        val src = Files.createFile(root.resolve("a.kt"))
+        Files.writeString(src, "hello")
+        val dest = Files.createDirectories(root.resolve("dst"))
+        val result = FileTreeActions.copyFile(src, dest, "b.kt")
+        assertIs<FileTreeActions.CopyResult.Ok>(result)
+        assertTrue(Files.exists(src))
+        assertTrue(Files.exists(result.path))
+        assertEquals("hello", Files.readString(result.path))
+    }
+
+    @Test
+    fun `copyFile copies directory recursively`() {
+        val root = newDir()
+        val srcDir = Files.createDirectories(root.resolve("src"))
+        Files.createFile(srcDir.resolve("a.txt")).also { Files.writeString(it, "A") }
+        val inner = Files.createDirectories(srcDir.resolve("inner"))
+        Files.createFile(inner.resolve("b.txt")).also { Files.writeString(it, "B") }
+        val dest = Files.createDirectories(root.resolve("dst"))
+        val result = FileTreeActions.copyFile(srcDir, dest, "src-copy")
+        assertIs<FileTreeActions.CopyResult.Ok>(result)
+        assertTrue(Files.isDirectory(result.path))
+        assertEquals("A", Files.readString(result.path.resolve("a.txt")))
+        assertEquals("B", Files.readString(result.path.resolve("inner/b.txt")))
+        assertTrue(Files.exists(srcDir))
+    }
+
+    @Test
+    fun `copyFile rejects existing target`() {
+        val root = newDir()
+        val src = Files.createFile(root.resolve("a.kt"))
+        val dest = Files.createDirectories(root.resolve("dst"))
+        Files.createFile(dest.resolve("a.kt"))
+        val result = FileTreeActions.copyFile(src, dest, "a.kt")
+        assertIs<FileTreeActions.CopyResult.Err>(result)
+        assertTrue(result.message.contains("already exists"))
+    }
+
+    @Test
+    fun `copyFile rejects copying directory into itself`() {
+        val root = newDir()
+        val dir = Files.createDirectories(root.resolve("dir"))
+        val result = FileTreeActions.copyFile(dir, dir, "nested")
+        assertIs<FileTreeActions.CopyResult.Err>(result)
+        assertTrue(result.message.contains("into itself"))
+    }
+
+    @Test
+    fun `copyFile rejects when destination is not a directory`() {
+        val root = newDir()
+        val src = Files.createFile(root.resolve("a.kt"))
+        val file = Files.createFile(root.resolve("not-dir.txt"))
+        val result = FileTreeActions.copyFile(src, file, "b.kt")
+        assertIs<FileTreeActions.CopyResult.Err>(result)
+        assertTrue(result.message.contains("not a directory"))
+    }
+
+    @Test
+    fun `copyFile rejects invalid new name`() {
+        val root = newDir()
+        val src = Files.createFile(root.resolve("a.kt"))
+        val dest = Files.createDirectories(root.resolve("dst"))
+        val result = FileTreeActions.copyFile(src, dest, "bad/name")
+        assertIs<FileTreeActions.CopyResult.Err>(result)
+        assertTrue(result.message.contains("Invalid character"))
+    }
+
+    @Test
+    fun `moveFile moves and renames file`() {
+        val root = newDir()
+        val src = Files.createFile(root.resolve("a.kt"))
+        Files.writeString(src, "x")
+        val dest = Files.createDirectories(root.resolve("dst"))
+        val result = FileTreeActions.moveFile(src, dest, "b.kt")
+        assertIs<FileTreeActions.MoveResult.Ok>(result)
+        assertTrue(!Files.exists(src))
+        assertTrue(Files.exists(result.path))
+        assertEquals("x", Files.readString(result.path))
+    }
+
+    @Test
+    fun `moveFile rejects existing target`() {
+        val root = newDir()
+        val src = Files.createFile(root.resolve("a.kt"))
+        val dest = Files.createDirectories(root.resolve("dst"))
+        Files.createFile(dest.resolve("a.kt"))
+        val result = FileTreeActions.moveFile(src, dest, "a.kt")
+        assertIs<FileTreeActions.MoveResult.Err>(result)
+        assertTrue(result.message.contains("already exists"))
+    }
+
+    @Test
+    fun `moveFile rejects moving directory into itself`() {
+        val root = newDir()
+        val dir = Files.createDirectories(root.resolve("dir"))
+        val result = FileTreeActions.moveFile(dir, dir, "nested")
+        assertIs<FileTreeActions.MoveResult.Err>(result)
+        assertTrue(result.message.contains("into itself"))
+    }
+
+    @Test
+    fun `multi-paste — two distinct files move to same destination without name bleed`() {
+        val root = newDir()
+        val srcDir = Files.createDirectories(root.resolve("src"))
+        val dst = Files.createDirectories(root.resolve("dst"))
+        val a = Files.writeString(srcDir.resolve("Deep.kt"), "deep-body")
+        val b = Files.writeString(srcDir.resolve("Movable.kt"), "movable-body")
+
+        val r1 = FileTreeActions.moveFile(a, dst, "Deep.kt")
+        assertIs<FileTreeActions.MoveResult.Ok>(r1)
+        val r2 = FileTreeActions.moveFile(b, dst, "Movable.kt")
+        assertIs<FileTreeActions.MoveResult.Ok>(r2)
+
+        assertTrue(!Files.exists(a))
+        assertTrue(!Files.exists(b))
+        assertTrue(Files.exists(dst.resolve("Deep.kt")))
+        assertTrue(Files.exists(dst.resolve("Movable.kt")))
+        assertEquals("deep-body", Files.readString(dst.resolve("Deep.kt")))
+        assertEquals("movable-body", Files.readString(dst.resolve("Movable.kt")))
+    }
+
+    @Test
+    fun `multi-paste — three files move sequentially preserving names and content`() {
+        val root = newDir()
+        val srcDir = Files.createDirectories(root.resolve("src"))
+        val dst = Files.createDirectories(root.resolve("dst"))
+        val files = listOf("Alpha.kt" to "α", "Beta.kt" to "β", "Gamma.kt" to "γ")
+            .map { (name, body) -> Files.writeString(srcDir.resolve(name), body) to body }
+
+        for ((src, expected) in files) {
+            val res = FileTreeActions.moveFile(src, dst, src.fileName.toString())
+            assertIs<FileTreeActions.MoveResult.Ok>(res)
+            assertEquals(expected, Files.readString(res.path))
+        }
+
+        files.forEach { (src, _) -> assertTrue(!Files.exists(src), "source $src should be gone") }
+        listOf("Alpha.kt", "Beta.kt", "Gamma.kt").forEach { name ->
+            assertTrue(Files.exists(dst.resolve(name)), "$name should land in dst")
+        }
+    }
+
+    @Test
+    fun `multi-paste — second move with same name as first lands as collision`() {
+        val root = newDir()
+        val srcA = Files.createDirectories(root.resolve("a"))
+        val srcB = Files.createDirectories(root.resolve("b"))
+        val dst = Files.createDirectories(root.resolve("dst"))
+        val fileA = Files.writeString(srcA.resolve("Helper.kt"), "from-a")
+        val fileB = Files.writeString(srcB.resolve("Helper.kt"), "from-b")
+
+        val r1 = FileTreeActions.moveFile(fileA, dst, "Helper.kt")
+        assertIs<FileTreeActions.MoveResult.Ok>(r1)
+        val r2 = FileTreeActions.moveFile(fileB, dst, "Helper.kt")
+        assertIs<FileTreeActions.MoveResult.Err>(r2)
+        assertTrue(r2.message.contains("already exists"))
+
+        assertEquals("from-a", Files.readString(dst.resolve("Helper.kt")))
+        assertTrue(Files.exists(fileB), "second source should remain when collision blocks the move")
+    }
+
+    @Test
+    fun `multi-paste — second move with rename around collision succeeds`() {
+        val root = newDir()
+        val srcA = Files.createDirectories(root.resolve("a"))
+        val srcB = Files.createDirectories(root.resolve("b"))
+        val dst = Files.createDirectories(root.resolve("dst"))
+        val fileA = Files.writeString(srcA.resolve("Helper.kt"), "from-a")
+        val fileB = Files.writeString(srcB.resolve("Helper.kt"), "from-b")
+
+        val r1 = FileTreeActions.moveFile(fileA, dst, "Helper.kt")
+        assertIs<FileTreeActions.MoveResult.Ok>(r1)
+        val r2 = FileTreeActions.moveFile(fileB, dst, "Helper2.kt")
+        assertIs<FileTreeActions.MoveResult.Ok>(r2)
+
+        assertEquals("from-a", Files.readString(dst.resolve("Helper.kt")))
+        assertEquals("from-b", Files.readString(dst.resolve("Helper2.kt")))
+        assertTrue(!Files.exists(fileA))
+        assertTrue(!Files.exists(fileB))
     }
 }

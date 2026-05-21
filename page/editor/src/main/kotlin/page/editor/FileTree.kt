@@ -21,6 +21,23 @@ object FileTree {
         return result
     }
 
+    fun descendantDirs(dir: Path): Set<Path> {
+        if (!isDirectorySafe(dir)) return emptySet()
+        val out = LinkedHashSet<Path>()
+        val stack = ArrayDeque<Path>()
+        stack.addLast(dir)
+        while (stack.isNotEmpty()) {
+            val cur = stack.removeLast()
+            val children = listChildrenSorted(cur) ?: continue
+            for (child in children) {
+                if (isDirectorySafe(child) && out.add(child)) {
+                    stack.addLast(child)
+                }
+            }
+        }
+        return out
+    }
+
     fun singleChildChain(dir: Path): Set<Path> {
         if (!isDirectorySafe(dir)) return emptySet()
         val out = mutableSetOf<Path>()
