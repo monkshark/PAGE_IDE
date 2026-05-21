@@ -31,6 +31,8 @@ import page.lsp.KLS_LINTING_KIND
 import page.lsp.KLS_SYMBOL_INDEX_KIND
 import page.lsp.KlsActivity
 import page.lsp.LanguageBackend
+import page.lsp.LanguageDefinition
+import page.lsp.LanguageRegistry
 import page.lsp.LspBackends
 import page.lsp.LspClient
 import page.lsp.LspState
@@ -64,6 +66,8 @@ class LspController(
 
     val status: MutableState<Status> = mutableStateOf(Status.IDLE)
     val statusDetail: MutableState<String> = mutableStateOf("")
+    val missingDefinition: MutableState<LanguageDefinition?> = mutableStateOf(null)
+    val missingAttempted: MutableState<List<String>> = mutableStateOf(emptyList())
     val activities: SnapshotStateMap<String, Activity> = androidx.compose.runtime.mutableStateMapOf()
     val diagnosticsByUri: SnapshotStateMap<String, List<Diagnostic>> = androidx.compose.runtime.mutableStateMapOf()
 
@@ -122,6 +126,8 @@ class LspController(
         startActivityJanitor()
         val backend = LspBackends.forExtension("kt")
         if (backend == null) {
+            missingDefinition.value = LanguageRegistry.byId("kotlin")
+            missingAttempted.value = emptyList()
             status.value = Status.MISSING
             statusDetail.value = "no LanguageBackend registered for .kt"
             println("[lsp] MISSING — no LanguageBackend for .kt")
@@ -130,7 +136,10 @@ class LspController(
         println("[lsp] resolving ${backend.displayName} (workspace=$workspaceRoot)")
         val resolution = backend.resolveExecutable()
         if (resolution !is LanguageBackend.Resolution.Found) {
-            val attempted = (resolution as LanguageBackend.Resolution.NotFound).attempted.joinToString("\n  ")
+            val notFound = resolution as LanguageBackend.Resolution.NotFound
+            val attempted = notFound.attempted.joinToString("\n  ")
+            missingDefinition.value = LanguageRegistry.byId(backend.id)
+            missingAttempted.value = notFound.attempted
             status.value = Status.MISSING
             statusDetail.value = "${backend.displayName} not found. Tried:\n  $attempted"
             println("[lsp] MISSING — attempted:\n  $attempted")
