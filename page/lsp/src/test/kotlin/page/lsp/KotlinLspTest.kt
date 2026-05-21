@@ -62,14 +62,19 @@ class KotlinLspTest {
         System.clearProperty("page.lsp.kotlin.path")
         System.clearProperty("compose.application.resources.dir")
         System.setProperty("page.lsp.kotlin.disableDev", "true")
+        val isolatedHome = Files.createTempDirectory("kls-home-")
         try {
-            val r = KotlinLsp.resolveExecutable(mapOf("PATH" to "/definitely/does/not/exist"))
+            val r = KotlinLsp.resolveExecutable(
+                env = mapOf("PATH" to "/definitely/does/not/exist"),
+                home = isolatedHome,
+            )
             assertTrue(r is KotlinLsp.Resolution.NotFound)
         } finally {
             if (prevOverride != null) System.setProperty("page.lsp.kotlin.path", prevOverride)
             if (prevResources != null) System.setProperty("compose.application.resources.dir", prevResources)
             if (prevDisableDev != null) System.setProperty("page.lsp.kotlin.disableDev", prevDisableDev)
             else System.clearProperty("page.lsp.kotlin.disableDev")
+            isolatedHome.toFile().deleteRecursively()
         }
     }
 }

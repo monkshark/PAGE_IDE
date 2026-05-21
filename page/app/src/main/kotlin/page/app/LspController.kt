@@ -14,6 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import page.lsp.CompletionEdit
@@ -31,6 +33,8 @@ import page.lsp.KLS_LINTING_KIND
 import page.lsp.KLS_SYMBOL_INDEX_KIND
 import page.lsp.KlsActivity
 import page.lsp.LanguageBackend
+import page.lsp.LanguageDefinition
+import page.lsp.LanguageRegistry
 import page.lsp.LspBackends
 import page.lsp.LspClient
 import page.lsp.LspState
@@ -64,6 +68,13 @@ class LspController(
 
     val status: MutableState<Status> = mutableStateOf(Status.IDLE)
     val statusDetail: MutableState<String> = mutableStateOf("")
+    val missingDefinition: MutableState<LanguageDefinition?> = mutableStateOf(null)
+    val missingAttempted: MutableState<List<String>> = mutableStateOf(emptyList())
+    private val _installGuideOpen = MutableStateFlow(false)
+    val installGuideOpen: StateFlow<Boolean> = _installGuideOpen
+
+    fun openInstallGuide() { _installGuideOpen.value = true }
+    fun closeInstallGuide() { _installGuideOpen.value = false }
     val activities: SnapshotStateMap<String, Activity> = androidx.compose.runtime.mutableStateMapOf()
     val diagnosticsByUri: SnapshotStateMap<String, List<Diagnostic>> = androidx.compose.runtime.mutableStateMapOf()
 
@@ -122,18 +133,23 @@ class LspController(
         startActivityJanitor()
         val backend = LspBackends.forExtension("kt")
         if (backend == null) {
-            status.value = Status.MISSING
-            statusDetail.value = "no LanguageBackend registered for .kt"
-            println("[lsp] MISSING — no LanguageBackend for .kt")
+            markMissing(
+                backendId = "kotlin",
+                attempted = emptyList(),
+                detail = "no LanguageBackend registered for .kt",
+            )
             return
         }
         println("[lsp] resolving ${backend.displayName} (workspace=$workspaceRoot)")
         val resolution = backend.resolveExecutable()
         if (resolution !is LanguageBackend.Resolution.Found) {
-            val attempted = (resolution as LanguageBackend.Resolution.NotFound).attempted.joinToString("\n  ")
-            status.value = Status.MISSING
-            statusDetail.value = "${backend.displayName} not found. Tried:\n  $attempted"
-            println("[lsp] MISSING — attempted:\n  $attempted")
+            val notFound = resolution as LanguageBackend.Resolution.NotFound
+            val joined = notFound.attempted.joinToString("\n  ")
+            markMissing(
+                backendId = backend.id,
+                attempted = notFound.attempted,
+                detail = "${backend.displayName} not found. Tried:\n  $joined",
+            )
             return
         }
         status.value = Status.STARTING
@@ -192,6 +208,26 @@ class LspController(
 
     private fun endActivity(kind: String) {
         activities.remove(kind)
+    }
+
+    internal fun markMissing(backendId: String, attempted: List<String>, detail: String) {
+        missingDefinition.value = LanguageRegistry.byId(backendId)
+        missingAttempted.value = attempted
+        status.value = Status.MISSING
+        statusDetail.value = detail
+        println("[lsp] MISSING — $detail")
+    }
+
+    fun retry() {
+        if (status.value != Status.MISSING && status.value != Status.FAILED) return
+        println("[lsp] retry requested (previous status=${status.value})")
+        startAttempted = false
+        missingDefinition.value = null
+        missingAttempted.value = emptyList()
+        status.value = Status.IDLE
+        statusDetail.value = ""
+        _installGuideOpen.value = false
+        ensureStarted()
     }
 
     private fun applyActivityEvent(event: KlsActivity?) {

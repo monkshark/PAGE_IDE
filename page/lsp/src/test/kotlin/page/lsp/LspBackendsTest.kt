@@ -43,9 +43,12 @@ class LspBackendsTest {
         val prevOverride = System.getProperty("page.lsp.kotlin.path")
         val prevResources = System.getProperty("compose.application.resources.dir")
         val prevDisableDev = System.getProperty("page.lsp.kotlin.disableDev")
+        val prevUserInstall = System.getProperty("page.lsp.kotlin.userInstall")
         System.clearProperty("page.lsp.kotlin.path")
         System.clearProperty("compose.application.resources.dir")
         System.setProperty("page.lsp.kotlin.disableDev", "true")
+        val emptyUserInstall = java.nio.file.Files.createTempDirectory("kls-empty-")
+        System.setProperty("page.lsp.kotlin.userInstall", emptyUserInstall.toString())
         try {
             val notFound = KotlinLanguageBackend.resolveExecutable(mapOf("PATH" to "/definitely/does/not/exist"))
             assertEquals(true, notFound is LanguageBackend.Resolution.NotFound)
@@ -54,6 +57,9 @@ class LspBackendsTest {
             if (prevResources != null) System.setProperty("compose.application.resources.dir", prevResources)
             if (prevDisableDev != null) System.setProperty("page.lsp.kotlin.disableDev", prevDisableDev)
             else System.clearProperty("page.lsp.kotlin.disableDev")
+            if (prevUserInstall != null) System.setProperty("page.lsp.kotlin.userInstall", prevUserInstall)
+            else System.clearProperty("page.lsp.kotlin.userInstall")
+            emptyUserInstall.toFile().deleteRecursively()
         }
     }
 

@@ -125,6 +125,7 @@ fun EditorPanel(
     diagnostics: List<Diagnostic> = emptyList(),
     lspStatusText: String? = null,
     lspActivities: List<LspController.Activity> = emptyList(),
+    onLspStatusClick: (() -> Unit)? = null,
     onProblemsToggle: (() -> Unit)? = null,
     todoCount: Int = 0,
     onTodoToggle: (() -> Unit)? = null,
@@ -1194,6 +1195,7 @@ fun EditorPanel(
             warningCount = warningCount,
             lspStatusText = lspStatusText,
             lspActivities = lspActivities,
+            onLspStatusClick = onLspStatusClick,
             onProblemsToggle = onProblemsToggle,
             todoCount = todoCount,
             onTodoToggle = onTodoToggle,
@@ -1653,6 +1655,7 @@ private fun EditorStatusBar(
     warningCount: Int = 0,
     lspStatusText: String? = null,
     lspActivities: List<LspController.Activity> = emptyList(),
+    onLspStatusClick: (() -> Unit)? = null,
     onProblemsToggle: (() -> Unit)? = null,
     todoCount: Int = 0,
     onTodoToggle: (() -> Unit)? = null,
@@ -1691,7 +1694,7 @@ private fun EditorStatusBar(
             if (showLifecycle || showActivities) {
                 Box(modifier = Modifier.weight(1f))
                 if (showLifecycle) {
-                    LspLifecycleItem(text = lspStatusText!!)
+                    LspLifecycleItem(text = lspStatusText!!, onClick = onLspStatusClick)
                 } else {
                     LspActivitiesItem(activities = lspActivities)
                 }
@@ -1701,11 +1704,15 @@ private fun EditorStatusBar(
 }
 
 @Composable
-private fun LspLifecycleItem(text: String) {
+private fun LspLifecycleItem(text: String, onClick: (() -> Unit)? = null) {
+    val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val color = if (onClick != null) MaterialTheme.colorScheme.primary else baseColor
+    val mod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     Text(
         text = text,
+        modifier = mod,
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = color,
     )
 }
 

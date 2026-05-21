@@ -26,13 +26,18 @@ object KotlinLsp {
     private const val PATH_OVERRIDE_PROP = "page.lsp.kotlin.path"
     private const val RESOURCES_PROP = "compose.application.resources.dir"
     private const val DISABLE_DEV_PROP = "page.lsp.kotlin.disableDev"
+    private const val USER_INSTALL_PROP = "page.lsp.kotlin.userInstall"
+    private const val USER_INSTALL_VERSION = "1.3.13-page-1"
 
     sealed class Resolution {
         data class Found(val executable: Path, val origin: String) : Resolution()
         data class NotFound(val attempted: List<String>) : Resolution()
     }
 
-    fun resolveExecutable(env: Map<String, String> = System.getenv()): Resolution {
+    fun resolveExecutable(
+        env: Map<String, String> = System.getenv(),
+        home: Path = Paths.get(System.getProperty("user.home") ?: "."),
+    ): Resolution {
         val attempted = mutableListOf<String>()
         val isWindows = System.getProperty("os.name").orEmpty().lowercase().contains("win")
         val binNames = if (isWindows) listOf("kotlin-language-server.bat", "kotlin-language-server")
@@ -50,6 +55,15 @@ object KotlinLsp {
             for (name in binNames) {
                 val candidate = base.resolve(name)
                 if (candidate.exists()) return Resolution.Found(candidate, "bundled (compose resources)")
+            }
+        }
+
+        userInstallRoot(home)?.let { root ->
+            val base = root.resolve("bin")
+            attempted += "user-install=$base"
+            for (name in binNames) {
+                val candidate = base.resolve(name)
+                if (candidate.exists()) return Resolution.Found(candidate, "user install")
             }
         }
 
@@ -139,6 +153,35 @@ object KotlinLsp {
             }
         }
         return candidates.maxByOrNull { Files.getLastModifiedTime(it).toMillis() }
+    }
+
+    fun userInstallRoot(home: Path = Paths.get(System.getProperty("user.home") ?: ".")): Path? {
+        System.getProperty(USER_INSTALL_PROP)?.takeIf { it.isNotBlank() }?.let {
+            val p = Paths.get(it)
+            return if (p.exists()) p else null
+        }
+        val multiBase = home.resolve(".page-ide").resolve("lsp").resolve("kotlin-language-server")
+        val pointer = multiBase.resolve("CURRENT")
+        if (pointer.exists()) {
+            val label = runCatching { Files.readString(pointer).trim() }.getOrNull()
+            if (!label.isNullOrEmpty() && Files.isDirectory(multiBase)) {
+                val matched = runCatching {
+                    Files.list(multiBase).use { stream ->
+                        stream.filter { Files.isDirectory(it) }
+                            .filter { dir ->
+                                val labelFile = dir.resolve("LABEL")
+                                Files.exists(labelFile) &&
+                                    runCatching { Files.readString(labelFile).trim() == label }.getOrDefault(false)
+                            }
+                            .findFirst()
+                            .orElse(null)
+                    }
+                }.getOrNull()
+                if (matched != null) return matched
+            }
+        }
+        val legacy = home.resolve(".page-ide").resolve("lsp").resolve("kotlin-language-server-$USER_INSTALL_VERSION")
+        return if (legacy.exists()) legacy else null
     }
 
     private fun locateProjectRoot(): Path? {
