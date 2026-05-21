@@ -126,23 +126,23 @@ class LspController(
         startActivityJanitor()
         val backend = LspBackends.forExtension("kt")
         if (backend == null) {
-            missingDefinition.value = LanguageRegistry.byId("kotlin")
-            missingAttempted.value = emptyList()
-            status.value = Status.MISSING
-            statusDetail.value = "no LanguageBackend registered for .kt"
-            println("[lsp] MISSING — no LanguageBackend for .kt")
+            markMissing(
+                backendId = "kotlin",
+                attempted = emptyList(),
+                detail = "no LanguageBackend registered for .kt",
+            )
             return
         }
         println("[lsp] resolving ${backend.displayName} (workspace=$workspaceRoot)")
         val resolution = backend.resolveExecutable()
         if (resolution !is LanguageBackend.Resolution.Found) {
             val notFound = resolution as LanguageBackend.Resolution.NotFound
-            val attempted = notFound.attempted.joinToString("\n  ")
-            missingDefinition.value = LanguageRegistry.byId(backend.id)
-            missingAttempted.value = notFound.attempted
-            status.value = Status.MISSING
-            statusDetail.value = "${backend.displayName} not found. Tried:\n  $attempted"
-            println("[lsp] MISSING — attempted:\n  $attempted")
+            val joined = notFound.attempted.joinToString("\n  ")
+            markMissing(
+                backendId = backend.id,
+                attempted = notFound.attempted,
+                detail = "${backend.displayName} not found. Tried:\n  $joined",
+            )
             return
         }
         status.value = Status.STARTING
@@ -201,6 +201,14 @@ class LspController(
 
     private fun endActivity(kind: String) {
         activities.remove(kind)
+    }
+
+    internal fun markMissing(backendId: String, attempted: List<String>, detail: String) {
+        missingDefinition.value = LanguageRegistry.byId(backendId)
+        missingAttempted.value = attempted
+        status.value = Status.MISSING
+        statusDetail.value = detail
+        println("[lsp] MISSING — $detail")
     }
 
     private fun applyActivityEvent(event: KlsActivity?) {
