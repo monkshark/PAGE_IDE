@@ -1,0 +1,66 @@
+name: Update KLS release manifest
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate manifest
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            async function fetchReleases(owner, repo) {
+              const response = await github.rest.repos.listReleases({
+                owner,
+                repo,
+                per_page: 50,
+              });
+              return response.data
+                .filter(r => !r.draft)
+                .map(r => ({
+                  tag: r.tag_name,
+                  publishedAt: r.published_at,
+                }));
+            }
+
+            const fork = await fetchReleases('Monkshark', 'kotlin-language-server');
+            const upstream = await fetchReleases('fwcd', 'kotlin-language-server');
+
+            const manifest = {
+              updatedAt: new Date().toISOString(),
+              fork,
+              upstream,
+            };
+
+            const target = path.join('docs', 'lsp', 'kotlin.json');
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            fs.writeFileSync(target, JSON.stringify(manifest, null, 2) + '\n');
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/kls-manifest-refresh
+          delete-branch: true
+          commit-message: "docs(lsp): KLS release manifest 자동 갱신"
+          title: "docs(lsp): KLS release manifest 자동 갱신"
+          body: |
+            Monkshark fork + fwcd upstream 의 최신 release 목록을 `docs/lsp/kotlin.json` 에 반영합니다.
+
+            매일 KLS manifest GitHub Action 이 자동으로 생성/갱신합니다.
+          labels: |
+            automation
+            lsp
