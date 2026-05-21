@@ -54,6 +54,7 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.MANIFEST_BOT_PAT }}
           branch: chore/kls-manifest-refresh
           delete-branch: true
           commit-message: "docs(lsp): KLS release manifest 자동 갱신"
