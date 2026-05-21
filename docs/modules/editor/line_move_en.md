@@ -1,6 +1,6 @@
 # LineMove
 
-> 한국어: [line_move.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/line_move.md)
+> 한국어: [line_move.md](https://monkshark.github.io/page-ide/#modules/editor/line_move.md)
 
 > `page/editor/src/main/kotlin/page/editor/LineMove.kt` — Line move / duplicate
 
@@ -63,4 +63,4 @@ Shift+Alt+Up / Down → `duplicateUp` / `duplicateDown` wiring is planned.
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

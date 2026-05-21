@@ -4,7 +4,7 @@
 
 윈도우/탭/사이드바/검색/저장 다이얼로그를 묶는 톱레벨. `TabBook`, `TextFieldValue`, `rootDir`, `expanded`, `sidebarWidth`, `search`, `pendingClose` 가 모두 여기서 산다
 
-> English: [main_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/main_en.md)
+> English: [main_en.md](https://monkshark.github.io/page-ide/#modules/app/main_en.md)
 
 ---
 
@@ -113,4 +113,4 @@ private fun windowTitle(path: Path?): String =
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

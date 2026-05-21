@@ -1,6 +1,6 @@
 # QuickOpenDialog
 
-> 한국어: [quick_open_dialog.md](https://monkshark.github.io/PAGE_IDE/#modules/app/quick_open_dialog.md)
+> 한국어: [quick_open_dialog.md](https://monkshark.github.io/page-ide/#modules/app/quick_open_dialog.md)
 
 > `page/app/src/main/kotlin/page/app/QuickOpenDialog.kt` — `Ctrl+P` Quick Open dialog
 
@@ -87,4 +87,4 @@ If no folder is open (`rootDir == null`), the dialog doesn't appear — there's 
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

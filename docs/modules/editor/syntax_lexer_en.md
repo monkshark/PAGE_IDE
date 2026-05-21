@@ -1,6 +1,6 @@
 # SyntaxLexer / Token / TokenKind
 
-> 한국어: [syntax_lexer.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/syntax_lexer.md)
+> 한국어: [syntax_lexer.md](https://monkshark.github.io/page-ide/#modules/editor/syntax_lexer.md)
 
 > `page/editor/src/main/kotlin/page/editor/SyntaxLexer.kt` — Syntax-lexer interface
 
@@ -71,4 +71,4 @@ The dispatch entry point is `SyntaxLexers.forPath(path)` — unsupported extensi
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

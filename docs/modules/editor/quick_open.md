@@ -4,7 +4,7 @@
 
 `FuzzyMatcher` 단일 매칭을 파일 리스트 위에서 돌려서 결과 정렬 + 자르기. 다이얼로그는 이게 돌려준 `QuickOpenResult` 만 받아서 그린다
 
-> English: [quick_open_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/quick_open_en.md)
+> English: [quick_open_en.md](https://monkshark.github.io/page-ide/#modules/editor/quick_open_en.md)
 
 ---
 
@@ -65,4 +65,4 @@ fun nameOffset(relative: String): Int
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

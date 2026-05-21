@@ -1,6 +1,6 @@
 # FileDocument
 
-> 한국어: [file_document.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/file_document.md)
+> 한국어: [file_document.md](https://monkshark.github.io/page-ide/#modules/editor/file_document.md)
 
 > `page/editor/src/main/kotlin/page/editor/FileDocument.kt` — File read / write (UTF-8)
 
@@ -59,4 +59,4 @@ To make encoding user-configurable later, add a `Charset` parameter and keep UTF
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

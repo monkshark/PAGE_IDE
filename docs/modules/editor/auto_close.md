@@ -4,7 +4,7 @@
 
 `onValueChange` 단계에서 호출되는 순수 함수. 직전 상태 (`old`) 와 직후 상태 (`new`) 를 받아 변환된 새 상태를 돌려준다
 
-> English: [auto_close_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/auto_close_en.md)
+> English: [auto_close_en.md](https://monkshark.github.io/page-ide/#modules/editor/auto_close_en.md)
 
 ---
 
@@ -75,4 +75,4 @@ private val pairs = mapOf(
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

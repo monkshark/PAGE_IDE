@@ -1,6 +1,6 @@
 # JsonLexer
 
-> 한국어: [json_lexer.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/json_lexer.md)
+> 한국어: [json_lexer.md](https://monkshark.github.io/page-ide/#modules/editor/json_lexer.md)
 
 > `page/editor/src/main/kotlin/page/editor/JsonLexer.kt` — JSON syntax lexer (standalone)
 
@@ -41,4 +41,4 @@ Punctuation (`,`, `:`, `{`, `}`, `[`, `]`) is intentionally untokenized — `PUN
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

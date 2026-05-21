@@ -4,7 +4,7 @@
 
 Alt+↑ / Alt+↓ 와 (향후) Shift+Alt+↑·↓ 의 핵심 로직. 선택 범위 전체를 *하나의 블록* 으로 다루어 위/아래 라인과 자리를 바꾼다
 
-> English: [line_move_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/line_move_en.md)
+> English: [line_move_en.md](https://monkshark.github.io/page-ide/#modules/editor/line_move_en.md)
 
 ---
 
@@ -63,4 +63,4 @@ private fun lineEnd(text: String, offset: Int): Int
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

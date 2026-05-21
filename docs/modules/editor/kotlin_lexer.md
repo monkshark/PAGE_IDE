@@ -4,7 +4,7 @@
 
 `JvmLexer` 에 Kotlin 키워드 셋만 넘기는 박막 위임. `JavaLexer` 와 같은 구조
 
-> English: [kotlin_lexer_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/kotlin_lexer_en.md)
+> English: [kotlin_lexer_en.md](https://monkshark.github.io/page-ide/#modules/editor/kotlin_lexer_en.md)
 
 ---
 
@@ -52,4 +52,4 @@ Kotlin 의 hard keywords + soft keywords + modifier keywords 75 여 개
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

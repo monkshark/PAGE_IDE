@@ -1,6 +1,6 @@
 # PreviewPanel
 
-> 한국어: [preview_panel.md](https://monkshark.github.io/PAGE_IDE/#modules/app/preview_panel.md)
+> 한국어: [preview_panel.md](https://monkshark.github.io/page-ide/#modules/app/preview_panel.md)
 
 > `page/app/src/main/kotlin/page/app/PreviewPanel.kt` — Image / SVG preview
 
@@ -106,4 +106,4 @@ Everything `coerceIn(MIN_ZOOM, MAX_ZOOM)`.
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

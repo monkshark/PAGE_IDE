@@ -1,6 +1,6 @@
 # QuickOpen
 
-> 한국어: [quick_open.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/quick_open.md)
+> 한국어: [quick_open.md](https://monkshark.github.io/page-ide/#modules/editor/quick_open.md)
 
 > `page/editor/src/main/kotlin/page/editor/QuickOpen.kt` — Quick Open result ranking
 
@@ -65,4 +65,4 @@ fun nameOffset(relative: String): Int
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

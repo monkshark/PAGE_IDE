@@ -1,6 +1,6 @@
 # SearchState
 
-> 한국어: [search_state.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/search_state.md)
+> 한국어: [search_state.md](https://monkshark.github.io/page-ide/#modules/editor/search_state.md)
 
 > `page/editor/src/main/kotlin/page/editor/SearchState.kt` — Search / replace state
 
@@ -98,4 +98,4 @@ Case folding is handled in one line via `ignoreCase = !caseSensitive`. No regex.
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

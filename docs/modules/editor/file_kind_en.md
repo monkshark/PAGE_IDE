@@ -1,6 +1,6 @@
 # FileKind / FileKinds
 
-> 한국어: [file_kind.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/file_kind.md)
+> 한국어: [file_kind.md](https://monkshark.github.io/page-ide/#modules/editor/file_kind.md)
 
 > `page/editor/src/main/kotlin/page/editor/FileKind.kt` — File classification (extension-based)
 
@@ -45,4 +45,4 @@ Files with no extension (`Makefile`, `Dockerfile`, `.gitignore`) all fall throug
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

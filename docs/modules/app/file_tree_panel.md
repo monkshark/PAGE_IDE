@@ -4,7 +4,7 @@
 
 `FileTree.listTree(root, expanded)` 결과를 `LazyColumn` 으로 렌더. 디렉터리 chevron 토글, 파일 클릭으로 탭 열기
 
-> English: [file_tree_panel_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/file_tree_panel_en.md)
+> English: [file_tree_panel_en.md](https://monkshark.github.io/page-ide/#modules/app/file_tree_panel_en.md)
 
 ---
 
@@ -119,4 +119,4 @@ private fun TreeRow(
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

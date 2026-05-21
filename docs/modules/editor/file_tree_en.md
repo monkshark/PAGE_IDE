@@ -1,6 +1,6 @@
 # FileTree / TreeNode
 
-> 한국어: [file_tree.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/file_tree.md)
+> 한국어: [file_tree.md](https://monkshark.github.io/page-ide/#modules/editor/file_tree.md)
 
 > `page/editor/src/main/kotlin/page/editor/FileTree.kt` — Sidebar file-tree flattening
 
@@ -58,4 +58,4 @@ Guards against broken symlinks, denied folders, and other half-readable mounts s
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

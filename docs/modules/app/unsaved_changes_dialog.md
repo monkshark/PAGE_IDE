@@ -4,7 +4,7 @@
 
 dirty 한 탭을 닫거나 앱을 종료할 때, 저장/버림/취소를 묻는 모달. 탭 단위와 앱 종료 단위가 같은 다이얼로그를 공유한다
 
-> English: [unsaved_changes_dialog_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/unsaved_changes_dialog_en.md)
+> English: [unsaved_changes_dialog_en.md](https://monkshark.github.io/page-ide/#modules/app/unsaved_changes_dialog_en.md)
 
 ---
 
@@ -71,4 +71,4 @@ DialogWindow(undecorated = true, resizable = false, ...)
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -4,7 +4,7 @@
 
 `expanded` 집합을 받아 트리를 깊이-우선으로 펼친 평탄한 노드 리스트를 만든다. `LazyColumn` 으로 그리기 위한 데이터 표현
 
-> English: [file_tree_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/file_tree_en.md)
+> English: [file_tree_en.md](https://monkshark.github.io/page-ide/#modules/editor/file_tree_en.md)
 
 ---
 
@@ -58,4 +58,4 @@ fun listTree(root: Path, expanded: Set<Path>): List<TreeNode>
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

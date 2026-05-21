@@ -1,6 +1,6 @@
 # KotlinLexer
 
-> 한국어: [kotlin_lexer.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/kotlin_lexer.md)
+> 한국어: [kotlin_lexer.md](https://monkshark.github.io/page-ide/#modules/editor/kotlin_lexer.md)
 
 > `page/editor/src/main/kotlin/page/editor/KotlinLexer.kt` — Kotlin syntax lexer (delegate)
 
@@ -52,4 +52,4 @@ About 75 entries — Kotlin's hard keywords + soft keywords + modifier keywords.
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

@@ -4,7 +4,7 @@
 
 `TabBook.tabs` 를 가로 스크롤 row 로 그리고, 활성 칩에 배경 톤을 입힌다. 드래그로 순서를 바꾸고, 휠로 좌우 스크롤
 
-> English: [tab_bar_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/tab_bar_en.md)
+> English: [tab_bar_en.md](https://monkshark.github.io/page-ide/#modules/app/tab_bar_en.md)
 
 ---
 
@@ -88,4 +88,4 @@ private fun CloseButton(dirty: Boolean, onClick: () -> Unit)
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -4,7 +4,7 @@
 
 Tab / Shift+Tab / Enter / Backspace 키 동작과 `}` / `]` / `)` 자동 정렬을 한 곳에 모은 순수 함수 묶음
 
-> English: [indent_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/indent_en.md)
+> English: [indent_en.md](https://monkshark.github.io/page-ide/#modules/editor/indent_en.md)
 
 ---
 
@@ -109,4 +109,4 @@ fun maybeUnindentClosingBrace(old: TextEdit, new: TextEdit): TextEdit
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

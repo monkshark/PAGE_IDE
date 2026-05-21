@@ -1,6 +1,6 @@
 # WordBoundary
 
-> 한국어: [word_boundary.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/word_boundary.md)
+> 한국어: [word_boundary.md](https://monkshark.github.io/page-ide/#modules/editor/word_boundary.md)
 
 > `page/editor/src/main/kotlin/page/editor/WordBoundary.kt` — Word-wise caret motion / deletion / double·triple-click selection ranges
 
@@ -94,4 +94,4 @@ Internal classification. Horizontal space and newline are handled separately, so
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

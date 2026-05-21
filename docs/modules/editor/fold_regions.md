@@ -4,7 +4,7 @@
 
 `{`/`}` 페어로 폴딩 가능한 블록을 찾고, 접힌 영역을 ` ... }` 플레이스홀더로 압축하기 위한 세그먼트 / 오프셋 매핑 / 클릭 히트테스트를 제공함
 
-> English: [fold_regions_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/fold_regions_en.md)
+> English: [fold_regions_en.md](https://monkshark.github.io/page-ide/#modules/editor/fold_regions_en.md)
 
 ---
 
@@ -142,4 +142,4 @@ fun foldedRegionAt(
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

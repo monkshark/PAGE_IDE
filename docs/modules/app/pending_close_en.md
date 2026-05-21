@@ -1,6 +1,6 @@
 # PendingClose
 
-> 한국어: [pending_close.md](https://monkshark.github.io/PAGE_IDE/#modules/app/pending_close.md)
+> 한국어: [pending_close.md](https://monkshark.github.io/page-ide/#modules/app/pending_close.md)
 
 > `page/app/src/main/kotlin/page/app/PendingClose.kt` — Identifies which close request is in flight
 
@@ -39,4 +39,4 @@ The dialog callbacks branch on the case — tab close ends at `book.close(index)
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

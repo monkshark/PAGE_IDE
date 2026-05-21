@@ -1,6 +1,6 @@
 # TabBar
 
-> 한국어: [tab_bar.md](https://monkshark.github.io/PAGE_IDE/#modules/app/tab_bar.md)
+> 한국어: [tab_bar.md](https://monkshark.github.io/page-ide/#modules/app/tab_bar.md)
 
 > `page/app/src/main/kotlin/page/app/TabBar.kt` — Top tab strip with drag-reorder
 
@@ -88,4 +88,4 @@ Normally `×`. When the tab is dirty and the cursor is *not* over the chip, show
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

@@ -1,6 +1,6 @@
 # SyntaxPalette / GlassDarkSyntax
 
-> 한국어: [syntax_colors.md](https://monkshark.github.io/PAGE_IDE/#modules/ui/syntax_colors.md)
+> 한국어: [syntax_colors.md](https://monkshark.github.io/page-ide/#modules/ui/syntax_colors.md)
 
 > `page/ui/src/main/kotlin/page/ui/SyntaxColors.kt` — Syntax token color bundle
 
@@ -68,4 +68,4 @@ GitHub Dark tones.
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

@@ -4,7 +4,7 @@
 
 `UnsavedChangesDialog` 가 어떤 닫기 요청을 처리 중인지를 구분하기 위한 sealed interface
 
-> English: [pending_close_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/pending_close_en.md)
+> English: [pending_close_en.md](https://monkshark.github.io/page-ide/#modules/app/pending_close_en.md)
 
 ---
 
@@ -39,4 +39,4 @@ internal sealed interface PendingClose {
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

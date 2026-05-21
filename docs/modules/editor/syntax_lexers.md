@@ -4,7 +4,7 @@
 
 `Path` 를 받아 적절한 `SyntaxLexer` 를 골라준다. 미지원 확장자는 `null` 반환 — 호출자는 본문 톤 그대로 그리기
 
-> English: [syntax_lexers_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/syntax_lexers_en.md)
+> English: [syntax_lexers_en.md](https://monkshark.github.io/page-ide/#modules/editor/syntax_lexers_en.md)
 
 ---
 
@@ -46,4 +46,4 @@ fun forPath(path: Path): SyntaxLexer?
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

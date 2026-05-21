@@ -4,7 +4,7 @@
 
 `Ctrl+P` 빠른 열기에서 파일명/경로 후보를 순위 매기는 데 쓰는 순수 함수. 쿼리의 모든 글자가 타겟에 같은 순서로 (연속일 필요는 없음) 등장하면 매치, 그렇지 않으면 `null`
 
-> English: [fuzzy_matcher_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/fuzzy_matcher_en.md)
+> English: [fuzzy_matcher_en.md](https://monkshark.github.io/page-ide/#modules/editor/fuzzy_matcher_en.md)
 
 ---
 
@@ -63,4 +63,4 @@ data class Match(val score: Int, val indices: IntArray)
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

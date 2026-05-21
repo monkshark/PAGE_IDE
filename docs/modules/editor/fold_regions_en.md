@@ -1,6 +1,6 @@
 # FoldRegions
 
-> 한국어: [fold_regions.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/fold_regions.md)
+> 한국어: [fold_regions.md](https://monkshark.github.io/page-ide/#modules/editor/fold_regions.md)
 >
 > `page/editor/src/main/kotlin/page/editor/FoldRegions.kt` — Code-fold region detection + display-mapping math
 
@@ -142,4 +142,4 @@ fun foldedRegionAt(
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

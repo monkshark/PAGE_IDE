@@ -1,6 +1,6 @@
 # EditorPanel
 
-> 한국어: [editor_panel.md](https://monkshark.github.io/PAGE_IDE/#modules/app/editor_panel.md)
+> 한국어: [editor_panel.md](https://monkshark.github.io/page-ide/#modules/app/editor_panel.md)
 
 > `page/app/src/main/kotlin/page/app/EditorPanel.kt` — Editor body
 
@@ -189,4 +189,4 @@ A thin bottom row: `Ln {line+1}, Col {col+1}` · line count · char count. The n
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

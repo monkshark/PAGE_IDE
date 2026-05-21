@@ -1,6 +1,6 @@
 # MarkdownFence
 
-> 한국어: [markdown_fence.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/markdown_fence.md)
+> 한국어: [markdown_fence.md](https://monkshark.github.io/page-ide/#modules/editor/markdown_fence.md)
 
 > `page/editor/src/main/kotlin/page/editor/MarkdownFence.kt` — Detects whether the caret is inside a code fence
 
@@ -61,4 +61,4 @@ Remembers the opening fence's *char* and *length*; a closer must match the char 
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

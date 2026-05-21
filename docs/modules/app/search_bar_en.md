@@ -1,6 +1,6 @@
 # SearchBar
 
-> 한국어: [search_bar.md](https://monkshark.github.io/PAGE_IDE/#modules/app/search_bar.md)
+> 한국어: [search_bar.md](https://monkshark.github.io/page-ide/#modules/app/search_bar.md)
 
 > `page/app/src/main/kotlin/page/app/SearchBar.kt` — Editor's find/replace strip
 
@@ -92,4 +92,4 @@ The delegation is essential: shortcuts unrelated to search (e.g., `Ctrl+S`) must
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)
