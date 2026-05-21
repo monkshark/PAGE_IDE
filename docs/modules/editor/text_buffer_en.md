@@ -1,6 +1,6 @@
 # TextBuffer / LineCol
 
-> 한국어: [text_buffer.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/text_buffer.md)
+> 한국어: [text_buffer.md](https://monkshark.github.io/page-ide/#modules/editor/text_buffer.md)
 
 > `page/editor/src/main/kotlin/page/editor/TextBuffer.kt` — `StringBuilder` wrapper + line/column coordinates
 
@@ -73,4 +73,4 @@ Counts `\n` from the start each time. *O(N)* on large files, so a cached line in
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

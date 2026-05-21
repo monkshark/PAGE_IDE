@@ -4,7 +4,7 @@
 
 `internal abstract class`. `KotlinLexer` 와 `JavaLexer` 가 키워드 셋과 트리플 따옴표 옵션만 다르고 토큰화 규칙은 동일해서 공통 부모로 추출
 
-> English: [jvm_lexer_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/jvm_lexer_en.md)
+> English: [jvm_lexer_en.md](https://monkshark.github.io/page-ide/#modules/editor/jvm_lexer_en.md)
 
 ---
 
@@ -74,4 +74,4 @@ private fun startsWithUpperCase(s: String) = s.isNotEmpty() && s[0].isUpperCase(
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -4,7 +4,7 @@
 
 `page:editor` 의 `TokenKind` 와 1:1 로 매핑. 팔레트와 렉서가 분리돼 있어 다른 테마는 인스턴스만 갈아끼우면 끝
 
-> English: [syntax_colors_en.md](https://monkshark.github.io/PAGE_IDE/#modules/ui/syntax_colors_en.md)
+> English: [syntax_colors_en.md](https://monkshark.github.io/page-ide/#modules/ui/syntax_colors_en.md)
 
 ---
 
@@ -68,4 +68,4 @@ GitHub Dark 와 같은 색감
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

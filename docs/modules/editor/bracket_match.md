@@ -4,7 +4,7 @@
 
 여는 괄호면 오른쪽으로, 닫는 괄호면 왼쪽으로 깊이 카운트하며 짝을 찾는다. 본문 하이라이트 (괄호 매칭 배경) 의 데이터 소스
 
-> English: [bracket_match_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/bracket_match_en.md)
+> English: [bracket_match_en.md](https://monkshark.github.io/page-ide/#modules/editor/bracket_match_en.md)
 
 ---
 
@@ -55,4 +55,4 @@ private val closers = openers.entries.associate { (k, v) -> v to k }
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

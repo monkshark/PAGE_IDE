@@ -4,7 +4,7 @@
 
 `Ctrl+←/→` (이동), `Ctrl+Shift+←/→` (선택), `Ctrl+Backspace/Delete` (삭제), 더블/트리플 클릭 (단어/줄 선택) 의 경계 계산. VS Code 식 분류 — 단어 (영숫자 + `_`) / 구두점 / 가로 공백 / 개행
 
-> English: [word_boundary_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/word_boundary_en.md)
+> English: [word_boundary_en.md](https://monkshark.github.io/page-ide/#modules/editor/word_boundary_en.md)
 
 ---
 
@@ -94,4 +94,4 @@ private enum class CharClass { WORD, PUNCT }
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -1,8 +1,8 @@
 # PAGE IDE
 
-> 한국어: [README.md](https://monkshark.github.io/PAGE_IDE/#README.md)
+> 한국어: [README.md](https://monkshark.github.io/page-ide/#README.md)
 
-[![CI](https://github.com/Monkshark/PAGE_IDE/actions/workflows/ci.yml/badge.svg)](https://github.com/Monkshark/PAGE_IDE/actions/workflows/ci.yml)
+[![CI](https://github.com/monkshark/page-ide/actions/workflows/ci.yml/badge.svg)](https://github.com/monkshark/page-ide/actions/workflows/ci.yml)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?logo=kotlin&logoColor=white)
 ![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.7.3-4285F4?logo=jetpackcompose&logoColor=white)
 ![JDK](https://img.shields.io/badge/JDK-21%20toolchain-007396?logo=openjdk&logoColor=white)
@@ -17,9 +17,9 @@ PAGE shows four dimensions on a single page at the same time: code (text), code 
 
 ## Documentation hub
 
-- [PAGE overview](https://monkshark.github.io/PAGE_IDE/#guides/overview_en.md) — The four core values, what we will *not* build
-- [Architecture](https://monkshark.github.io/PAGE_IDE/#guides/architecture_en.md) — Module boundaries, dependency direction, stack choices
-- [Docs index](https://monkshark.github.io/PAGE_IDE/) — docs site entry point
+- [PAGE overview](https://monkshark.github.io/page-ide/#guides/overview_en.md) — The four core values, what we will *not* build
+- [Architecture](https://monkshark.github.io/page-ide/#guides/architecture_en.md) — Module boundaries, dependency direction, stack choices
+- [Docs index](https://monkshark.github.io/page-ide/) — docs site entry point
 
 ## Core values
 
@@ -72,6 +72,6 @@ graph TD
 
 ## Contact
 
-- Bug / feature: [GitHub Issues](https://github.com/Monkshark/PAGE_IDE/issues)
+- Bug / feature: [GitHub Issues](https://github.com/monkshark/page-ide/issues)
 - Devlog (Korean): <https://monkshark.github.io/categories/page-개발기/>
 - Email: justinchoo0814@gmail.com

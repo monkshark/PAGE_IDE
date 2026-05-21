@@ -4,7 +4,7 @@
 
 언어별 렉서가 따라야 할 계약. 토큰 종류는 `TokenKind` enum 6 종으로 한정 (`PUNCT` 포함 7 종이지만 실제 색은 6 종만)
 
-> English: [syntax_lexer_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/syntax_lexer_en.md)
+> English: [syntax_lexer_en.md](https://monkshark.github.io/page-ide/#modules/editor/syntax_lexer_en.md)
 
 ---
 
@@ -71,4 +71,4 @@ interface SyntaxLexer {
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

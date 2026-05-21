@@ -1,6 +1,6 @@
 # AutoClose / TextEdit
 
-> 한국어: [auto_close.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/auto_close.md)
+> 한국어: [auto_close.md](https://monkshark.github.io/page-ide/#modules/editor/auto_close.md)
 
 > `page/editor/src/main/kotlin/page/editor/AutoClose.kt` — Bracket / quote auto-close + edit unit
 
@@ -75,4 +75,4 @@ To add new pairs (markdown ``` fences, Korean quotes), extend the map and tighte
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

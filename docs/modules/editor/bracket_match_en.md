@@ -1,6 +1,6 @@
 # BracketMatch
 
-> 한국어: [bracket_match.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/bracket_match.md)
+> 한국어: [bracket_match.md](https://monkshark.github.io/page-ide/#modules/editor/bracket_match.md)
 
 > `page/editor/src/main/kotlin/page/editor/BracketMatch.kt` — Find the matching bracket near the caret
 
@@ -55,4 +55,4 @@ Quotes (`"`, `'`) are intentionally excluded — depth is ambiguous when the sam
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

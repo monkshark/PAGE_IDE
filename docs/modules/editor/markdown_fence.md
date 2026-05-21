@@ -4,7 +4,7 @@
 
 Markdown 의 ```` ``` ```` / `~~~` 코드 펜스 안에서는 `AutoClose` / `Indent` 같은 자동 동작을 멈춰야 깔끔하다. 그 판별을 위한 단일 함수
 
-> English: [markdown_fence_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/markdown_fence_en.md)
+> English: [markdown_fence_en.md](https://monkshark.github.io/page-ide/#modules/editor/markdown_fence_en.md)
 
 ---
 
@@ -61,4 +61,4 @@ CommonMark 펜스 규칙을 따른다
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

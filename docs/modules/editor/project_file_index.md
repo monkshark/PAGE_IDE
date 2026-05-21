@@ -4,7 +4,7 @@
 
 `Ctrl+P` 가 열릴 때 `rootDir` 아래의 파일을 한 번에 훑어 플랫 리스트로 반환. 무거운 디렉터리는 스킵해서 5000 개 한계 안에서 끝낸다
 
-> English: [project_file_index_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/project_file_index_en.md)
+> English: [project_file_index_en.md](https://monkshark.github.io/page-ide/#modules/editor/project_file_index_en.md)
 
 ---
 
@@ -45,4 +45,4 @@ data class IndexedFile(val path: Path, val relative: String)
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -1,6 +1,6 @@
 # PageIdentity
 
-> 한국어: [page_identity.md](https://monkshark.github.io/PAGE_IDE/#modules/core/page_identity.md)
+> 한국어: [page_identity.md](https://monkshark.github.io/page-ide/#modules/core/page_identity.md)
 
 > `page/core/src/main/kotlin/page/core/Identity.kt` — App identity constants
 
@@ -43,4 +43,4 @@ object PageIdentity {
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

@@ -4,7 +4,7 @@
 
 VS Code 류 "go to file". 사이드바를 펼치지 않고 파일명 한 번 입력으로 탭에 연다
 
-> English: [quick_open_dialog_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/quick_open_dialog_en.md)
+> English: [quick_open_dialog_en.md](https://monkshark.github.io/page-ide/#modules/app/quick_open_dialog_en.md)
 
 ---
 
@@ -87,4 +87,4 @@ private fun highlightedName(
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

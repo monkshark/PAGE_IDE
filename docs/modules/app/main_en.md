@@ -1,6 +1,6 @@
 # Main
 
-> 한국어: [main.md](https://monkshark.github.io/PAGE_IDE/#modules/app/main.md)
+> 한국어: [main.md](https://monkshark.github.io/page-ide/#modules/app/main.md)
 
 > `page/app/src/main/kotlin/page/app/Main.kt` — `application { ... }` entry point + window state
 
@@ -113,4 +113,4 @@ This file is the entry point for `page:app`. It packages as `mainClassName = "pa
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

@@ -1,6 +1,6 @@
 # JavaLexer
 
-> 한국어: [java_lexer.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/java_lexer.md)
+> 한국어: [java_lexer.md](https://monkshark.github.io/page-ide/#modules/editor/java_lexer.md)
 
 > `page/editor/src/main/kotlin/page/editor/JavaLexer.kt` — Java syntax lexer (delegate)
 
@@ -52,4 +52,4 @@ Includes newer keywords like `record`, `sealed`, `non-sealed`, `permits`, `var`,
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

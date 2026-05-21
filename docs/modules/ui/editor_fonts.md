@@ -4,7 +4,7 @@
 
 리소스에 `D2Coding.ttf` 가 있으면 쓰고, 없으면 `FontFamily.Monospace`. 폰트가 빠져도 빌드는 깨지지 않음
 
-> English: [editor_fonts_en.md](https://monkshark.github.io/PAGE_IDE/#modules/ui/editor_fonts_en.md)
+> English: [editor_fonts_en.md](https://monkshark.github.io/page-ide/#modules/ui/editor_fonts_en.md)
 
 ---
 
@@ -44,4 +44,4 @@ val EditorFontFamily: FontFamily = run {
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -1,6 +1,6 @@
 # FileTreePanel
 
-> 한국어: [file_tree_panel.md](https://monkshark.github.io/PAGE_IDE/#modules/app/file_tree_panel.md)
+> 한국어: [file_tree_panel.md](https://monkshark.github.io/page-ide/#modules/app/file_tree_panel.md)
 
 > `page/app/src/main/kotlin/page/app/FileTreePanel.kt` — Left sidebar (file tree)
 
@@ -119,4 +119,4 @@ The "PROJECT" caption: `10sp`, `FontWeight.Medium`, `letterSpacing = 0.8sp` — 
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

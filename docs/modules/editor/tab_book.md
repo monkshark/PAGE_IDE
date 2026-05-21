@@ -4,7 +4,7 @@
 
 이뮤터블 자료구조. 탭마다 본문 / 저장된 본문 / 캐럿 / 히스토리를 따로 들고 있어 탭 간 상태가 섞이지 않는다
 
-> English: [tab_book_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/tab_book_en.md)
+> English: [tab_book_en.md](https://monkshark.github.io/page-ide/#modules/editor/tab_book_en.md)
 
 ---
 
@@ -134,4 +134,4 @@ fun move(from: Int, to: Int): TabBook
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

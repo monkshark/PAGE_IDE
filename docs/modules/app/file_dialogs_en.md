@@ -1,6 +1,6 @@
 # FileDialogs
 
-> 한국어: [file_dialogs.md](https://monkshark.github.io/PAGE_IDE/#modules/app/file_dialogs.md)
+> 한국어: [file_dialogs.md](https://monkshark.github.io/page-ide/#modules/app/file_dialogs.md)
 
 > `page/app/src/main/kotlin/page/app/FileDialogs.kt` — `JFileChooser` wrappers
 
@@ -56,4 +56,4 @@ Compose Desktop already runs on top of Swing, and the JVM file dialog is the clo
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

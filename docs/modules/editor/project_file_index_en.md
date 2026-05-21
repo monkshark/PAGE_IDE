@@ -1,6 +1,6 @@
 # ProjectFileIndex
 
-> 한국어: [project_file_index.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/project_file_index.md)
+> 한국어: [project_file_index.md](https://monkshark.github.io/page-ide/#modules/editor/project_file_index.md)
 
 > `page/editor/src/main/kotlin/page/editor/ProjectFileIndex.kt` — Flattening walker over the project root
 
@@ -45,4 +45,4 @@ The index isn't kept around while the dialog is closed — the next open re-walk
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

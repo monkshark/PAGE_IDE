@@ -4,7 +4,7 @@
 
 `offset` ↔ `(line, col)` 변환과 라인 단위 접근을 제공. 현재 `EditorPanel` 의 라인 번호 거터·상태바·현재 줄 하이라이트가 같은 인덱스를 본다
 
-> English: [text_buffer_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/text_buffer_en.md)
+> English: [text_buffer_en.md](https://monkshark.github.io/page-ide/#modules/editor/text_buffer_en.md)
 
 ---
 
@@ -73,4 +73,4 @@ private fun lineEndOffset(line: Int): Int
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

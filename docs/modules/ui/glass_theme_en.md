@@ -1,6 +1,6 @@
 # GlassTheme
 
-> 한국어: [glass_theme.md](https://monkshark.github.io/PAGE_IDE/#modules/ui/glass_theme.md)
+> 한국어: [glass_theme.md](https://monkshark.github.io/page-ide/#modules/ui/glass_theme.md)
 
 > `page/ui/src/main/kotlin/page/ui/GlassTheme.kt` — Material3 dark color scheme + wrapper Composable
 
@@ -66,4 +66,4 @@ Both `Window` and `DialogWindow` (`UnsavedChangesDialog`) must wrap their conten
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

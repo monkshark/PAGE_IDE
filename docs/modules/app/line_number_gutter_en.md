@@ -1,6 +1,6 @@
 # LineNumberGutter
 
-> 한국어: [line_number_gutter.md](https://monkshark.github.io/PAGE_IDE/#modules/app/line_number_gutter.md)
+> 한국어: [line_number_gutter.md](https://monkshark.github.io/page-ide/#modules/app/line_number_gutter.md)
 
 > `page/app/src/main/kotlin/page/app/LineNumberGutter.kt` — Left-edge line numbers + fold toggles
 
@@ -75,4 +75,4 @@ The caller (`EditorPanel`) computes `hiddenLines = union of (startLine+1..endLin
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

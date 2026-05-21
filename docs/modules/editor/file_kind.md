@@ -4,7 +4,7 @@
 
 확장자만 보고 텍스트 / 이미지 / SVG 로 분류. MIME 추론이나 파일 헤더 검사는 안 함
 
-> English: [file_kind_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/file_kind_en.md)
+> English: [file_kind_en.md](https://monkshark.github.io/page-ide/#modules/editor/file_kind_en.md)
 
 ---
 
@@ -45,4 +45,4 @@ fun classify(path: Path): FileKind
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -1,6 +1,6 @@
 # SyntaxLexers
 
-> 한국어: [syntax_lexers.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/syntax_lexers.md)
+> 한국어: [syntax_lexers.md](https://monkshark.github.io/page-ide/#modules/editor/syntax_lexers.md)
 
 > `page/editor/src/main/kotlin/page/editor/SyntaxLexers.kt` — Extension-based lexer dispatch
 
@@ -46,4 +46,4 @@ Adding a new language is a one-line addition to the `when` — implement the lex
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

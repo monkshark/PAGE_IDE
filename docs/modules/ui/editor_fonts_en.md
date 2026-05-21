@@ -1,6 +1,6 @@
 # EditorFontFamily
 
-> 한국어: [editor_fonts.md](https://monkshark.github.io/PAGE_IDE/#modules/ui/editor_fonts.md)
+> 한국어: [editor_fonts.md](https://monkshark.github.io/page-ide/#modules/ui/editor_fonts.md)
 
 > `page/ui/src/main/kotlin/page/ui/EditorFonts.kt` — Editor body font (D2Coding with Monospace fallback)
 
@@ -44,4 +44,4 @@ The `object {}.javaClass.classLoader` fallback covers environments where `Thread
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

@@ -1,6 +1,6 @@
 # Replace
 
-> 한국어: [replace.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/replace.md)
+> 한국어: [replace.md](https://monkshark.github.io/page-ide/#modules/editor/replace.md)
 
 > `page/editor/src/main/kotlin/page/editor/Replace.kt` — Search match replacement
 
@@ -59,4 +59,4 @@ Assumes `matches` is *non-overlapping* and *ascending* — `SearchState.findAll`
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

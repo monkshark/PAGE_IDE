@@ -4,7 +4,7 @@
 
 `page:core` 의 유일한 파일. 모든 모듈이 의존하는 루트라 도메인 로직은 들어오지 않는다
 
-> English: [page_identity_en.md](https://monkshark.github.io/PAGE_IDE/#modules/core/page_identity_en.md)
+> English: [page_identity_en.md](https://monkshark.github.io/page-ide/#modules/core/page_identity_en.md)
 
 ---
 
@@ -43,4 +43,4 @@ object PageIdentity {
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

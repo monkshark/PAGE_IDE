@@ -4,7 +4,7 @@
 
 PAGE 의 다크 팔레트. 메인 윈도우와 모든 다이얼로그가 이 함수로 콘텐츠를 감싸야 같은 색이 적용된다
 
-> English: [glass_theme_en.md](https://monkshark.github.io/PAGE_IDE/#modules/ui/glass_theme_en.md)
+> English: [glass_theme_en.md](https://monkshark.github.io/page-ide/#modules/ui/glass_theme_en.md)
 
 ---
 
@@ -66,4 +66,4 @@ fun GlassTheme(content: @Composable () -> Unit) {
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

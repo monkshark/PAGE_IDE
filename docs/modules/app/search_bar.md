@@ -4,7 +4,7 @@
 
 `SearchState` 를 받아 검색어 입력, 매치 카운트, 케이스 토글, 이전/다음, 치환 입력 / 한 개 / 전부 치환을 한 줄(또는 두 줄) 로 그린다
 
-> English: [search_bar_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/search_bar_en.md)
+> English: [search_bar_en.md](https://monkshark.github.io/page-ide/#modules/app/search_bar_en.md)
 
 ---
 
@@ -92,4 +92,4 @@ LaunchedEffect(state.replaceVisible) {
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

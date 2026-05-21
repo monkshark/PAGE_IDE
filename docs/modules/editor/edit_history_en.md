@@ -1,6 +1,6 @@
 # EditHistory / EditSnapshot
 
-> 한국어: [edit_history.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/edit_history.md)
+> 한국어: [edit_history.md](https://monkshark.github.io/page-ide/#modules/editor/edit_history.md)
 
 > `page/editor/src/main/kotlin/page/editor/EditHistory.kt` — undo/redo stack (per tab)
 
@@ -68,4 +68,4 @@ Returns `(new EditHistory, snapshot to restore)` — the caller must consume bot
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

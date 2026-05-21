@@ -1,6 +1,6 @@
 # FuzzyMatcher
 
-> 한국어: [fuzzy_matcher.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/fuzzy_matcher.md)
+> 한국어: [fuzzy_matcher.md](https://monkshark.github.io/page-ide/#modules/editor/fuzzy_matcher.md)
 
 > `page/editor/src/main/kotlin/page/editor/FuzzyMatcher.kt` — Subsequence fuzzy match + score
 
@@ -63,4 +63,4 @@ data class Match(val score: Int, val indices: IntArray)
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

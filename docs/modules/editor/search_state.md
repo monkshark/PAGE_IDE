@@ -4,7 +4,7 @@
 
 검색바의 모든 상태가 들어있는 이뮤터블 데이터 클래스. `null` 이면 검색바 닫힘, 인스턴스가 있으면 열림
 
-> English: [search_state_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/search_state_en.md)
+> English: [search_state_en.md](https://monkshark.github.io/page-ide/#modules/editor/search_state_en.md)
 
 ---
 
@@ -98,4 +98,4 @@ private fun findAll(text: String, query: String, caseSensitive: Boolean): List<I
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

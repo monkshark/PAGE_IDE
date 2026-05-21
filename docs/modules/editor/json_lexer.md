@@ -4,7 +4,7 @@
 
 JSON 은 키워드 / 식별자 / 어노테이션이 없어 `JvmLexer` 를 공유할 만한 공통점이 적다 → 독립 구현
 
-> English: [json_lexer_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/json_lexer_en.md)
+> English: [json_lexer_en.md](https://monkshark.github.io/page-ide/#modules/editor/json_lexer_en.md)
 
 ---
 
@@ -41,4 +41,4 @@ override fun tokenize(text: String): List<Token>
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

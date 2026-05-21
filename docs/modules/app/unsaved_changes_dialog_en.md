@@ -1,6 +1,6 @@
 # UnsavedChangesDialog
 
-> 한국어: [unsaved_changes_dialog.md](https://monkshark.github.io/PAGE_IDE/#modules/app/unsaved_changes_dialog.md)
+> 한국어: [unsaved_changes_dialog.md](https://monkshark.github.io/page-ide/#modules/app/unsaved_changes_dialog.md)
 
 > `page/app/src/main/kotlin/page/app/UnsavedChangesDialog.kt` — Save-confirmation modal
 
@@ -71,4 +71,4 @@ Order is `[Cancel] [Don't Save] [Save]` — only `Save` is primary.
 
 ---
 
-- [Back to index](https://monkshark.github.io/PAGE_IDE/#README_en.md)
+- [Back to index](https://monkshark.github.io/page-ide/#README_en.md)

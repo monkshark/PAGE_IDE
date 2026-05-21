@@ -4,7 +4,7 @@
 
 `SearchState.matches` 가 만들어 놓은 매치 범위들을 받아 텍스트를 치환한다. 매치를 찾는 일은 `SearchState`, 치환만 이 파일
 
-> English: [replace_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/replace_en.md)
+> English: [replace_en.md](https://monkshark.github.io/page-ide/#modules/editor/replace_en.md)
 
 ---
 
@@ -59,4 +59,4 @@ fun applyAll(text: String, matches: List<IntRange>, replacement: String): Result
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

@@ -4,7 +4,7 @@
 
 이뮤터블 자료구조. 각 탭의 `OpenTab.history` 가 별도 인스턴스를 들고 있어 탭 간 undo 가 섞이지 않는다
 
-> English: [edit_history_en.md](https://monkshark.github.io/PAGE_IDE/#modules/editor/edit_history_en.md)
+> English: [edit_history_en.md](https://monkshark.github.io/page-ide/#modules/editor/edit_history_en.md)
 
 ---
 
@@ -68,4 +68,4 @@ fun redo(current: EditSnapshot): Pair<EditHistory, EditSnapshot>?
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

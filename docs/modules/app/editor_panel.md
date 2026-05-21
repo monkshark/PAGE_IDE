@@ -4,7 +4,7 @@
 
 `BasicTextField` 한 개를 띄우고, 그 위에 라인 번호 거터 / 토큰 컬러 / 매치 하이라이트 / 브래킷 매치 / 현재 줄 배경 / 상태바를 얹는다
 
-> English: [editor_panel_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/editor_panel_en.md)
+> English: [editor_panel_en.md](https://monkshark.github.io/page-ide/#modules/app/editor_panel_en.md)
 
 ---
 
@@ -189,4 +189,4 @@ val foldSegments = FoldRegions.segmentsFor(value.text, activeFolds)
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)

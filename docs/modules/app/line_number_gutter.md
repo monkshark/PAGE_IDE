@@ -4,7 +4,7 @@
 
 `EditorPanel` 본문 옆에 붙는 거터. 현재 줄만 진하게, 나머지는 흐리게. 폴딩 가능 줄에는 ▾/▸ 토글이 같이 표시됨
 
-> English: [line_number_gutter_en.md](https://monkshark.github.io/PAGE_IDE/#modules/app/line_number_gutter_en.md)
+> English: [line_number_gutter_en.md](https://monkshark.github.io/page-ide/#modules/app/line_number_gutter_en.md)
 
 ---
 
@@ -75,4 +75,4 @@ internal data class GutterLine(
 
 ---
 
-- [목차로 돌아가기](https://monkshark.github.io/PAGE_IDE/#README.md)
+- [목차로 돌아가기](https://monkshark.github.io/page-ide/#README.md)
