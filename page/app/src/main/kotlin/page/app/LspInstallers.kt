@@ -13,6 +13,29 @@ object LspInstallers {
         "elixir" to ::elixirLsInstaller,
         "clojure" to ::clojureLspInstaller,
         "java" to ::jdtlsInstaller,
+        "typescript" to ::typescriptLanguageServerInstaller,
+        "javascript" to ::typescriptLanguageServerInstaller,
+        "html" to ::vscodeHtmlInstaller,
+        "css" to ::vscodeCssInstaller,
+        "json" to ::vscodeJsonInstaller,
+        "yaml" to ::yamlLanguageServerInstaller,
+        "bash" to ::bashLanguageServerInstaller,
+        "python" to ::pyrightInstaller,
+        "dockerfile" to ::dockerLangserverInstaller,
+        "vue" to ::vueLanguageServerInstaller,
+        "svelte" to ::svelteLanguageServerInstaller,
+        "php" to ::intelephenseInstaller,
+        "sql" to ::sqlLanguageServerInstaller,
+        "ruby" to ::rubyInstaller,
+        "ocaml" to ::ocamlInstaller,
+        "fsharp" to ::fsharpInstaller,
+        "perl" to ::perlInstaller,
+        "r" to ::rInstaller,
+        "haskell" to ::haskellInstaller,
+        "go" to ::goInstaller,
+        "scala" to ::scalaInstaller,
+        "dart" to ::dartInstaller,
+        "swift" to ::swiftInstaller,
     )
 
     fun forId(languageId: String): LspInstaller? = registry[languageId]?.invoke()
@@ -205,4 +228,224 @@ object LspInstallers {
     )
 
     private fun jdtlsInstaller(): LspInstaller = JdtlsInstaller()
+
+    private fun typescriptLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "typescript",
+            displayName = "typescript-language-server",
+            packageName = "typescript-language-server",
+            binaryName = "typescript-language-server",
+        ),
+    )
+
+    private fun vscodeHtmlInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "html",
+            displayName = "vscode-html-language-server",
+            packageName = "vscode-langservers-extracted",
+            binaryName = "vscode-html-language-server",
+        ),
+    )
+
+    private fun vscodeCssInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "css",
+            displayName = "vscode-css-language-server",
+            packageName = "vscode-langservers-extracted",
+            binaryName = "vscode-css-language-server",
+        ),
+    )
+
+    private fun vscodeJsonInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "json",
+            displayName = "vscode-json-language-server",
+            packageName = "vscode-langservers-extracted",
+            binaryName = "vscode-json-language-server",
+        ),
+    )
+
+    private fun yamlLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "yaml",
+            displayName = "yaml-language-server",
+            packageName = "yaml-language-server",
+            binaryName = "yaml-language-server",
+        ),
+    )
+
+    private fun bashLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "bash",
+            displayName = "bash-language-server",
+            packageName = "bash-language-server",
+            binaryName = "bash-language-server",
+        ),
+    )
+
+    private fun pyrightInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "python",
+            displayName = "pyright",
+            packageName = "pyright",
+            binaryName = "pyright-langserver",
+        ),
+    )
+
+    private fun dockerLangserverInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "dockerfile",
+            displayName = "dockerfile-language-server-nodejs",
+            packageName = "dockerfile-language-server-nodejs",
+            binaryName = "docker-langserver",
+        ),
+    )
+
+    private fun vueLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "vue",
+            displayName = "@vue/language-server",
+            packageName = "@vue/language-server",
+            binaryName = "vue-language-server",
+        ),
+    )
+
+    private fun svelteLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "svelte",
+            displayName = "svelte-language-server",
+            packageName = "svelte-language-server",
+            binaryName = "svelteserver",
+        ),
+    )
+
+    private fun intelephenseInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "php",
+            displayName = "intelephense",
+            packageName = "intelephense",
+            binaryName = "intelephense",
+        ),
+    )
+
+    private fun sqlLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
+        NpmPackageDescriptor(
+            languageId = "sql",
+            displayName = "sql-language-server",
+            packageName = "sql-language-server",
+            binaryName = "sql-language-server",
+        ),
+    )
+
+    private fun rubyInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "ruby",
+            displayName = "solargraph",
+            managerName = "gem",
+            managerInstallUrl = "https://www.ruby-lang.org/en/downloads/",
+            binaryName = "solargraph",
+            packageName = "solargraph",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "install", "--no-document", pkg) },
+        ),
+    )
+
+    private fun ocamlInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "ocaml",
+            displayName = "ocaml-lsp-server",
+            managerName = "opam",
+            managerInstallUrl = "https://opam.ocaml.org/doc/Install.html",
+            binaryName = "ocamllsp",
+            packageName = "ocaml-lsp-server",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "install", "-y", pkg) },
+        ),
+    )
+
+    private fun fsharpInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "fsharp",
+            displayName = "fsautocomplete",
+            managerName = "dotnet",
+            managerInstallUrl = "https://dotnet.microsoft.com/download",
+            binaryName = "fsautocomplete",
+            packageName = "fsautocomplete",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "tool", "install", "-g", pkg) },
+        ),
+    )
+
+    private fun perlInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "perl",
+            displayName = "Perl::LanguageServer",
+            managerName = "cpan",
+            managerInstallUrl = "https://www.perl.org/get.html",
+            binaryName = "perl",
+            packageName = "Perl::LanguageServer",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "-T", pkg) },
+        ),
+    )
+
+    private fun rInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "r",
+            displayName = "languageserver (R)",
+            managerName = "Rscript",
+            managerInstallUrl = "https://www.r-project.org/",
+            binaryName = "Rscript",
+            packageName = "languageserver",
+            buildInstallCommand = { mgr, _, _ ->
+                listOf(mgr, "-e", "install.packages('languageserver', repos='https://cloud.r-project.org')")
+            },
+        ),
+    )
+
+    private fun haskellInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "haskell",
+            displayName = "haskell-language-server",
+            managerName = "ghcup",
+            managerInstallUrl = "https://www.haskell.org/ghcup/",
+            binaryName = "haskell-language-server-wrapper",
+            packageName = "hls",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "install", pkg) },
+        ),
+    )
+
+    private fun goInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "go",
+            displayName = "gopls",
+            managerName = "go",
+            managerInstallUrl = "https://go.dev/dl/",
+            binaryName = "gopls",
+            packageName = "golang.org/x/tools/gopls@latest",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "install", pkg) },
+        ),
+    )
+
+    private fun scalaInstaller(): LspInstaller = ShellPackageInstaller(
+        ShellPackageDescriptor(
+            languageId = "scala",
+            displayName = "metals",
+            managerName = "cs",
+            managerInstallUrl = "https://get-coursier.io/docs/cli-installation",
+            binaryName = "metals",
+            packageName = "metals",
+            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "install", pkg) },
+        ),
+    )
+
+    private fun dartInstaller(): LspInstaller = ToolchainDetectInstaller(
+        languageId = "dart",
+        displayName = "Dart SDK (analysis server)",
+        managerName = "dart",
+        managerInstallUrl = "https://dart.dev/get-dart",
+    )
+
+    private fun swiftInstaller(): LspInstaller = ToolchainDetectInstaller(
+        languageId = "swift",
+        displayName = "sourcekit-lsp (Swift toolchain)",
+        managerName = "sourcekit-lsp",
+        managerInstallUrl = "https://www.swift.org/install/",
+    )
 }

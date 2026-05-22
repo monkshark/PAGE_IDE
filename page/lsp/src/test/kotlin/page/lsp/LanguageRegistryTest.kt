@@ -8,9 +8,20 @@ import kotlin.test.assertTrue
 
 class LanguageRegistryTest {
     @Test
-    fun bundledRegistryHasThirtyLanguages() {
+    fun bundledRegistryHasThirtyThreeLanguages() {
         val all = LanguageRegistry.all()
-        assertEquals(30, all.size, "expected 30 bundled language definitions, got ${all.size}")
+        assertEquals(33, all.size, "expected 33 bundled language definitions, got ${all.size}")
+    }
+
+    @Test
+    fun bundledRegistryCoversNpmExtras() {
+        for (id in listOf("svelte", "vue", "dockerfile")) {
+            val def = LanguageRegistry.byId(id)
+            assertNotNull(def, "$id must be bundled")
+        }
+        assertEquals("svelte", LanguageRegistry.byExtension("svelte")?.id)
+        assertEquals("vue", LanguageRegistry.byExtension("vue")?.id)
+        assertEquals("dockerfile", LanguageRegistry.byExtension("dockerfile")?.id)
     }
 
     @Test

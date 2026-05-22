@@ -2914,21 +2914,32 @@ private fun isKotlinSource(path: Path): Boolean {
     return name.endsWith(".kt") || name.endsWith(".kts")
 }
 
+private fun resolveLanguageForPath(path: Path): page.lsp.LanguageDefinition? {
+    val name = path.fileName?.toString() ?: return null
+    val dot = name.lastIndexOf('.')
+    val ext = if (dot >= 0 && dot < name.length - 1) name.substring(dot + 1) else name
+    return page.lsp.LanguageRegistry.byExtension(ext)
+}
+
 @androidx.compose.runtime.Composable
-private fun lspStatusLineText(lsp: LspController): String? {
-    val installer = LspInstallers.forId("kotlin") ?: return when (lsp.status.value) {
-        LspController.Status.MISSING -> "LSP · kotlin-language-server missing"
-        LspController.Status.FAILED -> "LSP · failed to start"
+private fun lspStatusLineText(lsp: LspController, activePath: Path?): String? {
+    val definition = activePath?.let(::resolveLanguageForPath)
+    val langId = definition?.id ?: "kotlin"
+    val displayName = definition?.displayName ?: "Kotlin"
+    val isKotlin = langId == "kotlin"
+    val installer = LspInstallers.forId(langId) ?: return when {
+        isKotlin && lsp.status.value == LspController.Status.MISSING -> "LSP · kotlin-language-server missing"
+        isKotlin && lsp.status.value == LspController.Status.FAILED -> "LSP · failed to start"
         else -> null
     }
     val installed = installer.installedVersion()
-    val suffix = when (lsp.status.value) {
+    val suffix = if (isKotlin) when (lsp.status.value) {
         LspController.Status.FAILED -> " · failed"
         LspController.Status.STARTING -> " · starting"
         LspController.Status.MISSING -> " · not installed"
         else -> ""
-    }
-    val core = if (installed != null) "Kotlin $installed" else "Kotlin (not installed)"
+    } else ""
+    val core = if (installed != null) "$displayName $installed" else "$displayName (not installed)"
     return "$core$suffix"
 }
 
@@ -3284,7 +3295,10 @@ private fun Shell(
         }
     }
     if (installGuideOpen) {
-        val def = lsp.missingDefinition.value
+        val activeDef = paneFor(focusedPane, primary, secondary).book.active?.path
+            ?.let { resolveLanguageForPath(it) }
+        val def = activeDef
+            ?: lsp.missingDefinition.value
             ?: page.lsp.LanguageRegistry.byId("kotlin")
         if (def != null) {
             InstallGuideDialog(
@@ -3399,7 +3413,7 @@ private fun PaneRegion(
                 EmptyPanePlaceholder(modifier = Modifier.fillMaxWidth().weight(1f))
             } else {
                 val activeDiagnostics = active.path.let { lsp.diagnosticsFor(it) }
-                val lspStatusText = lspStatusLineText(lsp)
+                val lspStatusText = lspStatusLineText(lsp, active?.path)
                 val lspActivities = lsp.activities.values
                     .sortedBy { it.startedAtMs }
                     .toList()
