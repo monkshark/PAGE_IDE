@@ -1,0 +1,207 @@
+{
+  "updatedAt": "2026-05-22T02:05:15.793Z",
+  "owner": "clangd",
+  "repo": "clangd",
+  "releases": [
+    {
+      "tag": "22.1.0",
+      "publishedAt": "2026-03-01T09:40:54Z"
+    },
+    {
+      "tag": "snapshot_20260517",
+      "publishedAt": "2026-05-18T00:16:50Z"
+    },
+    {
+      "tag": "snapshot_20260510",
+      "publishedAt": "2026-05-11T00:14:17Z"
+    },
+    {
+      "tag": "snapshot_20260503",
+      "publishedAt": "2026-05-03T23:56:37Z"
+    },
+    {
+      "tag": "snapshot_20260426",
+      "publishedAt": "2026-04-26T23:49:16Z"
+    },
+    {
+      "tag": "snapshot_20260419",
+      "publishedAt": "2026-04-19T23:51:29Z"
+    },
+    {
+      "tag": "snapshot_20260412",
+      "publishedAt": "2026-04-12T23:46:39Z"
+    },
+    {
+      "tag": "snapshot_20260405",
+      "publishedAt": "2026-04-05T23:43:56Z"
+    },
+    {
+      "tag": "snapshot_20260329",
+      "publishedAt": "2026-03-29T23:46:58Z"
+    },
+    {
+      "tag": "snapshot_20260322",
+      "publishedAt": "2026-03-22T23:39:49Z"
+    },
+    {
+      "tag": "snapshot_20260315",
+      "publishedAt": "2026-03-15T23:33:14Z"
+    },
+    {
+      "tag": "snapshot_20260308",
+      "publishedAt": "2026-03-08T23:27:37Z"
+    },
+    {
+      "tag": "snapshot_20260301",
+      "publishedAt": "2026-03-01T23:37:51Z"
+    },
+    {
+      "tag": "snapshot_20260222",
+      "publishedAt": "2026-02-22T23:49:35Z"
+    },
+    {
+      "tag": "snapshot_20260215",
+      "publishedAt": "2026-02-16T00:00:01Z"
+    },
+    {
+      "tag": "snapshot_20260208",
+      "publishedAt": "2026-02-09T00:00:17Z"
+    },
+    {
+      "tag": "21.1.8",
+      "publishedAt": "2025-12-21T10:19:48Z"
+    },
+    {
+      "tag": "snapshot_20260125",
+      "publishedAt": "2026-01-26T00:04:00Z"
+    },
+    {
+      "tag": "snapshot_20260118",
+      "publishedAt": "2026-01-18T23:49:59Z"
+    },
+    {
+      "tag": "snapshot_20260111",
+      "publishedAt": "2026-01-11T23:55:59Z"
+    },
+    {
+      "tag": "snapshot_20260104",
+      "publishedAt": "2026-01-04T23:56:16Z"
+    },
+    {
+      "tag": "snapshot_20251228",
+      "publishedAt": "2025-12-28T23:56:14Z"
+    },
+    {
+      "tag": "snapshot_20251221",
+      "publishedAt": "2025-12-21T23:53:23Z"
+    },
+    {
+      "tag": "snapshot_20251214",
+      "publishedAt": "2025-12-15T06:48:28Z"
+    },
+    {
+      "tag": "snapshot_20251207",
+      "publishedAt": "2025-12-08T01:12:30Z"
+    },
+    {
+      "tag": "snapshot_20251130",
+      "publishedAt": "2025-12-01T00:22:27Z"
+    },
+    {
+      "tag": "snapshot_20251123",
+      "publishedAt": "2025-11-24T00:56:34Z"
+    },
+    {
+      "tag": "snapshot_20251116",
+      "publishedAt": "2025-11-17T01:21:24Z"
+    },
+    {
+      "tag": "snapshot_20251109",
+      "publishedAt": "2025-11-10T01:48:23Z"
+    },
+    {
+      "tag": "snapshot_20251102",
+      "publishedAt": "2025-11-03T00:51:14Z"
+    },
+    {
+      "tag": "snapshot_20251026",
+      "publishedAt": "2025-10-27T00:12:10Z"
+    },
+    {
+      "tag": "snapshot_20251019",
+      "publishedAt": "2025-10-20T00:16:40Z"
+    },
+    {
+      "tag": "snapshot_20251012",
+      "publishedAt": "2025-10-13T01:42:49Z"
+    },
+    {
+      "tag": "21.1.0",
+      "publishedAt": "2025-08-27T02:26:29Z"
+    },
+    {
+      "tag": "20.1.8",
+      "publishedAt": "2025-07-11T05:52:36Z"
+    },
+    {
+      "tag": "snapshot_20251005",
+      "publishedAt": "2025-10-07T21:16:26Z"
+    },
+    {
+      "tag": "snapshot_20250928",
+      "publishedAt": "2025-09-28T23:26:51Z"
+    },
+    {
+      "tag": "snapshot_20250921",
+      "publishedAt": "2025-09-28T23:25:54Z"
+    },
+    {
+      "tag": "snapshot_20250914",
+      "publishedAt": "2025-09-16T21:00:52Z"
+    },
+    {
+      "tag": "snapshot_20250907",
+      "publishedAt": "2025-09-08T00:21:58Z"
+    },
+    {
+      "tag": "snapshot_20250831",
+      "publishedAt": "2025-09-01T00:15:10Z"
+    },
+    {
+      "tag": "snapshot_20250824",
+      "publishedAt": "2025-08-24T23:53:56Z"
+    },
+    {
+      "tag": "snapshot_20250817",
+      "publishedAt": "2025-08-24T00:39:22Z"
+    },
+    {
+      "tag": "snapshot_20250810",
+      "publishedAt": "2025-08-11T00:52:39Z"
+    },
+    {
+      "tag": "snapshot_20250803",
+      "publishedAt": "2025-08-04T00:25:38Z"
+    },
+    {
+      "tag": "snapshot_20250727",
+      "publishedAt": "2025-07-28T01:24:36Z"
+    },
+    {
+      "tag": "snapshot_20250720",
+      "publishedAt": "2025-07-21T00:53:41Z"
+    },
+    {
+      "tag": "snapshot_20250713",
+      "publishedAt": "2025-07-14T00:34:21Z"
+    },
+    {
+      "tag": "snapshot_20250706",
+      "publishedAt": "2025-08-24T00:39:08Z"
+    },
+    {
+      "tag": "snapshot_20250629",
+      "publishedAt": "2025-06-29T23:49:27Z"
+    }
+  ]
+}
