@@ -72,6 +72,60 @@ object GitHubReleases {
         }
     }
 
+    fun listAssetNames(owner: String, repo: String, tag: String): List<String> {
+        val url = "https://api.github.com/repos/$owner/$repo/releases/tags/$tag"
+        val conn = openConnection(url)
+        return try {
+            val code = conn.responseCode
+            if (code !in 200..299) emptyList()
+            else {
+                val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                parseAssetNames(body)
+            }
+        } catch (_: Throwable) {
+            emptyList()
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    internal fun parseAssetNames(json: String): List<String> {
+        val out = mutableListOf<String>()
+        val key = "\"name\""
+        var cursor = json.indexOf("\"assets\"")
+        if (cursor < 0) return emptyList()
+        cursor = json.indexOf('[', cursor)
+        if (cursor < 0) return emptyList()
+        val end = matchingBracket(json, cursor)
+        if (end < 0) return emptyList()
+        var i = cursor
+        while (true) {
+            val keyIdx = json.indexOf(key, i)
+            if (keyIdx < 0 || keyIdx >= end) break
+            val value = readStringValue(json, keyIdx) ?: break
+            out += value
+            i = keyIdx + key.length
+        }
+        return out
+    }
+
+    private fun matchingBracket(json: String, openIdx: Int): Int {
+        var depth = 0
+        var i = openIdx
+        var inString = false
+        while (i < json.length) {
+            val c = json[i]
+            when {
+                inString && c == '\\' -> { i += 2; continue }
+                c == '"' -> inString = !inString
+                !inString && c == '[' -> depth++
+                !inString && c == ']' -> { depth--; if (depth == 0) return i }
+            }
+            i++
+        }
+        return -1
+    }
+
     internal fun findAssetDownloadUrl(json: String, suffix: String): String? {
         var i = 0
         while (i < json.length) {

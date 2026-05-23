@@ -74,6 +74,7 @@ class RubyBootstrapInstallerTest {
             Files.writeString(solBin.resolve("solargraph.bat"), "@ruby solargraph shim")
         },
         bundleOverride: () -> String? = { null },
+        versionsFetcher: (String, String, String) -> List<String> = { _, _, _ -> emptyList() },
     ): RubyBootstrapInstaller = RubyBootstrapInstaller(
         processRunner = processRunner,
         osKey = "windows",
@@ -82,6 +83,8 @@ class RubyBootstrapInstallerTest {
         downloader = downloader,
         zipExtractor = zipExtractor,
         bundleOverridePath = bundleOverride,
+        versionsFetcher = versionsFetcher,
+        macVersionsFetcher = { emptyList() },
     )
 
     private fun macInstaller(
@@ -91,12 +94,15 @@ class RubyBootstrapInstallerTest {
             writeFakeMacTarGz(target)
             onProgress(100, 100)
         },
+        macVersionsFetcher: () -> List<String> = { emptyList() },
     ): RubyBootstrapInstaller = RubyBootstrapInstaller(
         processRunner = processRunner,
         osKey = "macos",
         archKey = archKey,
         isWindows = false,
         downloader = downloader,
+        versionsFetcher = { _, _, _ -> emptyList() },
+        macVersionsFetcher = macVersionsFetcher,
     )
 
     private fun neverCalledRunner(): ProcessRunner = object : ProcessRunner {
@@ -155,12 +161,18 @@ class RubyBootstrapInstallerTest {
 
     @Test
     fun rubyBundleUrlForWindows() {
-        val installer = RubyBootstrapInstaller(osKey = "windows", archKey = "amd64", isWindows = true)
+        val installer = RubyBootstrapInstaller(
+            osKey = "windows",
+            archKey = "amd64",
+            isWindows = true,
+            versionsFetcher = { _, _, _ -> emptyList() },
+            macVersionsFetcher = { emptyList() },
+        )
         val url = installer.rubyBundleUrl("3.4.6")
-        assertTrue(url.startsWith("https://github.com/"), "bundle URL must be a GitHub releases URL: $url")
+        assertTrue(url.startsWith("https://github.com/monkshark/page-ide-assets/"), "bundle URL must point at page-ide-assets repo: $url")
         assertTrue(url.endsWith("-3.4.6.zip"), "bundle URL must include version suffix .zip: $url")
         assertTrue(url.contains("page-ruby-solargraph-windows-x86_64"), "bundle URL must match published asset name: $url")
-        assertTrue(url.contains(RubyBootstrapInstaller.DEFAULT_RUBY_BUNDLE_RELEASE), "bundle URL must reference release tag: $url")
+        assertTrue(url.contains("/releases/download/ruby-bundle/"), "bundle URL must reference the ruby-bundle release tag: $url")
     }
 
     @Test
@@ -189,9 +201,48 @@ class RubyBootstrapInstallerTest {
     }
 
     @Test
-    fun availableVersionsReturnsDefault() {
-        val installer = winInstaller()
+    fun availableVersionsFallsBackToDefaultWhenFetcherEmpty() {
+        val installer = winInstaller(versionsFetcher = { _, _, _ -> emptyList() })
         assertEquals(listOf(RubyBootstrapInstaller.DEFAULT_RUBY_VERSION), installer.availableVersions())
+    }
+
+    @Test
+    fun availableVersionsParsesWindowsAssetFilenames() {
+        val captured = mutableListOf<Triple<String, String, String>>()
+        val installer = winInstaller(versionsFetcher = { owner, repo, tag ->
+            captured += Triple(owner, repo, tag)
+            listOf(
+                "page-ruby-solargraph-windows-x86_64-3.4.6.zip",
+                "page-ruby-solargraph-windows-x86_64-3.3.11.zip",
+                "page-ruby-solargraph-windows-x86_64-3.2.11.zip",
+                "page-ruby-solargraph-windows-x86_64-3.4.9.zip",
+                "README.md",
+            )
+        })
+        val versions = installer.availableVersions()
+        assertEquals(listOf("monkshark" to "page-ide-assets"), captured.map { it.first to it.second })
+        assertEquals("ruby-bundle", captured[0].third)
+        assertEquals(listOf("3.4.9", "3.4.6", "3.3.11", "3.2.11"), versions)
+    }
+
+    @Test
+    fun availableVersionsParsesMacPortableTags() {
+        val installer = macInstaller(macVersionsFetcher = { listOf("3.4.6", "3.3.8", "3.3.7", "3.1.4") })
+        val versions = installer.availableVersions()
+        assertEquals(listOf("3.4.6", "3.3.8", "3.3.7", "3.1.4"), versions)
+    }
+
+    @Test
+    fun availableVersionsIgnoresMalformedAssetNames() {
+        val installer = winInstaller(versionsFetcher = { _, _, _ ->
+            listOf(
+                "page-ruby-solargraph-linux-x86_64-3.4.6.tar.gz",
+                "page-gopls-windows-x86_64-0.16.0.zip",
+                "page-ruby-solargraph-windows-x86_64-abc.zip",
+                "page-ruby-solargraph-windows-x86_64-3.4.6.zip",
+            )
+        })
+        assertEquals(listOf("3.4.6"), installer.availableVersions())
     }
 
     @Test
