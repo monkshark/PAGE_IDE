@@ -142,7 +142,7 @@ class RubyBootstrapInstallerTest {
         assertTrue(heavy.durationEstimate.isNotBlank())
         assertTrue(heavy.notes.isNotBlank())
         assertTrue(
-            heavy.notes.contains("all-in-one") || heavy.notes.contains("번들"),
+            heavy.notes.contains("all-in-one") || heavy.notes.contains("bundle"),
             "Windows notes must mention prebuilt bundle: ${heavy.notes}",
         )
     }
@@ -462,7 +462,7 @@ class RubyBootstrapInstallerTest {
         installer.install("3.3.7") { p -> if (p is LspInstaller.Progress.Failed) failed = p.error }
         assertNotNull(failed)
         val msg = failed!!.message!!
-        assertTrue(msg.contains("bundle") || msg.contains("번들"), "diagnostic must mention bundle: $msg")
+        assertTrue(msg.contains("bundle"), "diagnostic must mention bundle: $msg")
         assertTrue(msg.contains(installer.rubyBundleUrl("3.3.7")), "diagnostic must echo the bundle URL: $msg")
         assertTrue(msg.contains("PAGE_RUBY_BUNDLE_OVERRIDE"), "diagnostic must mention env override recovery path: $msg")
     }

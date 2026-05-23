@@ -1018,7 +1018,7 @@ private fun HeavyConfirmOverlay(
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Text(
-                    text = "$displayName 설치 확인",
+                    text = "Install $displayName",
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 13.sp,
                 )
@@ -1036,7 +1036,7 @@ private fun HeavyConfirmOverlay(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "설치 도중에 다이얼로그를 닫아도 백그라운드 작업이 계속 진행될 수 있어요.",
+                    text = "Closing this dialog while installing keeps the background task running.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = LocalTextStyle.current.copy(fontSize = 10.sp),
                 )
@@ -1047,21 +1047,21 @@ private fun HeavyConfirmOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     InstallGuideButton(
-                        label = "취소",
+                        label = "Cancel",
                         primary = false,
                         enabled = true,
                         onClick = onCancel,
                     )
                     Spacer(Modifier.width(8.dp))
                     InstallGuideButton(
-                        label = "매니저 가이드",
+                        label = "Manager guide",
                         primary = false,
                         enabled = true,
                         onClick = onOpenGuide,
                     )
                     Spacer(Modifier.width(8.dp))
                     InstallGuideButton(
-                        label = "계속 설치",
+                        label = "Continue install",
                         primary = true,
                         enabled = true,
                         onClick = onContinue,
