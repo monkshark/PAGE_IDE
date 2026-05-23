@@ -4,14 +4,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 class MetalsInstallerTest {
 
@@ -36,145 +34,206 @@ class MetalsInstallerTest {
         }
     }
 
-    private fun writeCsZip(target: Path) {
+    private fun writeMetalsZip(target: Path) {
         ZipOutputStream(Files.newOutputStream(target)).use { zip ->
-            zip.putNextEntry(ZipEntry("cs-x86_64-pc-win32.exe"))
-            zip.write("fake cs.exe".toByteArray())
+            zip.putNextEntry(ZipEntry("bin/metals.bat"))
+            zip.write("@echo off\r\n".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("jre/bin/java.exe"))
+            zip.write("fake java".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("lib/metals.jar"))
+            zip.write("fake jar".toByteArray())
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("page-bundle-manifest.json"))
+            zip.write("{}".toByteArray())
             zip.closeEntry()
         }
     }
 
     private fun winInstaller(
-        processRunner: ProcessRunner,
-        downloader: (String, Path, (Long, Long) -> Unit) -> Unit = { _, target, onProgress ->
-            writeCsZip(target)
-            onProgress(1, 1)
-        },
-        versionsFetcher: () -> List<String> = { listOf("1.3.5", "1.3.4") },
+        assets: List<String> = listOf(
+            "page-scala-metals-windows-x86_64-1.6.7.zip",
+            "page-scala-metals-windows-x86_64-1.6.0.zip",
+            "page-scala-metals-linux-x86_64-1.6.7.tar.gz",
+            "page-scala-metals-macos-aarch64-1.6.7.tar.gz",
+        ),
+        staticManifest: List<String>? = null,
+        downloads: MutableList<String> = mutableListOf(),
     ): MetalsInstaller = MetalsInstaller(
-        processRunner = processRunner,
         osKey = "windows",
         archKey = "amd64",
         isWindows = true,
-        versionsFetcher = versionsFetcher,
-        downloader = downloader,
+        downloader = { url, target, onProgress ->
+            downloads += url
+            writeMetalsZip(target)
+            onProgress(1, 1)
+        },
+        staticManifestFetcher = { _ -> staticManifest },
+        assetsFetcher = { _, _, _ -> assets },
     )
 
     @Test
-    fun coursierUrlForLinuxAmd64() {
-        val installer = MetalsInstaller(osKey = "linux", archKey = "amd64", isWindows = false)
-        assertTrue(installer.coursierUrl().contains("cs-x86_64-pc-linux.gz"), installer.coursierUrl())
+    fun assetNameRegexExtractsVersionForWindowsX86() {
+        val match = MetalsInstaller.ASSET_NAME_REGEX.matchEntire("page-scala-metals-windows-x86_64-1.6.7.zip")
+        assertNotNull(match)
+        assertEquals("windows", match.groupValues[1])
+        assertEquals("x86_64", match.groupValues[2])
+        assertEquals("1.6.7", match.groupValues[3])
     }
 
     @Test
-    fun coursierUrlForLinuxArm64() {
-        val installer = MetalsInstaller(osKey = "linux", archKey = "arm64", isWindows = false)
-        assertTrue(installer.coursierUrl().contains("cs-aarch64-pc-linux.gz"), installer.coursierUrl())
+    fun assetNameRegexExtractsVersionForMacArm64() {
+        val match = MetalsInstaller.ASSET_NAME_REGEX.matchEntire("page-scala-metals-macos-aarch64-1.6.7.tar.gz")
+        assertNotNull(match)
+        assertEquals("macos", match.groupValues[1])
+        assertEquals("aarch64", match.groupValues[2])
+        assertEquals("1.6.7", match.groupValues[3])
     }
 
     @Test
-    fun coursierUrlForMacosArm64() {
-        val installer = MetalsInstaller(osKey = "macos", archKey = "arm64", isWindows = false)
-        assertTrue(installer.coursierUrl().contains("cs-aarch64-apple-darwin.gz"), installer.coursierUrl())
+    fun assetNameRegexRejectsForeignPattern() {
+        assertNull(MetalsInstaller.ASSET_NAME_REGEX.matchEntire("page-dart-sdk-linux-x86_64-3.5.0.tar.gz"))
+        assertNull(MetalsInstaller.ASSET_NAME_REGEX.matchEntire("metals-1.6.7.jar"))
     }
 
     @Test
-    fun coursierUrlForWindowsAmd64() {
+    fun bundleUrlForWindowsAmd64() {
         val installer = MetalsInstaller(osKey = "windows", archKey = "amd64", isWindows = true)
-        assertTrue(installer.coursierUrl().endsWith("cs-x86_64-pc-win32.zip"), installer.coursierUrl())
+        assertEquals(
+            "https://github.com/monkshark/page-ide-assets/releases/download/metals-bundle/page-scala-metals-windows-x86_64-1.6.7.zip",
+            installer.bundleUrl("1.6.7"),
+        )
+    }
+
+    @Test
+    fun bundleUrlForMacArm64() {
+        val installer = MetalsInstaller(osKey = "macos", archKey = "arm64", isWindows = false)
+        assertEquals(
+            "https://github.com/monkshark/page-ide-assets/releases/download/metals-bundle/page-scala-metals-macos-aarch64-1.6.7.tar.gz",
+            installer.bundleUrl("1.6.7"),
+        )
+    }
+
+    @Test
+    fun availableVersionsFiltersOsArchAndSortsDesc() {
+        val installer = winInstaller(
+            assets = listOf(
+                "page-scala-metals-windows-x86_64-1.6.0.zip",
+                "page-scala-metals-windows-x86_64-1.6.7.zip",
+                "page-scala-metals-windows-x86_64-1.6.5.zip",
+                "page-scala-metals-linux-x86_64-1.6.7.tar.gz",
+                "page-scala-metals-macos-aarch64-1.6.7.tar.gz",
+            ),
+        )
+        assertEquals(listOf("1.6.7", "1.6.5", "1.6.0"), installer.availableVersions())
+    }
+
+    @Test
+    fun availableVersionsReturnsEmptyOnFetcherFailure() {
+        val installer = MetalsInstaller(
+            osKey = "linux", archKey = "amd64", isWindows = false,
+            assetsFetcher = { _, _, _ -> throw RuntimeException("boom") },
+        )
+        assertEquals(emptyList(), installer.availableVersions())
     }
 
     @Test
     fun executableNullWhenNotInstalled() {
         useTempHome()
-        val runner = object : ProcessRunner {
-            override fun runStreaming(c: List<String>, o: (String) -> Unit): Int = fail("not called")
-            override fun runStreaming(c: List<String>, e: Map<String, String>, o: (String) -> Unit): Int = fail("not called")
-            override fun captureOutput(c: List<String>): String = ""
-        }
-        assertNull(winInstaller(runner).executable())
+        val installer = winInstaller(assets = emptyList())
+        assertNull(installer.executable())
     }
 
     @Test
-    fun installLatestUsesPlainSpec() {
+    fun installLatestResolvesFromAssetList() {
         useTempHome()
-        val capturedCommands = mutableListOf<List<String>>()
-        val runner = object : ProcessRunner {
-            override fun runStreaming(c: List<String>, o: (String) -> Unit): Int = fail("env-aware")
-            override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int {
-                capturedCommands += command
-                val installDir = Path.of(command[command.indexOf("--install-dir") + 1])
-                val metals = installDir.resolve("metals.bat")
-                metals.parent.createDirectories()
-                Files.writeString(metals, "@echo fake metals shim")
-                return 0
-            }
-            override fun captureOutput(c: List<String>): String = ""
-        }
-        val installer = winInstaller(processRunner = runner)
-        installer.install(null) { }
-        val cmd = capturedCommands.single()
-        assertEquals("metals", cmd.last(), "latest should use bare 'metals' spec, got $cmd")
-    }
-
-    @Test
-    fun installPinnedVersionUsesColonSpec() {
-        useTempHome()
-        val capturedCommands = mutableListOf<List<String>>()
-        val runner = object : ProcessRunner {
-            override fun runStreaming(c: List<String>, o: (String) -> Unit): Int = fail("env-aware")
-            override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int {
-                capturedCommands += command
-                val installDir = Path.of(command[command.indexOf("--install-dir") + 1])
-                val metals = installDir.resolve("metals.bat")
-                metals.parent.createDirectories()
-                Files.writeString(metals, "shim")
-                return 0
-            }
-            override fun captureOutput(c: List<String>): String = ""
-        }
-        val installer = winInstaller(processRunner = runner)
-        installer.install("1.3.5") { }
-        val cmd = capturedCommands.single()
-        assertEquals("metals:1.3.5", cmd.last(), "pinned version should use 'metals:VER' spec, got $cmd")
-    }
-
-    @Test
-    fun installEndToEndWritesPointerAndBinary() {
-        useTempHome()
-        val runner = object : ProcessRunner {
-            override fun runStreaming(c: List<String>, o: (String) -> Unit): Int = fail("env-aware")
-            override fun runStreaming(c: List<String>, env: Map<String, String>, o: (String) -> Unit): Int {
-                val installDir = Path.of(c[c.indexOf("--install-dir") + 1])
-                val metals = installDir.resolve("metals.bat")
-                metals.parent.createDirectories()
-                Files.writeString(metals, "shim")
-                return 0
-            }
-            override fun captureOutput(c: List<String>): String = ""
-        }
-        val installer = winInstaller(processRunner = runner)
+        val downloads = mutableListOf<String>()
+        val installer = winInstaller(downloads = downloads)
         var lastEvent: LspInstaller.Progress? = null
-        installer.install("1.3.5") { lastEvent = it }
+        installer.install(null) { lastEvent = it }
         assertTrue(lastEvent is LspInstaller.Progress.Done, "expected Done, got $lastEvent")
-        assertEquals("1.3.5", installer.installedVersion())
+        assertEquals("1.6.7", installer.installedVersion())
+        assertEquals(installer.bundleUrl("1.6.7"), downloads.single())
         assertNotNull(installer.executable())
-        assertTrue(installer.isInstalled())
     }
 
     @Test
-    fun installFailsWhenCsExitNonZero() {
+    fun installPinnedVersionUsesPinnedPath() {
         useTempHome()
-        val runner = object : ProcessRunner {
-            override fun runStreaming(c: List<String>, o: (String) -> Unit): Int = fail("env-aware")
-            override fun runStreaming(c: List<String>, e: Map<String, String>, o: (String) -> Unit): Int = 3
-            override fun captureOutput(c: List<String>): String = ""
-        }
-        val installer = winInstaller(processRunner = runner)
+        val installer = winInstaller()
+        installer.install("1.6.0") { }
+        assertEquals("1.6.0", installer.installedVersion())
+        assertTrue(Files.exists(installer.metalsBinary("1.6.0")), "metals.bat should land in pinned 1.6.0 root")
+    }
+
+    @Test
+    fun installFailsWhenAssetsEmpty() {
+        useTempHome()
+        val installer = winInstaller(assets = emptyList())
         var failed: Throwable? = null
-        installer.install("1.3.5") { p ->
+        installer.install("latest") { p ->
             if (p is LspInstaller.Progress.Failed) failed = p.error
         }
         assertNotNull(failed)
+        assertTrue(failed!!.message!!.contains("metals-bundle"))
+    }
+
+    @Test
+    fun availableVersionsPrefersStaticManifestOverApiFetcher() {
+        val installer = winInstaller(
+            assets = listOf("page-scala-metals-windows-x86_64-9.9.9.zip"),
+            staticManifest = listOf(
+                "page-scala-metals-windows-x86_64-1.6.7.zip",
+                "page-scala-metals-windows-x86_64-1.6.0.zip",
+            ),
+        )
+        assertEquals(listOf("1.6.7", "1.6.0"), installer.availableVersions())
+    }
+
+    @Test
+    fun availableVersionsFallsBackToFetcherWhenManifestEmpty() {
+        val installer = winInstaller(
+            assets = listOf("page-scala-metals-windows-x86_64-1.6.7.zip"),
+            staticManifest = emptyList(),
+        )
+        assertEquals(listOf("1.6.7"), installer.availableVersions())
+    }
+
+    @Test
+    fun availableVersionsFallsBackToFetcherWhenManifestNull() {
+        val installer = winInstaller(
+            assets = listOf("page-scala-metals-windows-x86_64-1.6.7.zip"),
+            staticManifest = null,
+        )
+        assertEquals(listOf("1.6.7"), installer.availableVersions())
+    }
+
+    @Test
+    fun parseAssetNamesManifestExtractsAssetEntries() {
+        val body = """
+            {
+              "updatedAt": "2026-05-23T00:00:00Z",
+              "tag": "metals-bundle",
+              "assets": [
+                "page-scala-metals-windows-x86_64-1.6.7.zip",
+                "page-scala-metals-linux-x86_64-1.6.7.tar.gz"
+              ]
+            }
+        """.trimIndent()
+        assertEquals(
+            listOf(
+                "page-scala-metals-windows-x86_64-1.6.7.zip",
+                "page-scala-metals-linux-x86_64-1.6.7.tar.gz",
+            ),
+            LspStaticManifest.parseAssetNames(body),
+        )
+    }
+
+    @Test
+    fun versionDescSortsHighestFirst() {
+        val mixed = listOf("1.6.0", "1.6.7", "1.5.2", "1.6.10", "1.6.5")
+        val sorted = mixed.sortedWith(MetalsInstaller.VERSION_DESC)
+        assertEquals(listOf("1.6.10", "1.6.7", "1.6.5", "1.6.0", "1.5.2"), sorted)
     }
 }
