@@ -7,6 +7,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -167,6 +168,7 @@ class DartSdkInstallerTest {
 
     @Test
     fun availableVersionsRoutesThroughInjectedFetcher() {
+        useTempHome()
         val installer = DartSdkInstaller(
             osKey = "linux", archKey = "amd64", isWindows = false,
             downloader = { _, _, _ -> },
@@ -174,5 +176,60 @@ class DartSdkInstallerTest {
             latestResolver = { "3.5.0" },
         )
         assertEquals(listOf("3.5.0", "3.4.4", "3.4.0"), installer.availableVersions())
+    }
+
+    @Test
+    fun installedVersionsListsAllInstalledRoots() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("3.4.0") { }
+        installer.install("3.5.0") { }
+        assertEquals(listOf("3.5.0", "3.4.0"), installer.installedVersions())
+    }
+
+    @Test
+    fun applyVersionTogglesCurrentPointerWithoutReinstall() {
+        useTempHome()
+        var downloadCalls = 0
+        val installer = DartSdkInstaller(
+            osKey = "windows", archKey = "amd64", isWindows = true,
+            downloader = { _, target, onProgress ->
+                downloadCalls++
+                writeDartSdkZip(target, "dart.exe")
+                onProgress(1, 1)
+            },
+            versionsFetcher = { listOf("3.5.0", "3.4.0") },
+            latestResolver = { "3.5.0" },
+        )
+        installer.install("3.4.0") { }
+        installer.install("3.5.0") { }
+        val downloadsAfterInstall = downloadCalls
+        assertEquals("3.5.0", installer.activeVersion())
+        assertTrue(installer.applyVersion("3.4.0"))
+        assertEquals("3.4.0", installer.activeVersion())
+        assertEquals(downloadsAfterInstall, downloadCalls, "applyVersion should not redownload")
+    }
+
+    @Test
+    fun applyVersionRejectsMissingInstall() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("3.5.0") { }
+        assertFalse(installer.applyVersion("9.9.9"))
+        assertEquals("3.5.0", installer.activeVersion())
+    }
+
+    @Test
+    fun availableVersionsIncludesInstalledEvenWhenOffline() {
+        useTempHome()
+        val installer = winInstaller(latest = "3.5.0")
+        installer.install("3.4.0") { }
+        val offline = DartSdkInstaller(
+            osKey = "windows", archKey = "amd64", isWindows = true,
+            downloader = { _, _, _ -> },
+            versionsFetcher = { emptyList() },
+            latestResolver = { null },
+        )
+        assertTrue("3.4.0" in offline.availableVersions(), "installed roots must survive offline fetch")
     }
 }
