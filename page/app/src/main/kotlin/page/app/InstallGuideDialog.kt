@@ -121,6 +121,12 @@ internal fun InstallGuideDialog(
         if (installer != null) {
             val list = withContext(Dispatchers.IO) { installer.availableVersions() }
             availableVersions = list
+            val current = selectedVersion
+            if (current == null || (list.isNotEmpty() && current !in list)) {
+                selectedVersion = installer.installedVersion()?.takeIf { it in list || list.isEmpty() }
+                    ?: installer.defaultVersion()?.takeIf { it in list || list.isEmpty() }
+                    ?: list.firstOrNull()
+            }
             versionsLoading = false
         } else {
             versionsLoading = false
@@ -452,7 +458,8 @@ internal fun InstallGuideDialog(
                                 onStart = ::startInstall,
                                 onApply = ::applySelected,
                             )
-                            val enableInstall = !installing && mode != InstallButtonMode.AlreadyActive
+                            val enableInstall = !installing && !versionsLoading &&
+                                selectedVersion != null && mode != InstallButtonMode.AlreadyActive
                             if (installing) {
                                 InstallGuideButton(
                                     label = "Cancel",
