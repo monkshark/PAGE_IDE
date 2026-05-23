@@ -126,7 +126,6 @@ class LspInstallersRegistryTest {
     @Test
     fun supportsAllStep3ShellLanguages() {
         val shellIds = mapOf(
-            "ruby" to "gem",
             "ocaml" to "opam",
             "perl" to "cpan",
             "r" to "Rscript",
@@ -137,6 +136,27 @@ class LspInstallersRegistryTest {
             assertNotNull(installer, "expected installer for $id")
             assertTrue(installer is ShellPackageInstaller, "$id should be ShellPackageInstaller, got ${installer::class}")
             assertEquals(manager, installer.descriptor.managerName, "$id manager mismatch")
+        }
+    }
+
+    @Test
+    fun rubyShellFallbackKeepsGemManager() {
+        val installer = LspInstallers.shellRubyInstaller()
+        assertTrue(installer is ShellPackageInstaller, "shellRubyInstaller should return ShellPackageInstaller")
+        assertEquals("gem", installer.descriptor.managerName)
+        assertEquals("solargraph", installer.descriptor.binaryName)
+    }
+
+    @Test
+    fun rubyRegistryDispatchesByOs() {
+        assertTrue(LspInstallers.supports("ruby"))
+        val installer = LspInstallers.forId("ruby")
+        assertNotNull(installer)
+        val os = LspInstaller.osKey()
+        if (os == "windows" || os == "macos") {
+            assertTrue(installer is RubyBootstrapInstaller, "ruby should be bootstrap on $os, got ${installer::class}")
+        } else {
+            assertTrue(installer is ShellPackageInstaller, "ruby should be shell fallback on $os, got ${installer::class}")
         }
     }
 

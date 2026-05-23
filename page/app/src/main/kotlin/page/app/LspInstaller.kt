@@ -16,6 +16,11 @@ interface LspInstaller {
     fun defaultVersion(): String? = null
     fun installedVersion(): String? = null
 
+    fun installDir(version: String?): Path {
+        val v = version ?: defaultVersion() ?: "latest"
+        return lspHome().resolve(languageId).resolve(v)
+    }
+
     sealed class Progress {
         data class Downloading(val bytesRead: Long, val total: Long) : Progress()
         data class Extracting(val message: String = "Extracting…") : Progress()

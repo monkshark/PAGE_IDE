@@ -1,11 +1,18 @@
 package page.app
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,9 +20,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -33,20 +43,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 import page.lsp.LanguageDefinition
 import page.ui.GlassTheme
 import java.awt.Desktop
@@ -59,8 +75,10 @@ internal fun InstallGuideDialog(
     onOpenGuide: (String) -> Unit = { url -> runCatching { Desktop.getDesktop().browse(URI(url)) } },
     onInstalled: () -> Unit = {},
     onDismiss: () -> Unit,
-    installer: LspInstaller? = LspInstallers.forId(definition.id),
+    installer: LspInstaller? = null,
 ) {
+    @Suppress("NAME_SHADOWING")
+    val installer = installer ?: remember(definition.id) { LspInstallers.forId(definition.id) }
     val initialOs = remember { InstallGuide.initialOsKey() }
     var selectedOs by remember { mutableStateOf(initialOs) }
     var installProgress by remember { mutableStateOf<LspInstaller.Progress?>(null) }
@@ -71,11 +89,21 @@ internal fun InstallGuideDialog(
     var showHeavyConfirm by remember(installer) { mutableStateOf(false) }
     var heavyConfirmAccepted by remember(installer) { mutableStateOf(false) }
     var outputLines by remember(installer) { mutableStateOf<List<String>>(emptyList()) }
-    var outputExpanded by remember(installer) { mutableStateOf(false) }
+    var installJob by remember(installer) { mutableStateOf<Job?>(null) }
+    var showCancelConfirm by remember(installer) { mutableStateOf(false) }
+    val cancelled = remember(installer) { AtomicBoolean(false) }
     val kls = installer as? KlsLspInstaller
-    val installedVersion = remember(installer, installProgress) { installer?.installedVersion() }
-    val installedVersions = remember(installer, installProgress) {
-        kls?.installedVersions() ?: listOfNotNull(installer?.installedVersion())
+    var installedVersion by remember(installer) { mutableStateOf(installer?.installedVersion()) }
+    var installedVersions by remember(installer) {
+        mutableStateOf(kls?.installedVersions() ?: listOfNotNull(installer?.installedVersion()))
+    }
+    LaunchedEffect(installer, installProgress is LspInstaller.Progress.Done, installProgress is LspInstaller.Progress.Failed, installProgress == null) {
+        if (installer == null) return@LaunchedEffect
+        val p = installProgress
+        if (p == null || p is LspInstaller.Progress.Done || p is LspInstaller.Progress.Failed) {
+            installedVersion = installer.installedVersion()
+            installedVersions = kls?.installedVersions() ?: listOfNotNull(installer.installedVersion())
+        }
     }
     val scope = rememberCoroutineScope()
     val canInAppInstall = installer != null
@@ -102,20 +130,32 @@ internal fun InstallGuideDialog(
     fun startInstallInternal() {
         val active = installer ?: return
         if (installing) return
+        cancelled.set(false)
         installProgress = LspInstaller.Progress.Downloading(0, -1)
         outputLines = emptyList()
-        scope.launch {
+        installJob = scope.launch {
             withContext(Dispatchers.IO) {
                 active.install(selectedVersion) { p ->
+                    if (cancelled.get()) return@install
                     installProgress = p
                     if (p is LspInstaller.Progress.CommandOutput) {
-                        outputLines = (outputLines + p.line).takeLast(200)
-                    }
-                    if (p is LspInstaller.Progress.Failed) {
-                        outputExpanded = true
+                        outputLines = (outputLines + p.line).takeLast(2000)
                     }
                 }
             }
+        }
+    }
+
+    fun confirmCancelInstall() {
+        cancelled.set(true)
+        installJob?.cancel()
+        installJob = null
+        installProgress = null
+        outputLines = emptyList()
+        showCancelConfirm = false
+        val target = installer?.installDir(selectedVersion)?.toFile() ?: return
+        scope.launch(Dispatchers.IO) {
+            runCatching { target.deleteRecursively() }
         }
     }
 
@@ -149,6 +189,7 @@ internal fun InstallGuideDialog(
                     else when (event.key) {
                         Key.Escape -> {
                             if (showHeavyConfirm) { showHeavyConfirm = false; true }
+                            else if (showCancelConfirm) { showCancelConfirm = false; true }
                             else if (!installing) { onDismiss(); true }
                             else true
                         }
@@ -216,7 +257,16 @@ internal fun InstallGuideDialog(
                         OsTabRow(selected = selectedOs, onSelect = { selectedOs = it })
                         Spacer(Modifier.height(10.dp))
                     }
-                    Box(
+                    if (installProgress != null) {
+                        val failedMessage = (installProgress as? LspInstaller.Progress.Failed)?.let { f ->
+                            f.error.message?.takeIf { it.isNotBlank() } ?: f.error.toString()
+                        }
+                        OutputLogBox(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            lines = outputLines,
+                            failedMessage = failedMessage,
+                        )
+                    } else Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
@@ -367,25 +417,13 @@ internal fun InstallGuideDialog(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
-                    val statusLine = statusLineFor(installProgress, definition.displayName) ?: "After install, the LSP restarts automatically."
+                    val statusLine = statusLineFor(installProgress, definition.displayName, selectedVersion) ?: "After install, the LSP restarts automatically."
                     Text(
                         text = statusLine,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = LocalTextStyle.current.copy(fontSize = 10.sp),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (outputLines.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        OutputToggle(
-                            expanded = outputExpanded,
-                            lineCount = outputLines.size,
-                            onClick = { outputExpanded = !outputExpanded },
-                        )
-                        if (outputExpanded) {
-                            Spacer(Modifier.height(4.dp))
-                            OutputLogBox(lines = outputLines)
-                        }
-                    }
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -415,6 +453,15 @@ internal fun InstallGuideDialog(
                                 onApply = ::applySelected,
                             )
                             val enableInstall = !installing && mode != InstallButtonMode.AlreadyActive
+                            if (installing) {
+                                InstallGuideButton(
+                                    label = "Cancel",
+                                    primary = false,
+                                    enabled = true,
+                                    onClick = { showCancelConfirm = true },
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
                             InstallGuideButton(
                                 label = label,
                                 primary = true,
@@ -449,6 +496,78 @@ internal fun InstallGuideDialog(
                     },
                 )
             }
+            if (showCancelConfirm) {
+                CancelConfirmOverlay(
+                    displayName = definition.displayName,
+                    onDismiss = { showCancelConfirm = false },
+                    onConfirm = { confirmCancelInstall() },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CancelConfirmOverlay(
+    displayName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val scrimInteraction = remember { MutableInteractionSource() }
+    val cardInteraction = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(
+                interactionSource = scrimInteraction,
+                indication = null,
+            ) { onDismiss() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(360.dp)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                .clickable(
+                    interactionSource = cardInteraction,
+                    indication = null,
+                ) { },
+            color = MaterialTheme.colorScheme.background,
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                Text(
+                    text = "Cancel $displayName install",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Cancel the install? All files downloaded so far will be deleted.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = LocalTextStyle.current.copy(fontSize = 11.sp),
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    InstallGuideButton(
+                        label = "Keep installing",
+                        primary = false,
+                        enabled = true,
+                        onClick = onDismiss,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    InstallGuideButton(
+                        label = "Cancel install",
+                        primary = true,
+                        enabled = true,
+                        onClick = onConfirm,
+                    )
+                }
+            }
         }
     }
 }
@@ -460,23 +579,26 @@ private fun installLocationOf(installer: LspInstaller, version: String?): String
 
 private fun installProgressFraction(progress: LspInstaller.Progress?): Float = when (val p = progress) {
     null -> 0f
-    is LspInstaller.Progress.Downloading -> if (p.total > 0) (p.bytesRead.toFloat() / p.total).coerceIn(0f, 1f) else 0.05f
-    is LspInstaller.Progress.Extracting -> 1f
-    is LspInstaller.Progress.CommandOutput -> 0.5f
+    is LspInstaller.Progress.Downloading -> if (p.total > 0) (p.bytesRead.toFloat() / p.total).coerceIn(0f, 1f) else INDETERMINATE_PROGRESS
+    is LspInstaller.Progress.Extracting -> INDETERMINATE_PROGRESS
+    is LspInstaller.Progress.CommandOutput -> INDETERMINATE_PROGRESS
     is LspInstaller.Progress.Done -> 0f
     is LspInstaller.Progress.Failed -> 0f
 }
 
-private fun statusLineFor(progress: LspInstaller.Progress?, name: String): String? = when (val p = progress) {
+internal const val INDETERMINATE_PROGRESS: Float = -1f
+
+private fun statusLineFor(progress: LspInstaller.Progress?, name: String, version: String?): String? = when (val p = progress) {
     null -> null
     is LspInstaller.Progress.Downloading -> {
+        val label = if (!version.isNullOrBlank()) "$name $version" else name
         val mb = p.bytesRead / 1024.0 / 1024.0
         if (p.total > 0) {
             val totalMb = p.total / 1024.0 / 1024.0
             val pct = ((p.bytesRead * 100.0) / p.total).toInt().coerceIn(0, 100)
-            String.format("Downloading $name… %.1f / %.1f MB (%d%%)", mb, totalMb, pct)
+            String.format("Downloading $label… %.1f / %.1f MB (%d%%)", mb, totalMb, pct)
         } else {
-            String.format("Downloading $name… %.1f MB", mb)
+            String.format("Downloading $label… %.1f MB", mb)
         }
     }
     is LspInstaller.Progress.Extracting -> p.message
@@ -675,8 +797,10 @@ private fun InstallGuideButton(
 ) {
     val alpha = if (enabled) 1f else 0.5f
     val primaryColor = MaterialTheme.colorScheme.primary
+    val indeterminate = progress < 0f
+    val active = primary && (indeterminate || progress > 0f)
     val bg = if (primary) {
-        if (progress > 0f) primaryColor.copy(alpha = 0.25f * alpha) else primaryColor.copy(alpha = alpha)
+        if (active) primaryColor.copy(alpha = 0.25f * alpha) else primaryColor.copy(alpha = alpha)
     } else MaterialTheme.colorScheme.surface
     val fg = if (primary) MaterialTheme.colorScheme.onPrimary.copy(alpha = alpha)
     else MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
@@ -684,19 +808,50 @@ private fun InstallGuideButton(
     else Modifier.height(28.dp)
     Box(
         modifier = sizing
+            .clipToBounds()
             .background(bg)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f * alpha))
             .let { if (enabled) it.clickable(onClick = onClick) else it },
         contentAlignment = Alignment.Center,
     ) {
-        if (primary && progress > 0f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress.coerceIn(0f, 1f))
-                    .background(primaryColor.copy(alpha = alpha))
-                    .align(Alignment.CenterStart),
-            )
+        if (active) {
+            if (indeterminate) {
+                val transition = rememberInfiniteTransition(label = "installButtonIndeterminate")
+                val phase by transition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Restart,
+                    ),
+                    label = "phase",
+                )
+                val barFraction = 0.55f
+                BoxWithConstraints(modifier = Modifier.matchParentSize().clipToBounds()) {
+                    val barWidth = maxWidth * barFraction
+                    val travel = maxWidth + barWidth
+                    val shimmer = Brush.horizontalGradient(
+                        0f to Color.Transparent,
+                        0.5f to primaryColor.copy(alpha = 0.85f * alpha),
+                        1f to Color.Transparent,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .offset(x = -barWidth + travel * phase)
+                            .fillMaxHeight()
+                            .width(barWidth)
+                            .background(shimmer),
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .background(primaryColor.copy(alpha = alpha))
+                        .align(Alignment.CenterStart),
+                )
+            }
         }
         Box(modifier = Modifier.padding(horizontal = 14.dp)) {
             ButtonLabel(text = label, color = fg)
@@ -746,52 +901,86 @@ private fun HeavyEstimateBanner(estimate: LspInstaller.HeavyInstallEstimate) {
     }
 }
 
-@Composable
-private fun OutputToggle(expanded: Boolean, lineCount: Int, onClick: () -> Unit) {
-    val chevron = if (expanded) "▼" else "▶"
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = chevron,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = LocalTextStyle.current.copy(fontSize = 9.sp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = if (expanded) "출력 숨기기" else "자세히 보기 ($lineCount 줄)",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = LocalTextStyle.current.copy(fontSize = 10.sp),
-        )
-    }
-}
 
 @Composable
-private fun OutputLogBox(lines: List<String>) {
+private fun OutputLogBox(modifier: Modifier = Modifier, lines: List<String>, failedMessage: String? = null) {
     val scroll = rememberScrollState()
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
     LaunchedEffect(lines.size) {
         runCatching { scroll.scrollTo(scroll.maxValue) }
     }
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(1200)
+            copied = false
+        }
+    }
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(110.dp)
+        modifier = modifier
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     ) {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll)) {
-            for (line in lines) {
-                Text(
-                    text = line,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = LocalTextStyle.current.copy(
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                )
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            if (failedMessage != null) {
+                val errorScroll = rememberScrollState()
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 180.dp)
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
+                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                        .verticalScroll(errorScroll)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = "Install failed: $failedMessage",
+                            color = MaterialTheme.colorScheme.error,
+                            style = LocalTextStyle.current.copy(
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp,
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            if (lines.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (copied) "Copied" else "Copy",
+                        color = if (copied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                        modifier = Modifier
+                            .clickable {
+                                clipboard.setText(AnnotatedString(lines.joinToString("\n")))
+                                copied = true
+                            }
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            SelectionContainer(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll)) {
+                    for (line in lines) {
+                        Text(
+                            text = line,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = LocalTextStyle.current.copy(
+                                fontSize = 10.sp,
+                                lineHeight = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                        )
+                    }
+                }
             }
         }
     }
