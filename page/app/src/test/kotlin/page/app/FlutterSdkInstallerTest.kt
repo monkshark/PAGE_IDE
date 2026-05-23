@@ -7,6 +7,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -72,12 +73,14 @@ class FlutterSdkInstallerTest {
 
     @Test
     fun availableVersionsListsStableOnlyForWindowsX64() {
+        useTempHome()
         val installer = winInstaller()
         assertEquals(listOf("3.24.5", "3.22.0"), installer.availableVersions())
     }
 
     @Test
     fun availableVersionsForMacArm64FiltersArm64() {
+        useTempHome()
         val installer = FlutterSdkInstaller(
             osKey = "macos",
             archKey = "arm64",
@@ -89,6 +92,7 @@ class FlutterSdkInstallerTest {
 
     @Test
     fun availableVersionsReturnsEmptyOnFetcherFailure() {
+        useTempHome()
         val installer = FlutterSdkInstaller(
             osKey = "linux", archKey = "amd64", isWindows = false,
             releasesFetcher = { _ -> null },
@@ -156,5 +160,61 @@ class FlutterSdkInstallerTest {
             releasesFetcher = { _ -> null },
         )
         assertNull(installer.executable())
+    }
+
+    @Test
+    fun installedVersionsListsAllInstalledRoots() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("3.22.0") { }
+        installer.install("3.24.5") { }
+        assertEquals(listOf("3.24.5", "3.22.0"), installer.installedVersions())
+    }
+
+    @Test
+    fun applyVersionTogglesCurrentPointerWithoutReinstall() {
+        useTempHome()
+        var downloadCalls = 0
+        val installer = FlutterSdkInstaller(
+            osKey = "windows", archKey = "amd64", isWindows = true,
+            downloader = { _, target, onProgress ->
+                downloadCalls++
+                writeFlutterZip(target, "dart.exe")
+                onProgress(1, 1)
+            },
+            releasesFetcher = { _ -> fakeReleases() },
+            processRunner = object : ProcessRunner {
+                override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int = 0
+                override fun captureOutput(command: List<String>): String = ""
+            },
+        )
+        installer.install("3.22.0") { }
+        installer.install("3.24.5") { }
+        val downloadsAfterInstall = downloadCalls
+        assertEquals("3.24.5", installer.activeVersion())
+        assertTrue(installer.applyVersion("3.22.0"))
+        assertEquals("3.22.0", installer.activeVersion())
+        assertEquals(downloadsAfterInstall, downloadCalls, "applyVersion should not redownload")
+    }
+
+    @Test
+    fun applyVersionRejectsMissingInstall() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("3.24.5") { }
+        assertFalse(installer.applyVersion("9.9.9"))
+        assertEquals("3.24.5", installer.activeVersion())
+    }
+
+    @Test
+    fun availableVersionsIncludesInstalledEvenWhenOffline() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("3.22.0") { }
+        val offline = FlutterSdkInstaller(
+            osKey = "windows", archKey = "amd64", isWindows = true,
+            releasesFetcher = { _ -> null },
+        )
+        assertTrue("3.22.0" in offline.availableVersions(), "installed roots must survive offline fetch")
     }
 }
