@@ -36,7 +36,34 @@ class MetalsInstaller(
 
     override fun installedVersion(): String? = currentInstalledVersion()
 
-    override fun availableVersions(): List<String> = discoverVersions()
+    override fun installedVersions(): List<String> {
+        val root = LspInstaller.lspHome().resolve("metals")
+        if (!Files.isDirectory(root)) return emptyList()
+        return runCatching {
+            Files.list(root).use { stream ->
+                stream
+                    .filter { Files.isDirectory(it) && it.fileName.toString() != "CURRENT" }
+                    .map { it.fileName.toString() }
+                    .filter { Files.exists(metalsBinary(it)) }
+                    .toList()
+                    .sortedWith(VERSION_DESC)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun activeVersion(): String? = currentInstalledVersion()
+
+    override fun applyVersion(version: String): Boolean {
+        if (!Files.exists(metalsBinary(version))) return false
+        writePointer(version)
+        return true
+    }
+
+    override fun availableVersions(): List<String> {
+        val installed = installedVersions()
+        val discovered = discoverVersions()
+        return (discovered + installed).distinct().sortedWith(VERSION_DESC)
+    }
 
     private fun discoverVersions(): List<String> {
         val pageOs = pageOsKey()
