@@ -34,10 +34,37 @@ class FlutterSdkInstaller(
 
     override fun installedVersion(): String? = currentInstalledVersion()
 
-    override fun availableVersions(): List<String> = runCatching {
-        val doc = releasesFetcher(osKey) ?: return@runCatching emptyList()
-        stableVersionsFor(doc, archKey).map { it.version }
-    }.getOrDefault(emptyList())
+    override fun installedVersions(): List<String> {
+        val base = installBase()
+        if (!Files.isDirectory(base)) return emptyList()
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream
+                    .filter { Files.isDirectory(it) && it.fileName.toString() != "CURRENT" }
+                    .filter { Files.exists(lspWrapper(it.fileName.toString())) }
+                    .map { it.fileName.toString() }
+                    .toList()
+                    .sortedWith(VERSION_DESC)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun activeVersion(): String? = currentInstalledVersion()
+
+    override fun applyVersion(version: String): Boolean {
+        if (!Files.exists(lspWrapper(version))) return false
+        writePointer(version)
+        return true
+    }
+
+    override fun availableVersions(): List<String> {
+        val discovered = runCatching {
+            val doc = releasesFetcher(osKey) ?: return@runCatching emptyList()
+            stableVersionsFor(doc, archKey).map { it.version }
+        }.getOrDefault(emptyList())
+        val installed = installedVersions()
+        return (discovered + installed).distinct().sortedWith(VERSION_DESC)
+    }
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
         try {
@@ -156,6 +183,18 @@ class FlutterSdkInstaller(
     companion object {
 
         private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+
+        internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
+            val aParts = a.split('.', '-', '+')
+            val bParts = b.split('.', '-', '+')
+            val n = maxOf(aParts.size, bParts.size)
+            for (i in 0 until n) {
+                val ai = aParts.getOrNull(i)?.toIntOrNull() ?: 0
+                val bi = bParts.getOrNull(i)?.toIntOrNull() ?: 0
+                if (ai != bi) return@Comparator bi - ai
+            }
+            0
+        }
 
         fun manifestUrl(osKey: String): String {
             val os = when (osKey) {

@@ -34,7 +34,34 @@ class DartSdkInstaller(
 
     override fun installedVersion(): String? = currentInstalledVersion()
 
-    override fun availableVersions(): List<String> = runCatching { versionsFetcher() }.getOrDefault(emptyList())
+    override fun installedVersions(): List<String> {
+        val base = installBase()
+        if (!Files.isDirectory(base)) return emptyList()
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream
+                    .filter { Files.isDirectory(it) && it.fileName.toString() != "CURRENT" }
+                    .filter { Files.exists(lspWrapper(it.fileName.toString())) }
+                    .map { it.fileName.toString() }
+                    .toList()
+                    .sortedWith(VERSION_DESC)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun activeVersion(): String? = currentInstalledVersion()
+
+    override fun applyVersion(version: String): Boolean {
+        if (!Files.exists(lspWrapper(version))) return false
+        writePointer(version)
+        return true
+    }
+
+    override fun availableVersions(): List<String> {
+        val discovered = runCatching { versionsFetcher() }.getOrDefault(emptyList())
+        val installed = installedVersions()
+        return (discovered + installed).distinct().sortedWith(VERSION_DESC)
+    }
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
         try {
