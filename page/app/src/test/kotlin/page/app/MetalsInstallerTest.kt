@@ -7,6 +7,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -166,6 +167,52 @@ class MetalsInstallerTest {
         installer.install("1.6.0") { }
         assertEquals("1.6.0", installer.installedVersion())
         assertTrue(Files.exists(installer.metalsBinary("1.6.0")), "metals.bat should land in pinned 1.6.0 root")
+    }
+
+    @Test
+    fun installedVersionsListsAllInstalledRoots() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("1.6.0") { }
+        installer.install("1.6.7") { }
+        assertEquals(listOf("1.6.7", "1.6.0"), installer.installedVersions())
+    }
+
+    @Test
+    fun applyVersionTogglesCurrentPointerWithoutReinstall() {
+        useTempHome()
+        val downloads = mutableListOf<String>()
+        val installer = winInstaller(downloads = downloads)
+        installer.install("1.6.0") { }
+        installer.install("1.6.7") { }
+        assertEquals("1.6.7", installer.activeVersion())
+        val downloadsAfterInstall = downloads.size
+
+        assertTrue(installer.applyVersion("1.6.0"))
+        assertEquals("1.6.0", installer.activeVersion())
+        assertEquals(downloadsAfterInstall, downloads.size, "applyVersion should not redownload")
+    }
+
+    @Test
+    fun applyVersionRejectsMissingInstall() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("1.6.7") { }
+        assertFalse(installer.applyVersion("9.9.9"))
+        assertEquals("1.6.7", installer.activeVersion())
+    }
+
+    @Test
+    fun availableVersionsIncludesInstalledEvenWhenOffline() {
+        useTempHome()
+        val installer = winInstaller()
+        installer.install("1.6.0") { }
+        val offline = MetalsInstaller(
+            osKey = "windows", archKey = "amd64", isWindows = true,
+            staticManifestFetcher = { null },
+            assetsFetcher = { _, _, _ -> emptyList() },
+        )
+        assertTrue("1.6.0" in offline.availableVersions(), "installed roots must survive offline fetch")
     }
 
     @Test
