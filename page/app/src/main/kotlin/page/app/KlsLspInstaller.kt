@@ -28,7 +28,7 @@ class KlsLspInstaller : LspInstaller {
         return if (KlsInstaller.isInstalled()) labelOf(KlsInstaller.VERSION, FORK) else null
     }
 
-    fun installedVersions(): List<String> {
+    override fun installedVersions(): List<String> {
         val labels = KlsInstaller.installedLabels().toMutableList()
         if (labels.isEmpty() && KlsInstaller.isInstalled()) {
             labels.add(labelOf(KlsInstaller.VERSION, FORK))
@@ -36,10 +36,11 @@ class KlsLspInstaller : LspInstaller {
         return labels.distinct()
     }
 
-    fun activeVersion(): String? = installedVersion()
+    override fun activeVersion(): String? = installedVersion()
 
-    fun applyVersion(label: String) {
-        KlsInstaller.setActiveLabel(label)
+    override fun applyVersion(version: String): Boolean {
+        KlsInstaller.setActiveLabel(version)
+        return true
     }
 
     override fun availableVersions(): List<String> {
