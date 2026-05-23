@@ -93,16 +93,16 @@ internal fun InstallGuideDialog(
     var showCancelConfirm by remember(installer) { mutableStateOf(false) }
     val cancelled = remember(installer) { AtomicBoolean(false) }
     val kls = installer as? KlsLspInstaller
-    var installedVersion by remember(installer) { mutableStateOf(installer?.installedVersion()) }
+    var installedVersion by remember(installer) { mutableStateOf(installer?.activeVersion()) }
     var installedVersions by remember(installer) {
-        mutableStateOf(kls?.installedVersions() ?: listOfNotNull(installer?.installedVersion()))
+        mutableStateOf(installer?.installedVersions() ?: emptyList())
     }
     LaunchedEffect(installer, installProgress is LspInstaller.Progress.Done, installProgress is LspInstaller.Progress.Failed, installProgress == null) {
         if (installer == null) return@LaunchedEffect
         val p = installProgress
         if (p == null || p is LspInstaller.Progress.Done || p is LspInstaller.Progress.Failed) {
-            installedVersion = installer.installedVersion()
-            installedVersions = kls?.installedVersions() ?: listOfNotNull(installer.installedVersion())
+            installedVersion = installer.activeVersion()
+            installedVersions = installer.installedVersions()
         }
     }
     val scope = rememberCoroutineScope()
@@ -177,8 +177,8 @@ internal fun InstallGuideDialog(
 
     fun applySelected() {
         val label = selectedVersion ?: return
-        val k = kls ?: return
-        k.applyVersion(label)
+        val active = installer ?: return
+        if (!active.applyVersion(label)) return
         onInstalled()
         onDismiss()
     }
@@ -294,12 +294,16 @@ internal fun InstallGuideDialog(
                                     ),
                                 )
                                 Spacer(Modifier.height(10.dp))
-                                val forkVersions = availableVersions.filter {
-                                    KlsLspInstaller.parseLabel(it).second != KlsLspInstaller.UPSTREAM
-                                }
-                                val upstreamVersions = availableVersions.filter {
-                                    KlsLspInstaller.parseLabel(it).second == KlsLspInstaller.UPSTREAM
-                                }
+                                val forkVersions = if (kls != null) {
+                                    availableVersions.filter {
+                                        KlsLspInstaller.parseLabel(it).second != KlsLspInstaller.UPSTREAM
+                                    }
+                                } else availableVersions
+                                val upstreamVersions = if (kls != null) {
+                                    availableVersions.filter {
+                                        KlsLspInstaller.parseLabel(it).second == KlsLspInstaller.UPSTREAM
+                                    }
+                                } else emptyList()
                                 SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
                                 Spacer(Modifier.height(4.dp))
                                 if (versionsLoading) {
@@ -325,14 +329,16 @@ internal fun InstallGuideDialog(
                                         )
                                     }
                                 }
-                                Spacer(Modifier.height(10.dp))
-                                SectionHeader(
-                                    label = "More versions (upstream)",
-                                    expanded = showUpstream,
-                                    toggleable = true,
-                                    onClick = { showUpstream = !showUpstream },
-                                )
-                                if (showUpstream) {
+                                if (kls != null) {
+                                    Spacer(Modifier.height(10.dp))
+                                    SectionHeader(
+                                        label = "More versions (upstream)",
+                                        expanded = showUpstream,
+                                        toggleable = true,
+                                        onClick = { showUpstream = !showUpstream },
+                                    )
+                                }
+                                if (kls != null && showUpstream) {
                                     Spacer(Modifier.height(4.dp))
                                     if (versionsLoading) {
                                         Text(
