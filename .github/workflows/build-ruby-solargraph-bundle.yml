@@ -54,18 +54,29 @@ jobs:
         run: |
           "%RUBY_INSTALL_DIR%\bin\ridk.cmd" install 1 3
 
-      - name: Verify toolchain (gcc + ld + libexec + headers)
+      - name: Verify toolchain (compile + link hello.c)
         shell: pwsh
         run: |
           $gcc = "$env:RUBY_INSTALL_DIR\msys64\ucrt64\bin\gcc.exe"
           $ld = "$env:RUBY_INSTALL_DIR\msys64\ucrt64\bin\ld.exe"
-          $libexec = "$env:RUBY_INSTALL_DIR\msys64\ucrt64\libexec\gcc"
           $stdio = "$env:RUBY_INSTALL_DIR\msys64\ucrt64\include\stdio.h"
           foreach ($p in @($gcc, $ld, $stdio)) {
             if (-not (Test-Path $p)) { throw "Missing $p — ridk install did not deploy MinGW UCRT64" }
           }
-          if (-not (Test-Path $libexec)) { throw "Missing $libexec — gcc backend (cc1) missing" }
           & $gcc --version
+          $smokeDir = Join-Path $env:RUNNER_TEMP 'gcc-smoke'
+          New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+          $src = Join-Path $smokeDir 'hello.c'
+          $exe = Join-Path $smokeDir 'hello.exe'
+          @'
+          #include <stdio.h>
+          int main(void) { puts("hello"); return 0; }
+          '@ | Out-File -Encoding ascii $src
+          & $gcc $src -o $exe
+          if ($LASTEXITCODE -ne 0) { throw "gcc smoke compile failed (exit $LASTEXITCODE) — cc1 / ld backend missing" }
+          $out = & $exe
+          if ($out -ne 'hello') { throw "smoke binary output mismatch: '$out'" }
+          Write-Host "==> gcc smoke compile OK"
 
       - name: Install gemhome (rbs prism-free pin + solargraph)
         shell: pwsh
