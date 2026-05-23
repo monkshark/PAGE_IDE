@@ -12,23 +12,24 @@ class RubyBootstrapInstaller(
     private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
     private val tarGzExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractTarGz(src, dst, flatten) },
     private val zipExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractZip(src, dst, flatten) },
+    private val bundleOverridePath: () -> String? = { System.getenv("PAGE_RUBY_BUNDLE_OVERRIDE") },
     private val defaultRubyVersion: String = DEFAULT_RUBY_VERSION,
-    private val rubyInstallerRelease: String = DEFAULT_RUBYINSTALLER_RELEASE,
     private val macBottleSlug: String = DEFAULT_MAC_BOTTLE_SLUG,
     private val solargraphPackage: String = "solargraph",
     private val solargraphVersion: String = DEFAULT_SOLARGRAPH_VERSION,
-    private val msys2BundleRelease: String = DEFAULT_MSYS2_BUNDLE_RELEASE,
-    private val msys2BundleRepo: String = DEFAULT_MSYS2_BUNDLE_REPO,
+    private val rubyBundleRelease: String = DEFAULT_RUBY_BUNDLE_RELEASE,
+    private val rubyBundleRepo: String = DEFAULT_RUBY_BUNDLE_REPO,
 ) : LspInstaller {
 
     override val languageId: String = "ruby"
     override val displayName: String = "solargraph"
     override val precheck: LspInstaller.Precheck = LspInstaller.Precheck.Ok
     override val heavyInstall: LspInstaller.HeavyInstallEstimate? = LspInstaller.HeavyInstallEstimate(
-        sizeEstimate = if (isWindows) "약 150 MB Ruby 인스톨러 + 약 700 MB MSYS2/MinGW 번들" else "약 25 MB",
+        sizeEstimate = if (isWindows) "약 700 MB ~ 1 GB (Ruby + MinGW UCRT64 + solargraph 통합 번들)" else "약 25 MB",
         durationEstimate = "약 3분 ~ 7분",
         notes = if (isWindows)
-            "PAGE 가 Ruby + DevKit 인스톨러를 silent install 한 뒤, PAGE 가 미리 빌드해 둔 MSYS2 + MinGW UCRT64 zip 번들을 받아 격리 디렉터리에 풀고 gem 으로 solargraph 를 설치합니다."
+            "PAGE 가 미리 빌드해 둔 Ruby + MSYS2 + solargraph all-in-one zip 번들을 받아 격리 디렉터리에 풀기만 합니다. " +
+                "사용자 환경에서 gem install 이나 MSYS2 toolchain 부트스트랩을 실행하지 않으므로 ASR/Defender 가 fork 차단해도 영향이 없습니다."
         else
             "PAGE 가 Ruby 런타임을 받아 풀고 그 안의 gem 으로 solargraph 를 설치합니다.",
     )
@@ -63,67 +64,8 @@ class RubyBootstrapInstaller(
         }
         try {
             val resolved = version ?: defaultRubyVersion
-            val url = downloadUrl(resolved)
-            val target = rubyRoot(resolved)
-            val ext = if (isWindows) ".exe" else ".tar.gz"
-            val tmp = Files.createTempFile("page-ruby-", ext)
-            try {
-                downloader(url, tmp) { read, total ->
-                    onProgress(LspInstaller.Progress.Downloading(read, total))
-                }
-                if (isWindows) {
-                    Files.createDirectories(target)
-                    requestDefenderExclusion(target, onProgress)
-                    installWindowsRuntime(tmp, target, onProgress)
-                } else {
-                    onProgress(LspInstaller.Progress.Extracting("Extracting Ruby runtime…"))
-                    tarGzExtractor(tmp, target, 2)
-                }
-            } finally {
-                runCatching { Files.deleteIfExists(tmp) }
-            }
-
-            val gemBin = gemBinary(resolved)
-            if (!Files.exists(gemBin)) throw IOException("Ruby 부트스트랩 후 gem 누락: $gemBin")
-            runCatching { gemBin.toFile().setExecutable(true, false) }
-            val rubyBin = rubyBinary(resolved)
-            runCatching { rubyBin.toFile().setExecutable(true, false) }
-
-            val gemHome = gemHomeFor(resolved)
-            Files.createDirectories(gemHome)
-
-            val env = buildInstallEnv(resolved, gemHome)
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] cwd       = ${System.getProperty("user.dir")}"))
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] user.home = ${System.getProperty("user.home")}"))
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] GEM_HOME  = ${env["GEM_HOME"]}"))
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] GEM_PATH  = ${env["GEM_PATH"]}"))
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] MSYSTEM   = ${env["MSYSTEM"]}"))
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] RI_DEVKIT = ${env["RI_DEVKIT"]}"))
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] PATH(head)= ${env["PATH"]?.take(300)}…"))
-
-            val rbsCmd = gemInvocation(gemBin, listOf("install", "--no-document", "--version", PRISM_FREE_RBS_VERSION, "rbs"))
-            onProgress(LspInstaller.Progress.CommandOutput("> gem install --no-document --version $PRISM_FREE_RBS_VERSION rbs (prism-free pin)"))
-            val rbsExit = processRunner.runStreaming(rbsCmd, env) { line ->
-                onProgress(LspInstaller.Progress.CommandOutput(line))
-            }
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] gem install rbs 종료 코드 = $rbsExit"))
-            if (rbsExit != 0) throw IOException("gem install rbs 종료 코드 $rbsExit")
-
-            val installCmd = gemInvocation(
-                gemBin,
-                listOf(
-                    "install", "--no-document", "--conservative",
-                    "--version", solargraphVersion,
-                    solargraphPackage,
-                ),
-            )
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] cmd args = ${installCmd.joinToString(" | ")}"))
-            onProgress(LspInstaller.Progress.CommandOutput("> gem install --no-document --conservative --version $solargraphVersion $solargraphPackage"))
-            val exit = processRunner.runStreaming(installCmd, env) { line ->
-                onProgress(LspInstaller.Progress.CommandOutput(line))
-            }
-            onProgress(LspInstaller.Progress.CommandOutput("[debug] gem install 종료 코드 = $exit"))
-            if (exit != 0) throw IOException("gem install solargraph 종료 코드 $exit")
+            if (isWindows) installFromPrebuiltBundle(resolved, onProgress)
+            else installFromMacBottle(resolved, onProgress)
 
             val solargraph = findInstalledSolargraph(resolved)
                 ?: throw IOException(
@@ -137,6 +79,168 @@ class RubyBootstrapInstaller(
         } catch (t: Throwable) {
             onProgress(LspInstaller.Progress.Failed(t))
         }
+    }
+
+    private fun installFromPrebuiltBundle(version: String, onProgress: (LspInstaller.Progress) -> Unit) {
+        val target = rubyRoot(version)
+        Files.createDirectories(target.parent)
+
+        val solargraph = solargraphBinary(version)
+        val ruby = rubyBinary(version)
+        if (Files.exists(solargraph) && Files.exists(ruby)) {
+            onProgress(LspInstaller.Progress.CommandOutput(
+                "[info] 기존 설치 발견 (solargraph.bat + ruby.exe) — 번들 다운로드 건너뜀: $target",
+            ))
+            return
+        }
+        if (Files.exists(target)) {
+            onProgress(LspInstaller.Progress.CommandOutput(
+                "[info] $target 에 부분 설치 잔해 (solargraph.bat=${Files.exists(solargraph)}, ruby.exe=${Files.exists(ruby)}) — 삭제 후 재추출",
+            ))
+            ArchiveExtractors.deleteRecursively(target)
+        }
+        Files.createDirectories(target)
+
+        detectThirdPartyAntivirus(target, onProgress)
+        requestDefenderExclusion(target, onProgress)
+
+        val bundle = obtainBundleZip(version, onProgress)
+        onProgress(LspInstaller.Progress.Extracting("Extracting Ruby + solargraph bundle to $target …"))
+        try {
+            zipExtractor(bundle.path, target, 0)
+        } finally {
+            if (bundle.deleteAfterExtraction) runCatching { Files.deleteIfExists(bundle.path) }
+        }
+
+        if (!Files.exists(solargraph)) {
+            throw IOException(
+                "번들 추출 후 solargraph.bat 누락: $solargraph — zip 구조가 예상과 다릅니다 " +
+                    "(zip 루트가 곧 <install_dir>, gemhome/bin/solargraph.bat 경로 필요).",
+            )
+        }
+        onProgress(LspInstaller.Progress.CommandOutput("[info] all-in-one bundle 추출 완료: $solargraph"))
+    }
+
+    private fun installFromMacBottle(version: String, onProgress: (LspInstaller.Progress) -> Unit) {
+        val url = downloadUrl(version)
+        val target = rubyRoot(version)
+        val tmp = Files.createTempFile("page-ruby-", ".tar.gz")
+        try {
+            downloader(url, tmp) { read, total ->
+                onProgress(LspInstaller.Progress.Downloading(read, total))
+            }
+            onProgress(LspInstaller.Progress.Extracting("Extracting Ruby runtime…"))
+            tarGzExtractor(tmp, target, 2)
+        } finally {
+            runCatching { Files.deleteIfExists(tmp) }
+        }
+
+        val gemBin = gemBinary(version)
+        if (!Files.exists(gemBin)) throw IOException("Ruby 부트스트랩 후 gem 누락: $gemBin")
+        runCatching { gemBin.toFile().setExecutable(true, false) }
+        val rubyBin = rubyBinary(version)
+        runCatching { rubyBin.toFile().setExecutable(true, false) }
+
+        val gemHome = gemHomeFor(version)
+        Files.createDirectories(gemHome)
+
+        val env = buildInstallEnv(version, gemHome)
+        onProgress(LspInstaller.Progress.CommandOutput("[debug] GEM_HOME  = ${env["GEM_HOME"]}"))
+        onProgress(LspInstaller.Progress.CommandOutput("[debug] PATH(head)= ${env["PATH"]?.take(300)}…"))
+
+        val rbsCmd = gemInvocation(gemBin, listOf("install", "--no-document", "--version", PRISM_FREE_RBS_VERSION, "rbs"))
+        onProgress(LspInstaller.Progress.CommandOutput("> gem install --no-document --version $PRISM_FREE_RBS_VERSION rbs (prism-free pin)"))
+        val rbsExit = processRunner.runStreaming(rbsCmd, env) { line ->
+            onProgress(LspInstaller.Progress.CommandOutput(line))
+        }
+        if (rbsExit != 0) throw IOException("gem install rbs 종료 코드 $rbsExit")
+
+        val installCmd = gemInvocation(
+            gemBin,
+            listOf(
+                "install", "--no-document", "--conservative",
+                "--version", solargraphVersion,
+                solargraphPackage,
+            ),
+        )
+        onProgress(LspInstaller.Progress.CommandOutput("> gem install --no-document --conservative --version $solargraphVersion $solargraphPackage"))
+        val exit = processRunner.runStreaming(installCmd, env) { line ->
+            onProgress(LspInstaller.Progress.CommandOutput(line))
+        }
+        if (exit != 0) throw IOException("gem install solargraph 종료 코드 $exit")
+    }
+
+    private data class BundleZip(val path: Path, val deleteAfterExtraction: Boolean)
+
+    private fun obtainBundleZip(version: String, onProgress: (LspInstaller.Progress) -> Unit): BundleZip {
+        val overrideRaw = bundleOverridePath()?.trim().orEmpty()
+        if (overrideRaw.isNotEmpty()) {
+            val overridePath = runCatching { Path.of(overrideRaw) }.getOrNull()
+            when {
+                overridePath == null -> onProgress(LspInstaller.Progress.CommandOutput(
+                    "[warning] PAGE_RUBY_BUNDLE_OVERRIDE 가 유효한 경로가 아닙니다 ('$overrideRaw') — 무시하고 일반 다운로드 사용",
+                ))
+                !Files.isRegularFile(overridePath) -> onProgress(LspInstaller.Progress.CommandOutput(
+                    "[warning] PAGE_RUBY_BUNDLE_OVERRIDE 가 가리키는 zip 이 존재하지 않습니다 ('$overridePath') — 무시하고 일반 다운로드 사용",
+                ))
+                else -> {
+                    onProgress(LspInstaller.Progress.CommandOutput(
+                        "[info] PAGE_RUBY_BUNDLE_OVERRIDE → $overridePath 사용 (다운로드 건너뜀)",
+                    ))
+                    return BundleZip(overridePath, deleteAfterExtraction = false)
+                }
+            }
+        }
+
+        val url = rubyBundleUrl(version)
+        onProgress(LspInstaller.Progress.Extracting("Downloading PAGE Ruby + solargraph bundle…"))
+        onProgress(LspInstaller.Progress.CommandOutput("> GET $url"))
+        val tmp = Files.createTempFile("page-ruby-bundle-", ".zip")
+        try {
+            downloader(url, tmp) { read, total ->
+                onProgress(LspInstaller.Progress.Downloading(read, total))
+            }
+            return BundleZip(tmp, deleteAfterExtraction = true)
+        } catch (t: Throwable) {
+            runCatching { Files.deleteIfExists(tmp) }
+            throw IOException(buildBundleDownloadDiagnostic(url, t), t)
+        }
+    }
+
+    private fun buildBundleDownloadDiagnostic(url: String, cause: Throwable): String =
+        "PAGE Ruby+solargraph 번들 다운로드 실패 ($url): ${cause.javaClass.simpleName}: ${cause.message}\n" +
+            "복구 절차:\n" +
+            "  1. 네트워크 / 사내 proxy 확인 후 PAGE 에서 install 재시도\n" +
+            "  2. 다른 PC 에서 위 URL 의 zip 을 받아 옮긴 뒤,\n" +
+            "     환경변수 PAGE_RUBY_BUNDLE_OVERRIDE 에 해당 zip 의 절대 경로를 설정하고 install 재시도\n" +
+            "  3. GitHub releases 에 '$rubyBundleRelease' asset 가 publish 됐는지 확인"
+
+    private fun detectThirdPartyAntivirus(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
+        val script = "Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct " +
+            "-ErrorAction SilentlyContinue | Select-Object -ExpandProperty displayName"
+        val cmd = listOf("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+        val output = try {
+            processRunner.captureOutput(cmd)
+        } catch (t: Throwable) {
+            onProgress(LspInstaller.Progress.CommandOutput(
+                "[info] AV 감지 PowerShell 호출 실패 (${t.javaClass.simpleName}) — 건너뜀",
+            ))
+            return
+        }
+        val products = output.lines().map(String::trim).filter(String::isNotEmpty)
+        val nonDefender = products.filter { !it.equals("Windows Defender", ignoreCase = true) }
+        if (nonDefender.isEmpty()) {
+            onProgress(LspInstaller.Progress.CommandOutput(
+                "[info] AV 감지: Defender 외 활성 AV 없음 — Defender 예외 등록만 진행",
+            ))
+            return
+        }
+        onProgress(LspInstaller.Progress.CommandOutput(
+            "[warning] Non-Defender AV 감지됨: ${nonDefender.joinToString(", ")}.\n" +
+                "  PAGE 의 Defender ExclusionPath 등록은 이 AV 에 적용되지 않습니다.\n" +
+                "  install 중 zip 추출 파일이 검역될 수 있습니다.\n" +
+                "  권장 — 해당 AV 에서 다음 경로를 예외 등록 후 install 재시도: $target",
+        ))
     }
 
     private fun requestDefenderExclusion(target: Path, onProgress: (LspInstaller.Progress) -> Unit): Boolean {
@@ -160,13 +264,19 @@ class RubyBootstrapInstaller(
             }
         } catch (t: Throwable) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[warning] UAC elevation failed to launch: ${t.javaClass.simpleName}: ${t.message}",
+                "[warning] UAC PowerShell 실행 실패 (${t.javaClass.simpleName}: ${t.message}).\n" +
+                    "  install 은 계속 진행하지만 Defender RTP 가 zip 추출 중 파일을 검역할 수 있습니다.\n" +
+                    "  수동 우회 — 관리자 PowerShell 에서 다음 명령 실행 후 install 재시도:\n" +
+                    "    Add-MpPreference -ExclusionPath '$target'",
             ))
             return false
         }
         if (exit != 0) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[warning] Defender exclusion request exited with code $exit (UAC denied or PowerShell launch failed). 설치는 계속 진행합니다.",
+                "[warning] Defender exclusion 요청 실패 (exit=$exit — UAC 거부 또는 GPO/엔터프라이즈 Defender 정책으로 차단).\n" +
+                    "  install 은 계속 진행하지만 Defender RTP 가 zip 추출 중 파일을 검역할 수 있습니다.\n" +
+                    "  수동 우회 — 관리자 PowerShell 에서 다음 명령 실행 후 install 재시도:\n" +
+                    "    Add-MpPreference -ExclusionPath '$target'",
             ))
             return false
         }
@@ -174,87 +284,15 @@ class RubyBootstrapInstaller(
         return true
     }
 
-    private fun installWindowsRuntime(installer: Path, target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
-        onProgress(LspInstaller.Progress.Extracting("Installing Ruby + DevKit (silent)…"))
-        Files.createDirectories(target.parent)
-        val cmd = listOf(
-            installer.toString(),
-            "/VERYSILENT",
-            "/CURRENTUSER",
-            "/SUPPRESSMSGBOXES",
-            "/NORESTART",
-            "/NOICONS",
-            "/DIR=${target}",
-            "/TASKS=!modpath,!assocfiles,defaultutf8",
-        )
-        onProgress(LspInstaller.Progress.CommandOutput("> ${installer.fileName} /VERYSILENT /DIR=$target"))
-        val exit = processRunner.runStreaming(cmd) { line ->
-            onProgress(LspInstaller.Progress.CommandOutput(line))
-        }
-        if (exit != 0) throw IOException("RubyInstaller silent install 종료 코드 $exit")
-        deployMsys2Toolchain(target, onProgress)
-    }
-
-    private fun deployMsys2Toolchain(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
-        val msys64Dir = target.resolve("msys64")
-        val ucrtBin = msys64Dir.resolve("ucrt64").resolve("bin")
-        val gcc = ucrtBin.resolve("gcc.exe")
-        val libexecGcc = msys64Dir.resolve("ucrt64").resolve("libexec").resolve("gcc")
-        val stdHeader = msys64Dir.resolve("ucrt64").resolve("include").resolve("stdio.h")
-        val ld = ucrtBin.resolve("ld.exe")
-        val toolchainComplete = Files.exists(gcc) &&
-            Files.exists(ld) &&
-            Files.isDirectory(libexecGcc) &&
-            Files.exists(stdHeader)
-        if (toolchainComplete) {
-            onProgress(LspInstaller.Progress.CommandOutput("[info] msys64/ucrt64 toolchain 검증 통과 (gcc+ld+libexec+stdio.h), 번들 다운로드 건너뜀"))
-            return
-        }
-        if (Files.exists(msys64Dir)) {
-            onProgress(LspInstaller.Progress.CommandOutput(
-                "[info] msys64 부분 설치 잔해 정리 중 (gcc.exe=${Files.exists(gcc)}, ld.exe=${Files.exists(ld)}, libexec/gcc=${Files.isDirectory(libexecGcc)}, stdio.h=${Files.exists(stdHeader)})…",
-            ))
-            ArchiveExtractors.deleteRecursively(msys64Dir)
-        }
-        val bundleUrl = msys2BundleUrl()
-        onProgress(LspInstaller.Progress.Extracting("Downloading PAGE prebuilt MSYS2 + MinGW UCRT64 bundle…"))
-        onProgress(LspInstaller.Progress.CommandOutput("> GET $bundleUrl"))
-        val tmp = Files.createTempFile("page-msys2-bundle-", ".zip")
-        try {
-            downloader(bundleUrl, tmp) { read, total ->
-                onProgress(LspInstaller.Progress.Downloading(read, total))
-            }
-            onProgress(LspInstaller.Progress.Extracting("Extracting MSYS2 + MinGW UCRT64 bundle to $msys64Dir …"))
-            zipExtractor(tmp, msys64Dir, 1)
-        } catch (t: Throwable) {
-            throw IOException(
-                "PAGE prebuilt MSYS2 번들 다운로드/추출 실패 ($bundleUrl): ${t.javaClass.simpleName}: ${t.message}\n" +
-                    "복구 절차: 네트워크 확인 후 PAGE 에서 install 재시도. 문제가 지속되면 GitHub releases 에서 ${msys2BundleRelease} asset 가 게시됐는지 확인하세요.",
-                t,
-            )
-        } finally {
-            runCatching { Files.deleteIfExists(tmp) }
-        }
-        if (!Files.exists(gcc)) {
-            throw IOException(
-                "MSYS2 번들 추출 후에도 gcc.exe 누락: $gcc — zip 구조가 예상과 다릅니다 (msys64/ucrt64/bin/gcc.exe 경로 필요).",
-            )
-        }
-        onProgress(LspInstaller.Progress.CommandOutput("[info] MSYS2 + MinGW UCRT64 toolchain 배포 완료: $gcc"))
-    }
-
-    internal fun msys2BundleUrl(): String =
-        "https://github.com/$msys2BundleRepo/releases/download/$msys2BundleRelease/msys2-mingw-ucrt64-x86_64.zip"
+    internal fun rubyBundleUrl(version: String): String =
+        "https://github.com/$rubyBundleRepo/releases/download/$rubyBundleRelease/page-ruby-solargraph-windows-x86_64-$version.zip"
 
     internal fun downloadUrl(version: String): String = when (osKey) {
-        "windows" -> {
-            val arch = if (archKey == "arm64") "arm" else "x64"
-            "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-$version-$rubyInstallerRelease/rubyinstaller-devkit-$version-$rubyInstallerRelease-$arch.exe"
-        }
         "macos" -> {
             val slug = if (archKey == "arm64") "arm64_big_sur" else macBottleSlug
             "https://github.com/Homebrew/homebrew-portable-ruby/releases/download/$version/portable-ruby-$version.$slug.bottle.tar.gz"
         }
+        "windows" -> rubyBundleUrl(version)
         else -> throw IOException("RubyBootstrapInstaller 는 Linux 를 지원하지 않습니다. (osKey=$osKey)")
     }
 
@@ -338,11 +376,10 @@ class RubyBootstrapInstaller(
 
     companion object {
         const val DEFAULT_RUBY_VERSION = "3.4.6"
-        const val DEFAULT_RUBYINSTALLER_RELEASE = "1"
         const val DEFAULT_MAC_BOTTLE_SLUG = "el_capitan"
         const val DEFAULT_SOLARGRAPH_VERSION = "0.55.4"
         const val PRISM_FREE_RBS_VERSION = "3.3.0"
-        const val DEFAULT_MSYS2_BUNDLE_RELEASE = "msys2-bundle-ucrt64-v1"
-        const val DEFAULT_MSYS2_BUNDLE_REPO = "monkshark/page-ide"
+        const val DEFAULT_RUBY_BUNDLE_RELEASE = "ruby-bundle-win-v1"
+        const val DEFAULT_RUBY_BUNDLE_REPO = "monkshark/page-ide"
     }
 }

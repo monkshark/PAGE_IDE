@@ -7,6 +7,7 @@ import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -37,10 +38,6 @@ class RubyBootstrapInstallerTest {
         }
     }
 
-    private fun writeFakeWindowsInstaller(target: Path) {
-        Files.writeString(target, "fake rubyinstaller-devkit.exe")
-    }
-
     private fun writeFakeMacTarGz(target: Path) {
         GZIPOutputStream(Files.newOutputStream(target)).use { gz ->
             TarArchiveOutputStream(gz).use { tar ->
@@ -63,19 +60,20 @@ class RubyBootstrapInstallerTest {
 
     private fun winInstaller(
         processRunner: ProcessRunner = neverCalledRunner(),
-        downloader: (String, Path, (Long, Long) -> Unit) -> Unit = { url, target, onProgress ->
-            if (url.endsWith(".zip")) {
-                Files.writeString(target, "fake msys2 bundle zip")
-            } else {
-                writeFakeWindowsInstaller(target)
-            }
+        downloader: (String, Path, (Long, Long) -> Unit) -> Unit = { _, target, onProgress ->
+            Files.writeString(target, "fake all-in-one bundle zip")
             onProgress(100, 100)
         },
         zipExtractor: (Path, Path, Int) -> Unit = { _, dst, _ ->
-            val ucrtBin = dst.resolve("ucrt64").resolve("bin")
-            Files.createDirectories(ucrtBin)
-            Files.writeString(ucrtBin.resolve("gcc.exe"), "fake gcc")
+            val rubyBin = dst.resolve("bin")
+            Files.createDirectories(rubyBin)
+            Files.writeString(rubyBin.resolve("ruby.exe"), "fake ruby")
+            Files.writeString(rubyBin.resolve("gem.cmd"), "@ruby gem")
+            val solBin = dst.resolve("gemhome").resolve("bin")
+            Files.createDirectories(solBin)
+            Files.writeString(solBin.resolve("solargraph.bat"), "@ruby solargraph shim")
         },
+        bundleOverride: () -> String? = { null },
     ): RubyBootstrapInstaller = RubyBootstrapInstaller(
         processRunner = processRunner,
         osKey = "windows",
@@ -83,6 +81,7 @@ class RubyBootstrapInstallerTest {
         isWindows = true,
         downloader = downloader,
         zipExtractor = zipExtractor,
+        bundleOverridePath = bundleOverride,
     )
 
     private fun macInstaller(
@@ -101,9 +100,26 @@ class RubyBootstrapInstallerTest {
     )
 
     private fun neverCalledRunner(): ProcessRunner = object : ProcessRunner {
-        override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int = fail("processRunner should not be called (no-env overload)")
-        override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int = fail("processRunner should not be called (env overload)")
-        override fun captureOutput(command: List<String>): String = fail("captureOutput should not be called")
+        override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int =
+            fail("processRunner.runStreaming should not be called (no-env overload): $command")
+        override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int =
+            fail("processRunner.runStreaming should not be called (env overload): $command")
+        override fun captureOutput(command: List<String>): String =
+            fail("captureOutput should not be called: $command")
+    }
+
+    private fun winNoOpRunner(
+        avProducts: List<String> = emptyList(),
+        uacExit: Int = 0,
+    ): ProcessRunner = object : ProcessRunner {
+        override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int =
+            if (isUacCommand(command)) uacExit
+            else fail("unexpected no-env command: $command")
+        override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int =
+            fail("env overload must not be invoked on Windows all-in-one path: $command")
+        override fun captureOutput(command: List<String>): String =
+            if (isAvDetectCommand(command)) avProducts.joinToString("\n")
+            else fail("unexpected captureOutput: $command")
     }
 
     private fun isUacCommand(command: List<String>): Boolean =
@@ -111,6 +127,11 @@ class RubyBootstrapInstallerTest {
             command.joinToString(" ").let { joined ->
                 joined.contains("Start-Process") && joined.contains("-Verb RunAs")
             }
+
+    private fun isAvDetectCommand(command: List<String>): Boolean =
+        command.firstOrNull()?.equals("powershell.exe", ignoreCase = true) == true &&
+            command.joinToString(" ").contains("Win32_AntiVirusProduct".lowercase(), ignoreCase = true) ||
+            command.joinToString(" ").contains("AntiVirusProduct")
 
     @Test
     fun heavyInstallNonNull() {
@@ -120,6 +141,10 @@ class RubyBootstrapInstallerTest {
         assertTrue(heavy.sizeEstimate.isNotBlank())
         assertTrue(heavy.durationEstimate.isNotBlank())
         assertTrue(heavy.notes.isNotBlank())
+        assertTrue(
+            heavy.notes.contains("all-in-one") || heavy.notes.contains("번들"),
+            "Windows notes must mention prebuilt bundle: ${heavy.notes}",
+        )
     }
 
     @Test
@@ -129,20 +154,13 @@ class RubyBootstrapInstallerTest {
     }
 
     @Test
-    fun downloadUrlForWindowsX64() {
+    fun rubyBundleUrlForWindows() {
         val installer = RubyBootstrapInstaller(osKey = "windows", archKey = "amd64", isWindows = true)
-        assertEquals(
-            "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-3.4.6-1/rubyinstaller-devkit-3.4.6-1-x64.exe",
-            installer.downloadUrl("3.4.6"),
-        )
-    }
-
-    @Test
-    fun downloadUrlForWindowsArm() {
-        val installer = RubyBootstrapInstaller(osKey = "windows", archKey = "arm64", isWindows = true)
-        val url = installer.downloadUrl("3.4.6")
-        assertTrue(url.endsWith("-arm.exe"), "Windows ARM uses '-arm.exe' suffix (InnoSetup installer): $url")
-        assertTrue(url.contains("rubyinstaller-devkit-"), "Windows uses devkit-included installer, got: $url")
+        val url = installer.rubyBundleUrl("3.4.6")
+        assertTrue(url.startsWith("https://github.com/"), "bundle URL must be a GitHub releases URL: $url")
+        assertTrue(url.endsWith("-3.4.6.zip"), "bundle URL must include version suffix .zip: $url")
+        assertTrue(url.contains("page-ruby-solargraph-windows-x86_64"), "bundle URL must match published asset name: $url")
+        assertTrue(url.contains(RubyBootstrapInstaller.DEFAULT_RUBY_BUNDLE_RELEASE), "bundle URL must reference release tag: $url")
     }
 
     @Test
@@ -177,47 +195,41 @@ class RubyBootstrapInstallerTest {
     }
 
     @Test
-    fun installEndToEndOnWindowsWritesSolargraphAndPointer() {
+    fun installEndToEndOnWindowsDownloadsBundleAndExtractsSolargraph() {
         useTempHome()
         val noEnvCommands = mutableListOf<List<String>>()
-        val gemCommands = mutableListOf<List<String>>()
-        val gemEnvs = mutableListOf<Map<String, String>>()
+        val capturedCommands = mutableListOf<List<String>>()
+        val downloadedUrls = mutableListOf<String>()
+        val extractedTo = mutableListOf<Path>()
+
         val installer = winInstaller(
             processRunner = object : ProcessRunner {
                 override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int {
                     noEnvCommands += command
-                    val joined = command.joinToString(" ")
-                    return when {
-                        isUacCommand(command) -> {
-                            onLine("added")
-                            onLine("uac-ok")
-                            0
-                        }
-                        command.first().endsWith(".exe") && command.contains("/VERYSILENT") -> {
-                            val dirArg = command.first { it.startsWith("/DIR=") }
-                            val target = Path.of(dirArg.removePrefix("/DIR="))
-                            val bin = target.resolve("bin")
-                            Files.createDirectories(bin)
-                            Files.writeString(bin.resolve("ruby.exe"), "fake ruby")
-                            Files.writeString(bin.resolve("gem.cmd"), "@ruby gem")
-                            onLine("Installing Ruby 3.3.7 (silent)")
-                            0
-                        }
-                        else -> fail("unexpected no-env command: $command")
-                    }
+                    return if (isUacCommand(command)) { onLine("added"); 0 }
+                    else fail("unexpected no-env command: $command")
                 }
-                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int {
-                    gemCommands += command
-                    gemEnvs += env
-                    onLine("Fetching solargraph-0.55.4.gem")
-                    onLine("Successfully installed solargraph-0.55.4")
-                    val gemHome = Path.of(env["GEM_HOME"]!!)
-                    val solargraph = gemHome.resolve("bin").resolve("solargraph.bat")
-                    solargraph.parent.createDirectories()
-                    Files.writeString(solargraph, "@ruby solargraph shim")
-                    return 0
+                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int =
+                    fail("env overload must not be invoked on Windows all-in-one path: $command")
+                override fun captureOutput(command: List<String>): String {
+                    capturedCommands += command
+                    return if (isAvDetectCommand(command)) "" else fail("unexpected captureOutput: $command")
                 }
-                override fun captureOutput(command: List<String>): String = ""
+            },
+            downloader = { url, target, onProgress ->
+                downloadedUrls += url
+                Files.writeString(target, "fake all-in-one bundle zip")
+                onProgress(100, 100)
+            },
+            zipExtractor = { _, dst, _ ->
+                extractedTo.add(dst)
+                val rubyBin = dst.resolve("bin")
+                Files.createDirectories(rubyBin)
+                Files.writeString(rubyBin.resolve("ruby.exe"), "fake ruby")
+                Files.writeString(rubyBin.resolve("gem.cmd"), "@ruby gem")
+                val solBin = dst.resolve("gemhome").resolve("bin")
+                Files.createDirectories(solBin)
+                Files.writeString(solBin.resolve("solargraph.bat"), "@ruby solargraph shim")
             },
         )
 
@@ -225,189 +237,234 @@ class RubyBootstrapInstallerTest {
         installer.install("3.3.7") { lastEvent = it }
 
         assertTrue(lastEvent is LspInstaller.Progress.Done, "expected Done, got $lastEvent")
-        val installedExe = installer.executable()
-        assertNotNull(installedExe)
+        assertNotNull(installer.executable())
         assertTrue(installer.isInstalled())
         assertEquals("3.3.7", installer.installedVersion())
 
         assertEquals(
-            2,
-            noEnvCommands.size,
-            "expected UAC Defender exclusion + silent install (2 no-env invocations — MSYS2 bundle is downloaded+unzipped, not invoked as a process): $noEnvCommands",
+            1, noEnvCommands.size,
+            "expected exactly one no-env invocation (UAC Defender exclusion only — no silent install, no ridk, no gem install): $noEnvCommands",
         )
         val uac = noEnvCommands[0]
-        assertEquals("powershell.exe", uac[0], "elevation must invoke powershell.exe directly so Start-Process -Verb RunAs can request UAC: $uac")
+        assertEquals("powershell.exe", uac[0])
         val uacJoined = uac.joinToString(" ")
-        assertTrue(uacJoined.contains("Start-Process"), "elevation must use Start-Process: $uac")
-        assertTrue(uacJoined.contains("-Verb RunAs"), "elevation must request UAC via -Verb RunAs: $uac")
-        assertTrue(uacJoined.contains("Add-MpPreference"), "inner ArgumentList must call Add-MpPreference: $uac")
-        assertTrue(uacJoined.contains("ExclusionPath"), "inner ArgumentList must reference ExclusionPath: $uac")
-        assertTrue(
-            uacJoined.contains(installer.rubyRoot("3.3.7").toString()),
-            "elevation script must embed the target install path literal: $uac",
-        )
+        assertTrue(uacJoined.contains("Start-Process"))
+        assertTrue(uacJoined.contains("-Verb RunAs"))
+        assertTrue(uacJoined.contains("Add-MpPreference"))
+        assertTrue(uacJoined.contains(installer.rubyRoot("3.3.7").toString()))
 
-        val silent = noEnvCommands[1]
-        assertTrue(silent.first().endsWith(".exe"), "second no-env call must be the .exe silent install: $silent")
-        assertTrue(silent.contains("/VERYSILENT"), "silent install must pass /VERYSILENT: $silent")
-        assertTrue(silent.contains("/CURRENTUSER"), "silent install must pass /CURRENTUSER: $silent")
-        assertTrue(
-            silent.any { it.startsWith("/DIR=") && it.endsWith(installer.rubyRoot("3.3.7").toString()) },
-            "silent install must target rubyRoot via /DIR=: $silent",
-        )
+        assertEquals(1, capturedCommands.size, "expected AV detection captureOutput call: $capturedCommands")
+        assertTrue(isAvDetectCommand(capturedCommands[0]), "captureOutput must be the AV detection query: ${capturedCommands[0]}")
 
-        val msys2BundleUrl = installer.msys2BundleUrl()
-        assertTrue(
-            msys2BundleUrl.startsWith("https://github.com/"),
-            "msys2 bundle must be served from a GitHub releases URL so it bypasses the local AV/ASR path: $msys2BundleUrl",
-        )
-        assertTrue(
-            msys2BundleUrl.endsWith(".zip"),
-            "msys2 bundle must be a zip the bootstrap can extract without invoking bash.exe: $msys2BundleUrl",
-        )
-        val msys64Gcc = installer.rubyRoot("3.3.7")
-            .resolve("msys64").resolve("ucrt64").resolve("bin").resolve("gcc.exe")
-        assertTrue(
-            Files.exists(msys64Gcc),
-            "zipExtractor must materialise gcc.exe at <rubyRoot>/msys64/ucrt64/bin/gcc.exe (flatten=1 layout): $msys64Gcc",
-        )
+        assertEquals(1, downloadedUrls.size, "expected exactly one bundle download: $downloadedUrls")
+        val bundleUrl = installer.rubyBundleUrl("3.3.7")
+        assertEquals(bundleUrl, downloadedUrls[0])
+        assertTrue(bundleUrl.contains("page-ruby-solargraph-windows-x86_64-3.3.7.zip"))
 
-        assertEquals(2, gemCommands.size, "expected 2 gem invocations (rbs prism-free pin + solargraph): $gemCommands")
+        assertEquals(1, extractedTo.size)
+        assertEquals(installer.rubyRoot("3.3.7"), extractedTo[0], "zip must extract to rubyRoot (zip root == install_dir)")
 
-        val rbsCmd = gemCommands[0]
-        assertEquals("rbs", rbsCmd.last(), "first gem invocation must be the prism-free rbs pin: $rbsCmd")
-        val rbsVersionIdx = rbsCmd.indexOf("--version")
-        assertTrue(rbsVersionIdx >= 0, "rbs pin must specify --version: $rbsCmd")
-        assertEquals(
-            RubyBootstrapInstaller.PRISM_FREE_RBS_VERSION,
-            rbsCmd[rbsVersionIdx + 1],
-            "rbs pin must equal PRISM_FREE_RBS_VERSION so transitive prism native ext is avoided",
-        )
-
-        val gemCmd = gemCommands[1]
-        assertTrue(gemCmd.contains("install"))
-        assertTrue(gemCmd.contains("--no-document"))
-        assertTrue(gemCmd.contains("--conservative"), "solargraph install must be --conservative so the pinned rbs is kept: $gemCmd")
-        assertTrue(gemCmd.contains("solargraph"))
-        assertEquals("solargraph", gemCmd.last())
-        val versionIdx = gemCmd.indexOf("--version")
-        assertTrue(versionIdx >= 0, "must pin solargraph version to avoid prism native ext on Windows: $gemCmd")
-        assertEquals(
-            RubyBootstrapInstaller.DEFAULT_SOLARGRAPH_VERSION,
-            gemCmd[versionIdx + 1],
-            "pinned solargraph version must equal DEFAULT_SOLARGRAPH_VERSION (0.55.x = last prism-free release)",
-        )
-        assertEquals("cmd.exe", gemCmd[0], "Windows install must go through cmd.exe so the .cmd shim parses correctly: $gemCmd")
-        assertEquals("/c", gemCmd[1])
-        assertTrue(
-            gemCmd[2].endsWith("gem.cmd"),
-            "Windows must invoke gem.cmd directly so our env (MSYSTEM/MINGW_PREFIX/RI_DEVKIT/PATH) drives MSYS2 — ridk's shift logic breaks 'exec gem' chaining: $gemCmd",
-        )
-        assertEquals("install", gemCmd[3])
-
-        val env = gemEnvs.last()
-        assertNotNull(env["GEM_HOME"])
-        assertNotNull(env["GEM_PATH"])
-        assertNotNull(env["PATH"])
-        val rubyRoot = installer.rubyRoot("3.3.7")
-        val msys2Ucrt = rubyRoot.resolve("msys64").resolve("ucrt64").resolve("bin").toString()
-        assertTrue(env["PATH"]!!.contains(rubyRoot.resolve("bin").toString()))
-        assertTrue(
-            env["PATH"]!!.contains(msys2Ucrt),
-            "PATH must include MSYS2 ucrt64/bin so mkmf gcc resolves: ${env["PATH"]}",
-        )
-        assertTrue(
-            env["PATH"]!!.indexOf(msys2Ucrt) < env["PATH"]!!.indexOf(rubyRoot.resolve("bin").toString()),
-            "MSYS2 ucrt64/bin must come BEFORE ruby/bin so mkmf PATH revert keeps gcc reachable",
-        )
-        assertEquals("UCRT64", env["MSYSTEM"], "Ruby RbConfig needs MSYSTEM=UCRT64 to resolve mingw toolchain")
-        assertEquals("/ucrt64", env["MINGW_PREFIX"])
-        assertEquals("x86_64", env["MSYSTEM_CARCH"])
-        assertEquals(rubyRoot.resolve("msys64").toString(), env["RI_DEVKIT"])
+        val solargraphBat = installer.solargraphBinary("3.3.7")
+        assertTrue(Files.exists(solargraphBat), "solargraph.bat must materialise at $solargraphBat")
     }
 
     @Test
-    fun installFailsOnWindowsWhenSilentInstallExitsNonZero() {
+    fun installSkipsDownloadWhenBundleAlreadyPresent() {
         useTempHome()
+        val target = Path.of(System.getProperty("user.home"))
+            .resolve(".page-ide").resolve("lsp").resolve("ruby-bootstrap").resolve("3.3.7")
+        Files.createDirectories(target.resolve("bin"))
+        Files.writeString(target.resolve("bin").resolve("ruby.exe"), "fake ruby")
+        Files.createDirectories(target.resolve("gemhome").resolve("bin"))
+        Files.writeString(target.resolve("gemhome").resolve("bin").resolve("solargraph.bat"), "fake solargraph")
+
+        val downloadCalls = mutableListOf<String>()
         val installer = winInstaller(
-            processRunner = object : ProcessRunner {
-                override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int {
-                    if (isUacCommand(command)) return 0
-                    return 5
-                }
-                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int = fail("env overload must not be reached when silent install fails")
-                override fun captureOutput(command: List<String>): String = ""
-            },
+            processRunner = neverCalledRunner(),
+            downloader = { url, _, _ -> downloadCalls += url; fail("download must not be invoked when bundle already present") },
+            zipExtractor = { _, _, _ -> fail("zipExtractor must not be invoked when bundle already present") },
         )
-        var failed: Throwable? = null
-        installer.install("3.3.7") { p -> if (p is LspInstaller.Progress.Failed) failed = p.error }
-        assertNotNull(failed)
-        assertTrue(failed!!.message!!.contains("silent install"))
+
+        var lastEvent: LspInstaller.Progress? = null
+        installer.install("3.3.7") { lastEvent = it }
+
+        assertTrue(lastEvent is LspInstaller.Progress.Done, "expected Done, got $lastEvent")
+        assertTrue(downloadCalls.isEmpty(), "no download should have been attempted: $downloadCalls")
+        assertEquals("3.3.7", installer.installedVersion())
     }
 
     @Test
-    fun installFailsWhenMsys2BundleZipDoesNotProduceGcc() {
+    fun installCleansPartialInstallBeforeReextraction() {
         useTempHome()
+        val target = Path.of(System.getProperty("user.home"))
+            .resolve(".page-ide").resolve("lsp").resolve("ruby-bootstrap").resolve("3.3.7")
+        Files.createDirectories(target.resolve("bin"))
+        Files.writeString(target.resolve("bin").resolve("ruby.exe"), "old fake ruby")
+        Files.createDirectories(target.resolve("stale-leftover"))
+        Files.writeString(target.resolve("stale-leftover").resolve("stale.txt"), "stale")
+
+        val extractedCalls = mutableListOf<Path>()
         val installer = winInstaller(
-            processRunner = object : ProcessRunner {
-                override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int {
-                    if (isUacCommand(command)) return 0
-                    if (command.first().endsWith(".exe") && command.contains("/VERYSILENT")) {
-                        val target = Path.of(command.first { it.startsWith("/DIR=") }.removePrefix("/DIR="))
-                        val bin = target.resolve("bin")
-                        Files.createDirectories(bin)
-                        Files.writeString(bin.resolve("ruby.exe"), "fake ruby")
-                        Files.writeString(bin.resolve("gem.cmd"), "@ruby gem")
-                        return 0
-                    }
-                    return fail("unexpected no-env command: $command")
-                }
-                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int = fail("env overload must not be reached when gcc verification fails")
-                override fun captureOutput(command: List<String>): String = ""
+            processRunner = winNoOpRunner(),
+            zipExtractor = { _, dst, _ ->
+                extractedCalls.add(dst)
+                assertFalse(
+                    Files.exists(dst.resolve("stale-leftover")),
+                    "stale-leftover must have been deleted before re-extraction",
+                )
+                val rubyBin = dst.resolve("bin")
+                Files.createDirectories(rubyBin)
+                Files.writeString(rubyBin.resolve("ruby.exe"), "fresh ruby")
+                val solBin = dst.resolve("gemhome").resolve("bin")
+                Files.createDirectories(solBin)
+                Files.writeString(solBin.resolve("solargraph.bat"), "fresh solargraph")
             },
-            zipExtractor = { _, _, _ -> /* zip exists but extracted layout is wrong — gcc.exe never appears */ },
         )
-        var failed: Throwable? = null
-        installer.install("3.3.7") { p -> if (p is LspInstaller.Progress.Failed) failed = p.error }
-        assertNotNull(failed)
-        assertTrue(failed!!.message!!.contains("gcc"), "expected gcc-missing diagnostic: ${failed!!.message}")
+
+        var lastEvent: LspInstaller.Progress? = null
+        installer.install("3.3.7") { lastEvent = it }
+
+        assertTrue(lastEvent is LspInstaller.Progress.Done, "expected Done, got $lastEvent")
+        assertEquals(1, extractedCalls.size, "must extract exactly once after cleanup: $extractedCalls")
     }
 
     @Test
-    fun installFailsWhenMsys2BundleDownloadThrows() {
+    fun installContinuesWhenUacDenied() {
         useTempHome()
+        val outputs = mutableListOf<String>()
         val installer = winInstaller(
             processRunner = object : ProcessRunner {
                 override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int {
-                    if (isUacCommand(command)) return 0
-                    if (command.first().endsWith(".exe") && command.contains("/VERYSILENT")) {
-                        val target = Path.of(command.first { it.startsWith("/DIR=") }.removePrefix("/DIR="))
-                        val bin = target.resolve("bin")
-                        Files.createDirectories(bin)
-                        Files.writeString(bin.resolve("ruby.exe"), "fake ruby")
-                        Files.writeString(bin.resolve("gem.cmd"), "@ruby gem")
-                        return 0
-                    }
-                    return fail("unexpected no-env command: $command")
+                    return if (isUacCommand(command)) { onLine("user denied"); 1223 }
+                    else fail("unexpected no-env command: $command")
                 }
-                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int = fail("env overload must not be reached when bundle download fails")
-                override fun captureOutput(command: List<String>): String = ""
+                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int =
+                    fail("env overload must not be invoked: $command")
+                override fun captureOutput(command: List<String>): String =
+                    if (isAvDetectCommand(command)) "" else fail("unexpected captureOutput: $command")
             },
+        )
+        var done: LspInstaller.Progress.Done? = null
+        installer.install("3.3.7") { p ->
+            if (p is LspInstaller.Progress.CommandOutput) outputs += p.line
+            if (p is LspInstaller.Progress.Done) done = p
+        }
+        assertNotNull(done, "install must complete even when UAC is denied")
+        val joined = outputs.joinToString("\n")
+        assertTrue(
+            joined.contains("[warning]") && joined.contains("Add-MpPreference -ExclusionPath"),
+            "UAC denial must surface a manual Add-MpPreference guide: $joined",
+        )
+    }
+
+    @Test
+    fun installEmitsAvWarningWhenNonDefenderAvDetected() {
+        useTempHome()
+        val outputs = mutableListOf<String>()
+        val installer = winInstaller(
+            processRunner = object : ProcessRunner {
+                override fun runStreaming(command: List<String>, onLine: (String) -> Unit): Int =
+                    if (isUacCommand(command)) 0 else fail("unexpected no-env: $command")
+                override fun runStreaming(command: List<String>, env: Map<String, String>, onLine: (String) -> Unit): Int =
+                    fail("env overload must not be invoked: $command")
+                override fun captureOutput(command: List<String>): String =
+                    if (isAvDetectCommand(command)) "Windows Defender\nNorton Security\n" else fail("unexpected captureOutput: $command")
+            },
+        )
+        installer.install("3.3.7") { p -> if (p is LspInstaller.Progress.CommandOutput) outputs += p.line }
+        val joined = outputs.joinToString("\n")
+        assertTrue(joined.contains("[warning]"), "expected [warning] for non-Defender AV: $joined")
+        assertTrue(joined.contains("Norton Security"), "must list detected non-Defender AV: $joined")
+    }
+
+    @Test
+    fun installUsesEnvOverrideZipInsteadOfDownloading() {
+        useTempHome()
+        val overrideZip = Files.createTempFile("page-ruby-bundle-override-", ".zip")
+        Files.writeString(overrideZip, "fake override zip content")
+        try {
+            val downloadCalls = mutableListOf<String>()
+            val extractedFrom = mutableListOf<Path>()
+            val installer = winInstaller(
+                processRunner = winNoOpRunner(),
+                downloader = { url, _, _ -> downloadCalls += url; fail("downloader must not be invoked when override is set") },
+                zipExtractor = { src, dst, _ ->
+                    extractedFrom.add(src)
+                    val rubyBin = dst.resolve("bin")
+                    Files.createDirectories(rubyBin)
+                    Files.writeString(rubyBin.resolve("ruby.exe"), "fake")
+                    val solBin = dst.resolve("gemhome").resolve("bin")
+                    Files.createDirectories(solBin)
+                    Files.writeString(solBin.resolve("solargraph.bat"), "fake")
+                },
+                bundleOverride = { overrideZip.toString() },
+            )
+            var lastEvent: LspInstaller.Progress? = null
+            installer.install("3.3.7") { lastEvent = it }
+            assertTrue(lastEvent is LspInstaller.Progress.Done)
+            assertTrue(downloadCalls.isEmpty(), "downloader must be skipped: $downloadCalls")
+            assertEquals(1, extractedFrom.size)
+            assertEquals(overrideZip, extractedFrom[0], "extraction must use the override zip path")
+            assertTrue(Files.exists(overrideZip), "override zip must not be deleted after extraction")
+        } finally {
+            runCatching { Files.deleteIfExists(overrideZip) }
+        }
+    }
+
+    @Test
+    fun installFallsBackToDownloadWhenOverridePathDoesNotExist() {
+        useTempHome()
+        val downloadCalls = mutableListOf<String>()
+        val outputs = mutableListOf<String>()
+        val installer = winInstaller(
+            processRunner = winNoOpRunner(),
             downloader = { url, target, onProgress ->
-                if (url.endsWith(".zip")) {
-                    throw java.io.IOException("simulated network failure")
-                } else {
-                    writeFakeWindowsInstaller(target)
-                    onProgress(100, 100)
-                }
+                downloadCalls += url
+                Files.writeString(target, "fake")
+                onProgress(1, 1)
             },
+            bundleOverride = { "C:\\does\\not\\exist\\page-bundle.zip" },
+        )
+        var done: LspInstaller.Progress.Done? = null
+        installer.install("3.3.7") { p ->
+            if (p is LspInstaller.Progress.CommandOutput) outputs += p.line
+            if (p is LspInstaller.Progress.Done) done = p
+        }
+        assertNotNull(done, "install must complete via fallback download path")
+        assertEquals(1, downloadCalls.size, "downloader must be invoked when override is invalid")
+        assertTrue(outputs.any { it.contains("PAGE_RUBY_BUNDLE_OVERRIDE") && it.contains("[warning]") })
+    }
+
+    @Test
+    fun installFailsWhenBundleZipDoesNotProduceSolargraph() {
+        useTempHome()
+        val installer = winInstaller(
+            processRunner = winNoOpRunner(),
+            zipExtractor = { _, _, _ -> /* extract no-op — solargraph.bat never appears */ },
+        )
+        var failed: Throwable? = null
+        installer.install("3.3.7") { p -> if (p is LspInstaller.Progress.Failed) failed = p.error }
+        assertNotNull(failed)
+        assertTrue(
+            failed!!.message!!.contains("solargraph.bat"),
+            "diagnostic must mention solargraph.bat: ${failed!!.message}",
+        )
+    }
+
+    @Test
+    fun installFailsWhenBundleDownloadThrows() {
+        useTempHome()
+        val installer = winInstaller(
+            processRunner = winNoOpRunner(),
+            downloader = { _, _, _ -> throw java.io.IOException("simulated network failure") },
         )
         var failed: Throwable? = null
         installer.install("3.3.7") { p -> if (p is LspInstaller.Progress.Failed) failed = p.error }
         assertNotNull(failed)
         val msg = failed!!.message!!
-        assertTrue(msg.contains("MSYS2"), "diagnostic must mention MSYS2 bundle: $msg")
-        assertTrue(msg.contains(installer.msys2BundleUrl()), "diagnostic must echo the bundle URL: $msg")
+        assertTrue(msg.contains("bundle") || msg.contains("번들"), "diagnostic must mention bundle: $msg")
+        assertTrue(msg.contains(installer.rubyBundleUrl("3.3.7")), "diagnostic must echo the bundle URL: $msg")
+        assertTrue(msg.contains("PAGE_RUBY_BUNDLE_OVERRIDE"), "diagnostic must mention env override recovery path: $msg")
     }
 
     @Test
@@ -443,7 +500,7 @@ class RubyBootstrapInstallerTest {
     }
 
     @Test
-    fun installFailsWhenSolargraphBinaryMissingAfterRun() {
+    fun installFailsWhenSolargraphBinaryMissingAfterRunMacos() {
         useTempHome()
         val runner = object : ProcessRunner {
             override fun runStreaming(c: List<String>, onLine: (String) -> Unit): Int = fail("env-aware overload expected")
@@ -459,7 +516,7 @@ class RubyBootstrapInstallerTest {
     }
 
     @Test
-    fun installFailsWhenGemExitNonZero() {
+    fun installFailsWhenGemExitNonZeroMacos() {
         useTempHome()
         val runner = object : ProcessRunner {
             override fun runStreaming(c: List<String>, onLine: (String) -> Unit): Int = fail("env-aware overload expected")
