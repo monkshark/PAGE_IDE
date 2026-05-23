@@ -7,6 +7,7 @@ import java.nio.file.StandardCopyOption
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.tukaani.xz.XZInputStream
 
 object ArchiveExtractors {
 
@@ -46,6 +47,32 @@ object ArchiveExtractors {
         try {
             GZIPInputStream(Files.newInputStream(tarGz)).use { gz ->
                 TarReader(gz).forEach { entry, stream ->
+                    val segments = entry.name.split('/', '\\').filter { it.isNotEmpty() }
+                    val flattened = segments.drop(flatten)
+                    if (flattened.isEmpty()) return@forEach
+                    val outPath = flattened.fold(staging) { acc, s -> acc.resolve(s) }
+                    enforceInside(outPath, staging, entry.name)
+                    if (entry.isDirectory) {
+                        Files.createDirectories(outPath)
+                    } else {
+                        Files.createDirectories(outPath.parent)
+                        Files.newOutputStream(outPath).use { out -> stream.copyTo(out) }
+                        if (entry.executable) runCatching { outPath.toFile().setExecutable(true, false) }
+                    }
+                }
+            }
+            commitStaging(staging, target)
+        } catch (t: Throwable) {
+            runCatching { deleteRecursively(staging) }
+            throw t
+        }
+    }
+
+    fun extractTarXz(tarXz: Path, target: Path, flatten: Int = 0) {
+        val staging = stagingFor(target)
+        try {
+            XZInputStream(Files.newInputStream(tarXz)).use { xz ->
+                TarReader(xz).forEach { entry, stream ->
                     val segments = entry.name.split('/', '\\').filter { it.isNotEmpty() }
                     val flattened = segments.drop(flatten)
                     if (flattened.isEmpty()) return@forEach

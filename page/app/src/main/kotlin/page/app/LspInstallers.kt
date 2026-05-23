@@ -35,6 +35,7 @@ object LspInstallers {
         "go" to ::goInstaller,
         "scala" to ::scalaInstaller,
         "dart" to ::dartInstaller,
+        "flutter" to ::flutterInstaller,
         "swift" to ::swiftInstaller,
     )
 
@@ -416,6 +417,8 @@ object LspInstallers {
     private fun scalaInstaller(): LspInstaller = MetalsInstaller()
 
     private fun dartInstaller(): LspInstaller = DartSdkInstaller()
+
+    private fun flutterInstaller(): LspInstaller = FlutterSdkInstaller()
 
     private fun swiftInstaller(): LspInstaller = ToolchainDetectInstaller(
         languageId = "swift",

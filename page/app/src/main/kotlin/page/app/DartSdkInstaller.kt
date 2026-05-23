@@ -127,19 +127,62 @@ class DartSdkInstaller(
         const val LATEST_VERSION_URL: String =
             "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION"
 
+        const val STABLE_LISTING_URL: String =
+            "https://www.googleapis.com/storage/v1/b/dart-archive/o?prefix=channels/stable/release/&delimiter=/&fields=prefixes,nextPageToken"
+
         private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+        private val VERSION_REGEX = Regex("""^\d+\.\d+\.\d+(?:[-+][\w.]+)?$""")
 
         private data class DartVersionDoc(val version: String? = null)
+        private data class GcsListingDoc(val prefixes: List<String>? = null, val nextPageToken: String? = null)
 
         fun fetchLatestVersion(url: String = LATEST_VERSION_URL): String? = runCatching {
             parseLatestVersion(fetchBody(url))
         }.getOrNull()
 
-        fun fetchVersions(): List<String> = fetchLatestVersion()?.let { listOf(it) } ?: emptyList()
+        fun fetchVersions(baseUrl: String = STABLE_LISTING_URL, maxPages: Int = 4): List<String> = runCatching {
+            val collected = mutableListOf<String>()
+            var pageUrl: String? = baseUrl
+            var page = 0
+            while (pageUrl != null && page < maxPages) {
+                val body = fetchBody(pageUrl)
+                val doc = gson.fromJson(body, GcsListingDoc::class.java) ?: break
+                collected += extractVersionsFromPrefixes(doc.prefixes ?: emptyList())
+                val token = doc.nextPageToken?.takeIf { it.isNotBlank() } ?: break
+                pageUrl = baseUrl + "&pageToken=" + java.net.URLEncoder.encode(token, Charsets.UTF_8)
+                page++
+            }
+            collected.distinct().sortedWith(VERSION_DESC)
+        }.getOrDefault(emptyList())
+
+        internal fun extractVersionsFromPrefixes(prefixes: List<String>): List<String> {
+            val out = mutableListOf<String>()
+            for (p in prefixes) {
+                val trimmed = p.trim().trimEnd('/')
+                val token = trimmed.substringAfterLast('/')
+                if (token.isBlank() || token == "latest" || token == "be") continue
+                if (!VERSION_REGEX.matches(token)) continue
+                if (token.contains('-')) continue
+                out += token
+            }
+            return out
+        }
 
         internal fun parseLatestVersion(body: String): String? {
             val doc = gson.fromJson(body, DartVersionDoc::class.java) ?: return null
             return doc.version?.takeIf { it.isNotBlank() }
+        }
+
+        internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
+            val aParts = a.split('.', '-', '+')
+            val bParts = b.split('.', '-', '+')
+            val n = maxOf(aParts.size, bParts.size)
+            for (i in 0 until n) {
+                val ai = aParts.getOrNull(i)?.toIntOrNull() ?: 0
+                val bi = bParts.getOrNull(i)?.toIntOrNull() ?: 0
+                if (ai != bi) return@Comparator bi - ai
+            }
+            0
         }
 
         private fun fetchBody(url: String): String {

@@ -143,4 +143,36 @@ class DartSdkInstallerTest {
         assertNull(DartSdkInstaller.parseLatestVersion("""{"date":"2025-05-01"}"""))
         assertNull(DartSdkInstaller.parseLatestVersion("{}"))
     }
+
+    @Test
+    fun extractVersionsFromPrefixesFiltersStableSemvers() {
+        val prefixes = listOf(
+            "channels/stable/release/3.5.0/",
+            "channels/stable/release/3.4.0/",
+            "channels/stable/release/2.19.6/",
+            "channels/stable/release/latest/",
+            "channels/stable/release/be/",
+            "channels/stable/release/3.5.0-beta.1/",
+        )
+        val out = DartSdkInstaller.extractVersionsFromPrefixes(prefixes)
+        assertEquals(listOf("3.5.0", "3.4.0", "2.19.6"), out)
+    }
+
+    @Test
+    fun versionDescSortsHighestFirst() {
+        val mixed = listOf("3.4.0", "3.5.0", "2.19.6", "3.4.4", "3.5.1")
+        val sorted = mixed.sortedWith(DartSdkInstaller.VERSION_DESC)
+        assertEquals(listOf("3.5.1", "3.5.0", "3.4.4", "3.4.0", "2.19.6"), sorted)
+    }
+
+    @Test
+    fun availableVersionsRoutesThroughInjectedFetcher() {
+        val installer = DartSdkInstaller(
+            osKey = "linux", archKey = "amd64", isWindows = false,
+            downloader = { _, _, _ -> },
+            versionsFetcher = { listOf("3.5.0", "3.4.4", "3.4.0") },
+            latestResolver = { "3.5.0" },
+        )
+        assertEquals(listOf("3.5.0", "3.4.4", "3.4.0"), installer.availableVersions())
+    }
 }

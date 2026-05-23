@@ -142,6 +142,20 @@
       "runCommand": "dart run"
     },
     {
+      "id": "flutter",
+      "displayName": "Flutter (Dart language server)",
+      "extensions": ["dart"],
+      "lspBinaries": ["flutter-language-server"],
+      "lspWindowsBinaries": ["flutter-language-server.cmd"],
+      "installGuideUrl": "https://docs.flutter.dev/get-started/install",
+      "install": {
+        "macos": "Use PAGE installer (downloads Flutter SDK stable channel)",
+        "linux": "Use PAGE installer (downloads Flutter SDK stable channel)",
+        "windows": "Use PAGE installer (downloads Flutter SDK stable channel)"
+      },
+      "runCommand": "flutter run"
+    },
+    {
       "id": "bash",
       "displayName": "Bash",
       "extensions": ["sh", "bash"],
