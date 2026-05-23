@@ -14,6 +14,12 @@ object GitHubReleases {
         val releases: List<Release>,
     )
 
+    data class AssetNamesEtagResponse(
+        val notModified: Boolean,
+        val etag: String?,
+        val names: List<String>,
+    )
+
     fun listReleases(owner: String, repo: String, limit: Int = 20): List<Release> {
         val url = "https://api.github.com/repos/$owner/$repo/releases?per_page=$limit"
         val conn = openConnection(url)
@@ -72,20 +78,59 @@ object GitHubReleases {
         }
     }
 
-    fun listAssetNames(owner: String, repo: String, tag: String): List<String> {
+    fun listAssetNamesWithEtag(
+        owner: String,
+        repo: String,
+        tag: String,
+        ifNoneMatch: String?,
+    ): AssetNamesEtagResponse {
         val url = "https://api.github.com/repos/$owner/$repo/releases/tags/$tag"
         val conn = openConnection(url)
-        return try {
+        if (!ifNoneMatch.isNullOrBlank()) {
+            conn.setRequestProperty("If-None-Match", ifNoneMatch)
+        }
+        try {
             val code = conn.responseCode
-            if (code !in 200..299) emptyList()
-            else {
-                val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                parseAssetNames(body)
+            if (code == 304) {
+                return AssetNamesEtagResponse(notModified = true, etag = ifNoneMatch, names = emptyList())
             }
-        } catch (_: Throwable) {
-            emptyList()
+            if (code !in 200..299) throw IOException("GitHub API HTTP $code for $url")
+            val etag = conn.getHeaderField("ETag")
+            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            return AssetNamesEtagResponse(notModified = false, etag = etag, names = parseAssetNames(body))
         } finally {
             conn.disconnect()
+        }
+    }
+
+    fun listAssetNames(owner: String, repo: String, tag: String): List<String> {
+        val now = System.currentTimeMillis()
+        val cached = AssetListCache.load(owner, repo, tag)
+        if (AssetListCache.isFresh(cached, now)) {
+            return cached!!.assets
+        }
+        val resp = runCatching {
+            listAssetNamesWithEtag(owner, repo, tag, cached?.etag)
+        }.getOrNull()
+        return when {
+            resp == null -> cached?.assets.orEmpty()
+            resp.notModified -> {
+                if (cached != null) {
+                    AssetListCache.save(owner, repo, tag, cached.copy(fetchedAt = now))
+                    cached.assets
+                } else emptyList()
+            }
+            else -> {
+                AssetListCache.save(
+                    owner, repo, tag,
+                    AssetListCache.Cached(
+                        fetchedAt = now,
+                        etag = resp.etag ?: cached?.etag,
+                        assets = resp.names,
+                    ),
+                )
+                resp.names
+            }
         }
     }
 

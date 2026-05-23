@@ -28,11 +28,20 @@ object LspStaticManifest {
         val versions: List<RawNpmVersion> = emptyList(),
     )
 
+    private data class RawAssetManifest(
+        val updatedAt: String? = null,
+        val tag: String? = null,
+        val assets: List<String?> = emptyList(),
+    )
+
     fun fetchReleaseTags(slug: String, baseUrl: String = DEFAULT_BASE_URL): List<String>? =
         runCatching { fetchBody("$baseUrl/$slug.json") }.getOrNull()?.let { parseReleaseTags(it) }
 
     fun fetchNpmVersions(slug: String, baseUrl: String = DEFAULT_BASE_URL): List<String>? =
         runCatching { fetchBody("$baseUrl/$slug.json") }.getOrNull()?.let { parseNpmVersions(it) }
+
+    fun fetchAssetNames(slug: String, baseUrl: String = DEFAULT_BASE_URL): List<String>? =
+        runCatching { fetchBody("$baseUrl/$slug.json") }.getOrNull()?.let { parseAssetNames(it) }
 
     internal fun parseReleaseTags(body: String): List<String> {
         val raw = gson.fromJson(body, RawReleaseManifest::class.java) ?: return emptyList()
@@ -42,6 +51,11 @@ object LspStaticManifest {
     internal fun parseNpmVersions(body: String): List<String> {
         val raw = gson.fromJson(body, RawNpmManifest::class.java) ?: return emptyList()
         return raw.versions.mapNotNull { it.version?.takeIf { v -> v.isNotBlank() } }
+    }
+
+    internal fun parseAssetNames(body: String): List<String> {
+        val raw = gson.fromJson(body, RawAssetManifest::class.java) ?: return emptyList()
+        return raw.assets.mapNotNull { it?.takeIf { name -> name.isNotBlank() } }
     }
 
     private fun fetchBody(url: String): String {

@@ -5,17 +5,19 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 class MetalsInstaller(
-    private val processRunner: ProcessRunner = DefaultProcessRunner,
+    private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
     private val osKey: String = LspInstaller.osKey(),
     private val archKey: String = ArchDetect.archKey(),
     private val isWindows: Boolean = LspInstaller.isWindows(),
-    private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
-    private val versionsFetcher: () -> List<String> = {
-        LspStaticManifest.fetchReleaseTags("metals")
-            ?: GitHubReleases.listReleases("scalameta", "metals").map { it.tagName }
+    private val assetsRepo: String = DEFAULT_ASSETS_REPO,
+    private val releaseTag: String = DEFAULT_RELEASE_TAG,
+    private val staticManifestFetcher: (tag: String) -> List<String>? = { tag ->
+        LspStaticManifest.fetchAssetNames("scala-$tag")
     },
-    private val coursierVersion: String = DEFAULT_COURSIER,
-    private val defaultMetalsVersion: String = "latest",
+    private val assetsFetcher: (owner: String, repo: String, tag: String) -> List<String> = { owner, repo, tag ->
+        GitHubReleases.listAssetNames(owner, repo, tag)
+    },
+    private val defaultVersion: String = "latest",
 ) : LspInstaller {
 
     override val languageId: String = "scala"
@@ -30,113 +32,143 @@ class MetalsInstaller(
         return exe.takeIf { Files.exists(it) }
     }
 
-    override fun defaultVersion(): String? = defaultMetalsVersion
+    override fun defaultVersion(): String? = defaultVersion
 
     override fun installedVersion(): String? = currentInstalledVersion()
 
-    override fun availableVersions(): List<String> = runCatching { versionsFetcher() }.getOrDefault(emptyList())
+    override fun availableVersions(): List<String> = discoverVersions()
+
+    private fun discoverVersions(): List<String> {
+        val pageOs = pageOsKey()
+        val pageArch = pageArchKey()
+
+        val staticVersions = runCatching {
+            staticManifestFetcher(releaseTag)
+                ?.let { versionsFor(it, pageOs, pageArch) }
+                ?.takeIf { it.isNotEmpty() }
+        }.getOrNull()
+        if (staticVersions != null) return staticVersions
+
+        val (owner, repo) = parseRepo(assetsRepo) ?: return emptyList()
+        return runCatching {
+            versionsFor(assetsFetcher(owner, repo, releaseTag), pageOs, pageArch)
+        }.getOrDefault(emptyList())
+    }
+
+    private fun versionsFor(assets: List<String>, pageOs: String, pageArch: String): List<String> =
+        assets
+            .mapNotNull { name ->
+                val m = ASSET_NAME_REGEX.find(name) ?: return@mapNotNull null
+                if (m.groupValues[1] == pageOs && m.groupValues[2] == pageArch) m.groupValues[3] else null
+            }
+            .distinct()
+            .sortedWith(VERSION_DESC)
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
         try {
-            val resolved = version ?: defaultMetalsVersion
-            val root = installRoot(resolved)
-            Files.createDirectories(root)
-            val cs = csBinary(resolved)
+            val requested = version ?: defaultVersion
+            val resolved = if (requested == "latest" || requested.isBlank()) {
+                discoverVersions().firstOrNull()
+                    ?: throw IOException("page-ide-assets 의 metals-bundle 태그에 사용 가능한 Metals 번들이 없습니다.")
+            } else requested
 
-            val url = coursierUrl()
-            val tmp = Files.createTempFile("page-cs-", if (isWindows) ".zip" else ".gz")
+            val url = bundleUrl(resolved)
+            val target = installRoot(resolved)
+            if (Files.isDirectory(target)) {
+                ArchiveExtractors.deleteRecursively(target)
+            }
+            Files.createDirectories(target)
+
+            val ext = if (isWindows) ".zip" else ".tar.gz"
+            val tmp = Files.createTempFile("metals-", ext)
             try {
                 downloader(url, tmp) { read, total ->
                     onProgress(LspInstaller.Progress.Downloading(read, total))
                 }
-                onProgress(LspInstaller.Progress.Extracting("Extracting Coursier…"))
+                onProgress(LspInstaller.Progress.Extracting("Extracting Metals…"))
                 if (isWindows) {
-                    extractCsZipToRoot(tmp, root)
+                    ArchiveExtractors.extractZip(tmp, target, flatten = 0)
                 } else {
-                    Files.createDirectories(cs.parent)
-                    ArchiveExtractors.extractGzBinary(tmp, root.resolve("cs-staging"), if (isWindows) "cs.exe" else "cs")
-                    val staged = root.resolve("cs-staging").resolve(if (isWindows) "cs.exe" else "cs")
-                    Files.move(staged, cs, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                    ArchiveExtractors.deleteRecursively(root.resolve("cs-staging"))
+                    ArchiveExtractors.extractTarGz(tmp, target, flatten = 0)
                 }
             } finally {
                 runCatching { Files.deleteIfExists(tmp) }
             }
-            if (!Files.exists(cs)) throw IOException("Coursier 다운로드 후 바이너리 누락: $cs")
-            runCatching { cs.toFile().setExecutable(true, false) }
-
-            val binDir = root.resolve("bin")
-            Files.createDirectories(binDir)
-            val metalsSpec = if (resolved == "latest" || resolved.isBlank()) "metals" else "metals:$resolved"
-            val installCmd = listOf(cs.toString(), "install", "--install-dir", binDir.toString(), metalsSpec)
-            val env = mapOf(
-                "COURSIER_CACHE" to root.resolve("cache").toString(),
-                "COURSIER_HOME" to root.resolve("home").toString(),
-            )
-            onProgress(LspInstaller.Progress.CommandOutput("> cs install $metalsSpec"))
-            val exit = processRunner.runStreaming(installCmd, env) { line ->
-                onProgress(LspInstaller.Progress.CommandOutput(line))
-            }
-            if (exit != 0) throw IOException("cs install metals 종료 코드 $exit")
-
-            val metals = metalsBinary(resolved)
-            if (!Files.exists(metals)) throw IOException("metals 설치 후 launcher 누락: $metals")
-            runCatching { metals.toFile().setExecutable(true, false) }
 
             writePointer(resolved)
-            onProgress(LspInstaller.Progress.Done(metals))
+            val exe = metalsBinary(resolved)
+            if (!Files.exists(exe)) throw IOException("metals launcher missing at $exe")
+            runCatching { exe.toFile().setExecutable(true, false) }
+            val javaExe = target.resolve("jre").resolve("bin").resolve(if (isWindows) "java.exe" else "java")
+            runCatching { javaExe.toFile().setExecutable(true, false) }
+            onProgress(LspInstaller.Progress.Done(exe))
         } catch (t: Throwable) {
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
 
-    private fun extractCsZipToRoot(zip: Path, root: Path) {
-        val staging = root.resolve("cs-zip-staging")
-        ArchiveExtractors.extractZip(zip, staging, flatten = 0)
-        val candidate = listOf(staging.resolve("cs-x86_64-pc-win32.exe"), staging.resolve("cs.exe"))
-            .firstOrNull { Files.exists(it) }
-            ?: Files.walk(staging).use { stream ->
-                stream.filter { it.fileName.toString().lowercase().endsWith(".exe") }.findFirst().orElse(null)
-            }
-            ?: throw IOException("Coursier zip 안에서 .exe 를 찾지 못함")
-        Files.move(candidate, root.resolve("cs.exe"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        ArchiveExtractors.deleteRecursively(staging)
+    internal fun bundleUrl(version: String): String {
+        val pageOs = pageOsKey()
+        val pageArch = pageArchKey()
+        val ext = if (isWindows) "zip" else "tar.gz"
+        return "https://github.com/$assetsRepo/releases/download/$releaseTag/page-scala-metals-$pageOs-$pageArch-$version.$ext"
     }
-
-    internal fun coursierUrl(): String {
-        val (osTag, archTag) = when (osKey) {
-            "macos" -> "apple-darwin" to (if (archKey == "arm64") "aarch64" else "x86_64")
-            "windows" -> "pc-win32" to "x86_64"
-            else -> "pc-linux" to (if (archKey == "arm64") "aarch64" else "x86_64")
-        }
-        val ext = if (isWindows) "zip" else "gz"
-        return "https://github.com/coursier/coursier/releases/download/v$coursierVersion/cs-$archTag-$osTag.$ext"
-    }
-
-    fun csBinary(metalsVersion: String): Path =
-        installRoot(metalsVersion).resolve(if (isWindows) "cs.exe" else "cs")
 
     fun metalsBinary(metalsVersion: String): Path =
         installRoot(metalsVersion).resolve("bin").resolve(if (isWindows) "metals.bat" else "metals")
 
-    fun installRoot(metalsVersion: String): Path = metalsBase().resolve(sanitize(metalsVersion))
+    fun installRoot(metalsVersion: String): Path =
+        LspInstaller.lspHome().resolve("metals").resolve(sanitize(metalsVersion))
 
-    private fun metalsBase(): Path = LspInstaller.lspHome().resolve("metals")
+    override fun installDir(version: String?): Path =
+        installRoot(version ?: currentInstalledVersion() ?: defaultVersion)
 
     fun currentInstalledVersion(): String? {
-        val pointer = metalsBase().resolve("CURRENT")
+        val pointer = LspInstaller.lspHome().resolve("metals").resolve("CURRENT")
         return runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull()
     }
 
-    private fun writePointer(metalsVersion: String) {
-        val pointer = metalsBase().resolve("CURRENT")
+    private fun writePointer(version: String) {
+        val pointer = LspInstaller.lspHome().resolve("metals").resolve("CURRENT")
         Files.createDirectories(pointer.parent)
-        Files.writeString(pointer, metalsVersion)
+        Files.writeString(pointer, version)
     }
 
-    private fun sanitize(version: String): String = version.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+    private fun pageOsKey(): String = when (osKey) {
+        "windows" -> "windows"
+        "macos" -> "macos"
+        else -> "linux"
+    }
+
+    private fun pageArchKey(): String = if (archKey == "arm64") "aarch64" else "x86_64"
+
+    private fun parseRepo(slashSlug: String): Pair<String, String>? {
+        val parts = slashSlug.split('/')
+        if (parts.size != 2 || parts.any { it.isBlank() }) return null
+        return parts[0] to parts[1]
+    }
+
+    private fun sanitize(version: String): String =
+        version.replace(Regex("[\\\\/:*?\"<>|]"), "_")
 
     companion object {
-        const val DEFAULT_COURSIER: String = "2.1.24"
+
+        const val DEFAULT_ASSETS_REPO: String = "monkshark/page-ide-assets"
+        const val DEFAULT_RELEASE_TAG: String = "metals-bundle"
+
+        internal val ASSET_NAME_REGEX =
+            Regex("^page-scala-metals-(linux|macos|windows)-(x86_64|aarch64)-(\\d+(?:\\.\\d+){1,3})\\.(?:tar\\.gz|zip)$")
+
+        internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
+            val aParts = a.split('.').map { it.toIntOrNull() ?: 0 }
+            val bParts = b.split('.').map { it.toIntOrNull() ?: 0 }
+            val n = maxOf(aParts.size, bParts.size)
+            for (i in 0 until n) {
+                val ai = aParts.getOrNull(i) ?: 0
+                val bi = bParts.getOrNull(i) ?: 0
+                if (ai != bi) return@Comparator bi - ai
+            }
+            0
+        }
     }
 }
