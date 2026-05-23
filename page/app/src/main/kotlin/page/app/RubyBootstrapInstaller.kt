@@ -25,13 +25,13 @@ class RubyBootstrapInstaller(
     override val displayName: String = "solargraph"
     override val precheck: LspInstaller.Precheck = LspInstaller.Precheck.Ok
     override val heavyInstall: LspInstaller.HeavyInstallEstimate? = LspInstaller.HeavyInstallEstimate(
-        sizeEstimate = if (isWindows) "약 700 MB ~ 1 GB (Ruby + MinGW UCRT64 + solargraph 통합 번들)" else "약 25 MB",
-        durationEstimate = "약 3분 ~ 7분",
+        sizeEstimate = if (isWindows) "~700 MB to 1 GB (Ruby + MinGW UCRT64 + solargraph all-in-one bundle)" else "~25 MB",
+        durationEstimate = "~3 to 7 min",
         notes = if (isWindows)
-            "PAGE 가 미리 빌드해 둔 Ruby + MSYS2 + solargraph all-in-one zip 번들을 받아 격리 디렉터리에 풀기만 합니다. " +
-                "사용자 환경에서 gem install 이나 MSYS2 toolchain 부트스트랩을 실행하지 않으므로 ASR/Defender 가 fork 차단해도 영향이 없습니다."
+            "PAGE downloads a prebuilt Ruby + MSYS2 + solargraph all-in-one zip bundle and extracts it into an isolated directory. " +
+                "No gem install or MSYS2 toolchain bootstrap runs on your machine, so ASR/Defender process-fork blocking has no effect."
         else
-            "PAGE 가 Ruby 런타임을 받아 풀고 그 안의 gem 으로 solargraph 를 설치합니다.",
+            "PAGE downloads a portable Ruby runtime and uses its bundled gem to install solargraph.",
     )
 
     override fun isInstalled(): Boolean = executable() != null
@@ -69,8 +69,8 @@ class RubyBootstrapInstaller(
 
             val solargraph = findInstalledSolargraph(resolved)
                 ?: throw IOException(
-                    "solargraph 설치 후 바이너리 누락: ${gemHomeFor(resolved).resolve("bin")} 안에서 " +
-                        solargraphCandidateNames().joinToString("/") + " 를 찾을 수 없습니다",
+                    "solargraph binary missing after install: none of " +
+                        solargraphCandidateNames().joinToString("/") + " found under ${gemHomeFor(resolved).resolve("bin")}",
                 )
             runCatching { solargraph.toFile().setExecutable(true, false) }
 
@@ -89,13 +89,13 @@ class RubyBootstrapInstaller(
         val ruby = rubyBinary(version)
         if (Files.exists(solargraph) && Files.exists(ruby)) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[info] 기존 설치 발견 (solargraph.bat + ruby.exe) — 번들 다운로드 건너뜀: $target",
+                "[info] existing install detected (solargraph.bat + ruby.exe) — skipping bundle download: $target",
             ))
             return
         }
         if (Files.exists(target)) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[info] $target 에 부분 설치 잔해 (solargraph.bat=${Files.exists(solargraph)}, ruby.exe=${Files.exists(ruby)}) — 삭제 후 재추출",
+                "[info] partial install detected at $target (solargraph.bat=${Files.exists(solargraph)}, ruby.exe=${Files.exists(ruby)}) — removing and re-extracting",
             ))
             ArchiveExtractors.deleteRecursively(target)
         }
@@ -114,11 +114,11 @@ class RubyBootstrapInstaller(
 
         if (!Files.exists(solargraph)) {
             throw IOException(
-                "번들 추출 후 solargraph.bat 누락: $solargraph — zip 구조가 예상과 다릅니다 " +
-                    "(zip 루트가 곧 <install_dir>, gemhome/bin/solargraph.bat 경로 필요).",
+                "solargraph.bat missing after bundle extraction: $solargraph — zip layout differs from expected " +
+                    "(zip root must be <install_dir>, with gemhome/bin/solargraph.bat).",
             )
         }
-        onProgress(LspInstaller.Progress.CommandOutput("[info] all-in-one bundle 추출 완료: $solargraph"))
+        onProgress(LspInstaller.Progress.CommandOutput("[info] all-in-one bundle extracted: $solargraph"))
     }
 
     private fun installFromMacBottle(version: String, onProgress: (LspInstaller.Progress) -> Unit) {
@@ -136,7 +136,7 @@ class RubyBootstrapInstaller(
         }
 
         val gemBin = gemBinary(version)
-        if (!Files.exists(gemBin)) throw IOException("Ruby 부트스트랩 후 gem 누락: $gemBin")
+        if (!Files.exists(gemBin)) throw IOException("gem binary missing after Ruby bootstrap: $gemBin")
         runCatching { gemBin.toFile().setExecutable(true, false) }
         val rubyBin = rubyBinary(version)
         runCatching { rubyBin.toFile().setExecutable(true, false) }
@@ -153,7 +153,7 @@ class RubyBootstrapInstaller(
         val rbsExit = processRunner.runStreaming(rbsCmd, env) { line ->
             onProgress(LspInstaller.Progress.CommandOutput(line))
         }
-        if (rbsExit != 0) throw IOException("gem install rbs 종료 코드 $rbsExit")
+        if (rbsExit != 0) throw IOException("gem install rbs exited with code $rbsExit")
 
         val installCmd = gemInvocation(
             gemBin,
@@ -167,7 +167,7 @@ class RubyBootstrapInstaller(
         val exit = processRunner.runStreaming(installCmd, env) { line ->
             onProgress(LspInstaller.Progress.CommandOutput(line))
         }
-        if (exit != 0) throw IOException("gem install solargraph 종료 코드 $exit")
+        if (exit != 0) throw IOException("gem install solargraph exited with code $exit")
     }
 
     private data class BundleZip(val path: Path, val deleteAfterExtraction: Boolean)
@@ -178,14 +178,14 @@ class RubyBootstrapInstaller(
             val overridePath = runCatching { Path.of(overrideRaw) }.getOrNull()
             when {
                 overridePath == null -> onProgress(LspInstaller.Progress.CommandOutput(
-                    "[warning] PAGE_RUBY_BUNDLE_OVERRIDE 가 유효한 경로가 아닙니다 ('$overrideRaw') — 무시하고 일반 다운로드 사용",
+                    "[warning] PAGE_RUBY_BUNDLE_OVERRIDE is not a valid path ('$overrideRaw') — ignoring and falling back to download",
                 ))
                 !Files.isRegularFile(overridePath) -> onProgress(LspInstaller.Progress.CommandOutput(
-                    "[warning] PAGE_RUBY_BUNDLE_OVERRIDE 가 가리키는 zip 이 존재하지 않습니다 ('$overridePath') — 무시하고 일반 다운로드 사용",
+                    "[warning] PAGE_RUBY_BUNDLE_OVERRIDE points to a zip that does not exist ('$overridePath') — ignoring and falling back to download",
                 ))
                 else -> {
                     onProgress(LspInstaller.Progress.CommandOutput(
-                        "[info] PAGE_RUBY_BUNDLE_OVERRIDE → $overridePath 사용 (다운로드 건너뜀)",
+                        "[info] PAGE_RUBY_BUNDLE_OVERRIDE → using $overridePath (skipping download)",
                     ))
                     return BundleZip(overridePath, deleteAfterExtraction = false)
                 }
@@ -208,12 +208,12 @@ class RubyBootstrapInstaller(
     }
 
     private fun buildBundleDownloadDiagnostic(url: String, cause: Throwable): String =
-        "PAGE Ruby+solargraph 번들 다운로드 실패 ($url): ${cause.javaClass.simpleName}: ${cause.message}\n" +
-            "복구 절차:\n" +
-            "  1. 네트워크 / 사내 proxy 확인 후 PAGE 에서 install 재시도\n" +
-            "  2. 다른 PC 에서 위 URL 의 zip 을 받아 옮긴 뒤,\n" +
-            "     환경변수 PAGE_RUBY_BUNDLE_OVERRIDE 에 해당 zip 의 절대 경로를 설정하고 install 재시도\n" +
-            "  3. GitHub releases 에 '$rubyBundleRelease' asset 가 publish 됐는지 확인"
+        "PAGE Ruby + solargraph bundle download failed ($url): ${cause.javaClass.simpleName}: ${cause.message}\n" +
+            "Recovery steps:\n" +
+            "  1. Check network / corporate proxy, then retry install in PAGE\n" +
+            "  2. Download the zip from the URL above on another machine, copy it over, then\n" +
+            "     set the PAGE_RUBY_BUNDLE_OVERRIDE environment variable to the zip's absolute path and retry install\n" +
+            "  3. Verify that the '$rubyBundleRelease' asset is published on GitHub releases"
 
     private fun detectThirdPartyAntivirus(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
         val script = "Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct " +
@@ -223,7 +223,7 @@ class RubyBootstrapInstaller(
             processRunner.captureOutput(cmd)
         } catch (t: Throwable) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[info] AV 감지 PowerShell 호출 실패 (${t.javaClass.simpleName}) — 건너뜀",
+                "[info] AV detection PowerShell call failed (${t.javaClass.simpleName}) — skipping",
             ))
             return
         }
@@ -231,15 +231,15 @@ class RubyBootstrapInstaller(
         val nonDefender = products.filter { !it.equals("Windows Defender", ignoreCase = true) }
         if (nonDefender.isEmpty()) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[info] AV 감지: Defender 외 활성 AV 없음 — Defender 예외 등록만 진행",
+                "[info] AV detection: no active AV other than Defender — proceeding with Defender exclusion only",
             ))
             return
         }
         onProgress(LspInstaller.Progress.CommandOutput(
-            "[warning] Non-Defender AV 감지됨: ${nonDefender.joinToString(", ")}.\n" +
-                "  PAGE 의 Defender ExclusionPath 등록은 이 AV 에 적용되지 않습니다.\n" +
-                "  install 중 zip 추출 파일이 검역될 수 있습니다.\n" +
-                "  권장 — 해당 AV 에서 다음 경로를 예외 등록 후 install 재시도: $target",
+            "[warning] Non-Defender AV detected: ${nonDefender.joinToString(", ")}.\n" +
+                "  PAGE's Defender ExclusionPath registration does not apply to this AV.\n" +
+                "  Files extracted from the zip may be quarantined during install.\n" +
+                "  Recommended — add the following path as an exclusion in that AV, then retry install: $target",
         ))
     }
 
@@ -264,23 +264,23 @@ class RubyBootstrapInstaller(
             }
         } catch (t: Throwable) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[warning] UAC PowerShell 실행 실패 (${t.javaClass.simpleName}: ${t.message}).\n" +
-                    "  install 은 계속 진행하지만 Defender RTP 가 zip 추출 중 파일을 검역할 수 있습니다.\n" +
-                    "  수동 우회 — 관리자 PowerShell 에서 다음 명령 실행 후 install 재시도:\n" +
+                "[warning] UAC PowerShell invocation failed (${t.javaClass.simpleName}: ${t.message}).\n" +
+                    "  Install will continue, but Defender RTP may quarantine files during zip extraction.\n" +
+                    "  Manual workaround — run the following in an elevated PowerShell, then retry install:\n" +
                     "    Add-MpPreference -ExclusionPath '$target'",
             ))
             return false
         }
         if (exit != 0) {
             onProgress(LspInstaller.Progress.CommandOutput(
-                "[warning] Defender exclusion 요청 실패 (exit=$exit — UAC 거부 또는 GPO/엔터프라이즈 Defender 정책으로 차단).\n" +
-                    "  install 은 계속 진행하지만 Defender RTP 가 zip 추출 중 파일을 검역할 수 있습니다.\n" +
-                    "  수동 우회 — 관리자 PowerShell 에서 다음 명령 실행 후 install 재시도:\n" +
+                "[warning] Defender exclusion request failed (exit=$exit — UAC denied or blocked by GPO / enterprise Defender policy).\n" +
+                    "  Install will continue, but Defender RTP may quarantine files during zip extraction.\n" +
+                    "  Manual workaround — run the following in an elevated PowerShell, then retry install:\n" +
                     "    Add-MpPreference -ExclusionPath '$target'",
             ))
             return false
         }
-        onProgress(LspInstaller.Progress.CommandOutput("[info] Defender exclusion 등록 시도 완료 (exit=0)"))
+        onProgress(LspInstaller.Progress.CommandOutput("[info] Defender exclusion registration completed (exit=0)"))
         return true
     }
 
@@ -293,7 +293,7 @@ class RubyBootstrapInstaller(
             "https://github.com/Homebrew/homebrew-portable-ruby/releases/download/$version/portable-ruby-$version.$slug.bottle.tar.gz"
         }
         "windows" -> rubyBundleUrl(version)
-        else -> throw IOException("RubyBootstrapInstaller 는 Linux 를 지원하지 않습니다. (osKey=$osKey)")
+        else -> throw IOException("RubyBootstrapInstaller does not support Linux. (osKey=$osKey)")
     }
 
     fun gemBinary(version: String): Path =
