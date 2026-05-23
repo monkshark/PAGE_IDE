@@ -1,0 +1,10 @@
+{
+  "updatedAt": "2026-05-23T12:19:16.983Z",
+  "tag": "ruby-bundle",
+  "assets": [
+    "page-ruby-solargraph-windows-x86_64-3.2.11.zip",
+    "page-ruby-solargraph-windows-x86_64-3.3.11.zip",
+    "page-ruby-solargraph-windows-x86_64-3.4.6.zip",
+    "page-ruby-solargraph-windows-x86_64-3.4.9.zip"
+  ]
+}
