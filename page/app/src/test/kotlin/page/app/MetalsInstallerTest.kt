@@ -133,6 +133,7 @@ class MetalsInstallerTest {
     fun availableVersionsReturnsEmptyOnFetcherFailure() {
         val installer = MetalsInstaller(
             osKey = "linux", archKey = "amd64", isWindows = false,
+            staticManifestFetcher = { null },
             assetsFetcher = { _, _, _ -> throw RuntimeException("boom") },
         )
         assertEquals(emptyList(), installer.availableVersions())
