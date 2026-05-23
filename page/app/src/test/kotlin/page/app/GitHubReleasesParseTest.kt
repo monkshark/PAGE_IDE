@@ -69,4 +69,47 @@ class GitHubReleasesParseTest {
         val json = """{"assets":[{"browser_download_url":"https://example.com/asset.TAR.GZ"}]}"""
         assertNotNull(GitHubReleases.findAssetDownloadUrl(json, ".tar.gz"))
     }
+
+    @Test
+    fun parseAssetNamesPicksAllNamesInAssetsArray() {
+        val json = """
+            {
+              "tag_name":"ruby-bundle",
+              "assets":[
+                {"name":"page-ruby-solargraph-windows-x86_64-3.4.6.zip","browser_download_url":"https://example.com/a.zip"},
+                {"name":"page-ruby-solargraph-windows-x86_64-3.3.11.zip","browser_download_url":"https://example.com/b.zip"}
+              ]
+            }
+        """.trimIndent()
+        assertEquals(
+            listOf(
+                "page-ruby-solargraph-windows-x86_64-3.4.6.zip",
+                "page-ruby-solargraph-windows-x86_64-3.3.11.zip",
+            ),
+            GitHubReleases.parseAssetNames(json),
+        )
+    }
+
+    @Test
+    fun parseAssetNamesIsEmptyWhenAssetsArrayMissing() {
+        val json = """{"tag_name":"ruby-bundle"}"""
+        assertEquals(emptyList<String>(), GitHubReleases.parseAssetNames(json))
+    }
+
+    @Test
+    fun parseAssetNamesDoesNotConfuseNonAssetNameFields() {
+        val json = """
+            {
+              "name":"Ruby + solargraph bundles",
+              "tag_name":"ruby-bundle",
+              "assets":[
+                {"name":"page-ruby-solargraph-windows-x86_64-3.4.6.zip"}
+              ]
+            }
+        """.trimIndent()
+        assertEquals(
+            listOf("page-ruby-solargraph-windows-x86_64-3.4.6.zip"),
+            GitHubReleases.parseAssetNames(json),
+        )
+    }
 }

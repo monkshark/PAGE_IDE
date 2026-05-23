@@ -19,6 +19,16 @@ class RubyBootstrapInstaller(
     private val solargraphVersion: String = DEFAULT_SOLARGRAPH_VERSION,
     private val rubyBundleRelease: String = DEFAULT_RUBY_BUNDLE_RELEASE,
     private val rubyBundleRepo: String = DEFAULT_RUBY_BUNDLE_REPO,
+    private val versionsFetcher: (String, String, String) -> List<String> = { owner, repo, tag ->
+        GitHubReleases.listAssetNames(owner, repo, tag)
+    },
+    private val macVersionsFetcher: () -> List<String> = {
+        runCatching {
+            GitHubReleases.listReleases("Homebrew", "homebrew-portable-ruby", limit = 30)
+                .map { it.tagName }
+                .filter { CLEAN_VERSION_REGEX.matches(it) }
+        }.getOrDefault(emptyList())
+    },
 ) : LspInstaller {
 
     override val languageId: String = "ruby"
@@ -45,7 +55,32 @@ class RubyBootstrapInstaller(
 
     override fun installedVersion(): String? = currentInstalledVersion()
 
-    override fun availableVersions(): List<String> = listOf(defaultRubyVersion)
+    override fun availableVersions(): List<String> {
+        val discovered = when (osKey) {
+            "windows" -> discoverWindowsBundleVersions()
+            "macos" -> discoverMacPortableVersions()
+            else -> emptyList()
+        }
+        return (discovered + defaultRubyVersion).distinct().sortedWith(VERSION_DESC)
+    }
+
+    private fun discoverWindowsBundleVersions(): List<String> {
+        val (owner, repo) = parseRepo(rubyBundleRepo) ?: return emptyList()
+        return runCatching {
+            versionsFetcher(owner, repo, rubyBundleRelease)
+                .mapNotNull { WINDOWS_BUNDLE_NAME.find(it)?.groupValues?.get(1) }
+                .filter { CLEAN_VERSION_REGEX.matches(it) }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun discoverMacPortableVersions(): List<String> =
+        runCatching { macVersionsFetcher() }.getOrDefault(emptyList())
+
+    private fun parseRepo(slashSlug: String): Pair<String, String>? {
+        val parts = slashSlug.split('/')
+        if (parts.size != 2 || parts.any { it.isBlank() }) return null
+        return parts[0] to parts[1]
+    }
 
     override fun install(version: String?, rawProgress: (LspInstaller.Progress) -> Unit) {
         val logFile = LspInstaller.lspHome().resolve("ruby-bootstrap").resolve("install.log")
@@ -379,7 +414,27 @@ class RubyBootstrapInstaller(
         const val DEFAULT_MAC_BOTTLE_SLUG = "el_capitan"
         const val DEFAULT_SOLARGRAPH_VERSION = "0.55.4"
         const val PRISM_FREE_RBS_VERSION = "3.3.0"
-        const val DEFAULT_RUBY_BUNDLE_RELEASE = "ruby-bundle-win-v1"
-        const val DEFAULT_RUBY_BUNDLE_REPO = "monkshark/page-ide"
+        const val DEFAULT_RUBY_BUNDLE_RELEASE = "ruby-bundle"
+        const val DEFAULT_RUBY_BUNDLE_REPO = "monkshark/page-ide-assets"
+
+        internal val CLEAN_VERSION_REGEX = Regex("^\\d+(?:\\.\\d+){1,3}$")
+        internal val WINDOWS_BUNDLE_NAME = Regex("^page-ruby-solargraph-windows-x86_64-(.+?)\\.zip$")
+
+        internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
+            val pa = versionTokens(a)
+            val pb = versionTokens(b)
+            val len = maxOf(pa.size, pb.size)
+            for (i in 0 until len) {
+                val va = pa.getOrElse(i) { 0 }
+                val vb = pb.getOrElse(i) { 0 }
+                if (va != vb) return@Comparator vb.compareTo(va)
+            }
+            0
+        }
+
+        private fun versionTokens(s: String): IntArray = s.split('.', '_', '-')
+            .mapNotNull { it.toIntOrNull() }
+            .toIntArray()
+            .let { if (it.isEmpty()) intArrayOf(-1) else it }
     }
 }
