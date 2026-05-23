@@ -4,12 +4,16 @@ compose = "1.7.3"
 coroutines = "1.10.2"
 lsp4j = "0.23.1"
 pty4j = "0.13.4"
+commons-compress = "1.27.1"
+xz = "1.10"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }
 pty4j = { module = "org.jetbrains.pty4j:pty4j", version.ref = "pty4j" }
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
+xz = { module = "org.tukaani:xz", version.ref = "xz" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

@@ -337,7 +337,12 @@ object LspInstallers {
         ),
     )
 
-    private fun rubyInstaller(): LspInstaller = ShellPackageInstaller(
+    private fun rubyInstaller(): LspInstaller = when (LspInstaller.osKey()) {
+        "windows", "macos" -> RubyBootstrapInstaller()
+        else -> shellRubyInstaller()
+    }
+
+    internal fun shellRubyInstaller(): LspInstaller = ShellPackageInstaller(
         ShellPackageDescriptor(
             languageId = "ruby",
             displayName = "solargraph",

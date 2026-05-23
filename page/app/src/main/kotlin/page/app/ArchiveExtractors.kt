@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
+import org.apache.commons.compress.archivers.sevenz.SevenZFile
 
 object ArchiveExtractors {
 
@@ -56,6 +57,40 @@ object ArchiveExtractors {
                         Files.createDirectories(outPath.parent)
                         Files.newOutputStream(outPath).use { out -> stream.copyTo(out) }
                         if (entry.executable) runCatching { outPath.toFile().setExecutable(true, false) }
+                    }
+                }
+            }
+            commitStaging(staging, target)
+        } catch (t: Throwable) {
+            runCatching { deleteRecursively(staging) }
+            throw t
+        }
+    }
+
+    fun extract7z(file: Path, target: Path, flatten: Int = 0) {
+        val staging = stagingFor(target)
+        try {
+            SevenZFile.builder().setFile(file.toFile()).get().use { sz ->
+                while (true) {
+                    val entry = sz.nextEntry ?: break
+                    val segments = entry.name.split('/', '\\').filter { it.isNotEmpty() }
+                    val flattened = segments.drop(flatten)
+                    if (flattened.isEmpty()) continue
+                    val outPath = flattened.fold(staging) { acc, s -> acc.resolve(s) }
+                    enforceInside(outPath, staging, entry.name)
+                    if (entry.isDirectory) {
+                        Files.createDirectories(outPath)
+                    } else {
+                        Files.createDirectories(outPath.parent)
+                        Files.newOutputStream(outPath).use { out ->
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val read = sz.read(buf)
+                                if (read < 0) break
+                                out.write(buf, 0, read)
+                            }
+                        }
+                        runCatching { outPath.toFile().setExecutable(true, false) }
                     }
                 }
             }

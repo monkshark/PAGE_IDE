@@ -1,0 +1,77 @@
+name: Build MSYS2 + MinGW UCRT64 prebuilt bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      ruby_version:
+        description: 'Ruby version used to bootstrap MSYS2 (RubyInstaller-devkit)'
+        default: '3.4.6'
+        required: true
+      release_tag:
+        description: 'GitHub release tag for the produced asset'
+        default: 'msys2-bundle-ucrt64-v1'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (for release upload context)
+        uses: actions/checkout@v4
+
+      - name: Download RubyInstaller-devkit
+        shell: pwsh
+        run: |
+          $version = "${{ inputs.ruby_version }}"
+          $url = "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-$version-1/rubyinstaller-devkit-$version-1-x64.exe"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile installer.exe -UseBasicParsing
+
+      - name: Silent install Ruby + DevKit
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "ruby"
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          $proc = Start-Process -FilePath .\installer.exe `
+            -ArgumentList '/VERYSILENT','/CURRENTUSER','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',"/DIR=$installDir",'/TASKS=!modpath,!assocfiles,defaultutf8' `
+            -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "RubyInstaller exit code $($proc.ExitCode)" }
+          Get-ChildItem $installDir\bin | Select-Object -First 10
+
+      - name: Run ridk install 1 3 (MSYS2 + MinGW UCRT64)
+        shell: cmd
+        run: |
+          "%RUNNER_TEMP%\ruby\bin\ridk.cmd" install 1 3
+
+      - name: Verify gcc.exe materialised
+        shell: pwsh
+        run: |
+          $gcc = "$env:RUNNER_TEMP\ruby\msys64\ucrt64\bin\gcc.exe"
+          if (-not (Test-Path $gcc)) { throw "gcc.exe missing at $gcc — ridk install did not deploy MinGW UCRT64" }
+          & $gcc --version
+
+      - name: Compress msys64 (zip, flatten=1 layout)
+        shell: pwsh
+        run: |
+          $src = "$env:RUNNER_TEMP\ruby\msys64"
+          $zip = "$env:GITHUB_WORKSPACE\msys2-mingw-ucrt64-x86_64.zip"
+          Write-Host "Compressing $src -> $zip"
+          Compress-Archive -Path "$src\*" -DestinationPath $zip -CompressionLevel Optimal
+          $size = (Get-Item $zip).Length / 1MB
+          Write-Host ("zip size: {0:N1} MB" -f $size)
+
+      - name: Upload as GitHub release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: MSYS2 + MinGW UCRT64 prebuilt bundle (${{ inputs.ruby_version }})
+          body: |
+            PAGE 가 Ruby 부트스트랩 단계에서 사용하는 MSYS2 + MinGW UCRT64 prebuilt zip.
+
+            - Ruby base: RubyInstaller-${{ inputs.ruby_version }}-1
+            - Layout: zip 루트 = msys64 의 직계 하위 (`ucrt64/`, `usr/`, ...).
+              `RubyBootstrapInstaller` 가 `flatten=1` 로 추출하여 `<target>/msys64/ucrt64/bin/gcc.exe` 경로에 배치.
+          files: msys2-mingw-ucrt64-x86_64.zip
+          fail_on_unmatched_files: true
