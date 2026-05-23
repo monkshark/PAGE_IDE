@@ -1,13 +1,18 @@
 package page.app
 
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 
 class JdtlsInstaller(
-    private val owner: String = "eclipse-jdtls",
-    private val repo: String = "eclipse.jdt.ls",
-    private val defaultTag: String? = null,
+    private val baseUrl: String = DEFAULT_BASE_URL,
+    private val versionsFetcher: (baseUrl: String) -> List<String> = JdtlsInstaller::fetchMilestoneVersions,
+    private val snapshotFileFetcher: (baseUrl: String) -> String? = JdtlsInstaller::fetchSnapshotFileName,
+    private val milestoneFileFetcher: (baseUrl: String, version: String) -> String? = JdtlsInstaller::fetchMilestoneFileName,
+    private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
+    private val defaultVersion: String = "snapshot-latest",
 ) : LspInstaller {
 
     override val languageId: String = "jdtls"
@@ -23,36 +28,44 @@ class JdtlsInstaller(
     override fun isInstalled(): Boolean = executable() != null
 
     override fun executable(): Path? {
-        val root = installRoot()
+        val tag = currentInstalledVersion() ?: return null
+        val root = installRoot(tag)
         if (!Files.isDirectory(root)) return null
         val launcher = root.resolve(launcherName())
         return launcher.takeIf { Files.exists(it) }
     }
 
-    override fun defaultVersion(): String? = defaultTag
+    override fun defaultVersion(): String? = defaultVersion
 
     override fun installedVersion(): String? = currentInstalledVersion()
 
     override fun availableVersions(): List<String> = runCatching {
-        GitHubReleases.listReleases(owner, repo).map { it.tagName }
-    }.getOrDefault(emptyList())
+        val milestones = versionsFetcher(baseUrl)
+        listOf("snapshot-latest") + milestones
+    }.getOrDefault(listOf("snapshot-latest"))
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
         try {
-            val tag = version
-                ?: defaultTag
-                ?: GitHubReleases.latestTag(owner, repo)
-                ?: throw IOException("cannot resolve JDT-LS release tag")
-            val assetUrl = GitHubReleases.fetchAssetUrl(owner, repo, tag, ".tar.gz")
-                ?: throw IOException("no .tar.gz asset on $tag")
-            val target = installRoot(tag)
+            val requested = version ?: defaultVersion
+            val (label, fileName) = resolveAsset(requested)
+                ?: throw IOException("JDT-LS $requested 다운로드 파일명 조회 실패")
+
+            val downloadUrl = if (label == "snapshot-latest") {
+                "${baseUrl.trimEnd('/')}/snapshots/$fileName"
+            } else {
+                "${baseUrl.trimEnd('/')}/milestones/$label/$fileName"
+            }
+
+            val target = installRoot(label)
             val tmp = Files.createTempFile("jdtls-", ".tar.gz")
             try {
-                downloadWithProgress(assetUrl, tmp, onProgress)
-                onProgress(LspInstaller.Progress.Extracting())
+                downloader(downloadUrl, tmp) { read, total ->
+                    onProgress(LspInstaller.Progress.Downloading(read, total))
+                }
+                onProgress(LspInstaller.Progress.Extracting("Extracting JDT-LS…"))
                 ArchiveExtractors.extractTarGz(tmp, target, flatten = 0)
                 writeLauncher(target)
-                writePointer(tag)
+                writePointer(label)
                 val exe = target.resolve(launcherName())
                 if (!Files.exists(exe)) throw IOException("launcher missing at $exe")
                 runCatching { exe.toFile().setExecutable(true, false) }
@@ -65,7 +78,16 @@ class JdtlsInstaller(
         }
     }
 
-    fun installRoot(version: String = currentInstalledVersion() ?: defaultTag ?: "latest"): Path =
+    private fun resolveAsset(version: String): Pair<String, String>? {
+        if (version == "snapshot-latest" || version == "snapshot" || version == "latest") {
+            val file = snapshotFileFetcher(baseUrl) ?: return null
+            return "snapshot-latest" to file
+        }
+        val file = milestoneFileFetcher(baseUrl, version) ?: return null
+        return version to file
+    }
+
+    fun installRoot(version: String = currentInstalledVersion() ?: defaultVersion): Path =
         LspInstaller.lspHome().resolve(languageId).resolve(sanitize(version))
 
     private fun currentInstalledVersion(): String? {
@@ -167,9 +189,54 @@ class JdtlsInstaller(
         return false
     }
 
-    private fun downloadWithProgress(url: String, target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
-        InstallerHttp.download(url, target) { read, total ->
-            onProgress(LspInstaller.Progress.Downloading(read, total))
+    companion object {
+
+        const val DEFAULT_BASE_URL: String = "https://download.eclipse.org/jdtls"
+        private val MILESTONE_DIR_REGEX = Regex("""href="([0-9]+\.[0-9]+\.[0-9]+)/?"""")
+        internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
+            val aParts = a.split('.').map { it.toIntOrNull() ?: 0 }
+            val bParts = b.split('.').map { it.toIntOrNull() ?: 0 }
+            val n = maxOf(aParts.size, bParts.size)
+            for (i in 0 until n) {
+                val ai = aParts.getOrNull(i) ?: 0
+                val bi = bParts.getOrNull(i) ?: 0
+                if (ai != bi) return@Comparator bi - ai
+            }
+            0
+        }
+
+        fun fetchMilestoneVersions(baseUrl: String = DEFAULT_BASE_URL): List<String> = runCatching {
+            val html = fetchText("${baseUrl.trimEnd('/')}/milestones/")
+            parseMilestoneVersions(html)
+        }.getOrDefault(emptyList())
+
+        internal fun parseMilestoneVersions(html: String): List<String> {
+            return MILESTONE_DIR_REGEX.findAll(html)
+                .map { it.groupValues[1] }
+                .toSet()
+                .sortedWith(VERSION_DESC)
+        }
+
+        fun fetchSnapshotFileName(baseUrl: String = DEFAULT_BASE_URL): String? = runCatching {
+            fetchText("${baseUrl.trimEnd('/')}/snapshots/latest.txt").trim().takeIf { it.isNotBlank() }
+        }.getOrNull()
+
+        fun fetchMilestoneFileName(baseUrl: String = DEFAULT_BASE_URL, version: String): String? = runCatching {
+            fetchText("${baseUrl.trimEnd('/')}/milestones/$version/latest.txt").trim().takeIf { it.isNotBlank() }
+        }.getOrNull()
+
+        private fun fetchText(url: String): String {
+            val conn = URI(url).toURL().openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 20_000
+            conn.setRequestProperty("User-Agent", "PAGE-IDE/0.1 JdtlsInstaller")
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299) throw IOException("download.eclipse.org HTTP $code")
+                return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } finally {
+                conn.disconnect()
+            }
         }
     }
 }

@@ -8,9 +8,9 @@ import kotlin.test.assertTrue
 
 class LanguageRegistryTest {
     @Test
-    fun bundledRegistryHasThirtyThreeLanguages() {
+    fun bundledRegistryHasThirtyFourLanguages() {
         val all = LanguageRegistry.all()
-        assertEquals(33, all.size, "expected 33 bundled language definitions, got ${all.size}")
+        assertEquals(34, all.size, "expected 34 bundled language definitions, got ${all.size}")
     }
 
     @Test
