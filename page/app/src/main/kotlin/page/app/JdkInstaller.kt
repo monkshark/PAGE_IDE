@@ -224,25 +224,37 @@ class JdkInstaller(
         private data class AdoptiumVersionsResponse(val versions: List<AdoptiumVersion>? = null)
         private data class AdoptiumVersion(
             @SerializedName("openjdk_version") val openjdkVersion: String? = null,
+            val semver: String? = null,
         )
 
         internal fun fetchAdoptiumVersions(majors: IntArray = LTS_MAJORS): List<String> {
-            val out = mutableListOf<String>()
-            for (m in majors) {
+            val threads = majors.map { m ->
                 val next = m + 1
                 val url = "https://api.adoptium.net/v3/info/release_versions?" +
                     "release_type=ga&page_size=5&heap_size=normal&image_type=jdk&jvm_impl=hotspot&vendor=eclipse" +
                     "&version=%5B${m}%2C${next}%29&sort_order=DESC"
-                val versions = runCatching { fetchAdoptiumPage(url) }.getOrDefault(emptyList())
-                out.addAll(versions)
+                Thread { Thread.currentThread().name = "adoptium-$m" }.let {
+                    val result = mutableListOf<String>()
+                    val t = Thread {
+                        runCatching { fetchAdoptiumPage(url) }.getOrDefault(emptyList()).let(result::addAll)
+                    }
+                    t.isDaemon = true
+                    t.start()
+                    t to result
+                }
+            }
+            val out = mutableListOf<String>()
+            for ((t, result) in threads) {
+                runCatching { t.join(10_000) }
+                out.addAll(result)
             }
             return out
         }
 
         private fun fetchAdoptiumPage(url: String): List<String> {
             val conn = URI(url).toURL().openConnection() as HttpURLConnection
-            conn.connectTimeout = 8_000
-            conn.readTimeout = 15_000
+            conn.connectTimeout = 5_000
+            conn.readTimeout = 10_000
             conn.setRequestProperty("Accept", "application/json")
             conn.setRequestProperty("User-Agent", "PAGE-IDE/0.1 JdkInstaller")
             try {
@@ -250,7 +262,9 @@ class JdkInstaller(
                 if (code !in 200..299) return emptyList()
                 val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val doc = gson.fromJson(body, AdoptiumVersionsResponse::class.java) ?: return emptyList()
-                return doc.versions?.mapNotNull { it.openjdkVersion?.takeIf(String::isNotBlank) } ?: emptyList()
+                return doc.versions?.mapNotNull { v ->
+                    v.semver?.takeIf(String::isNotBlank) ?: v.openjdkVersion?.takeIf(String::isNotBlank)
+                } ?: emptyList()
             } finally {
                 conn.disconnect()
             }
