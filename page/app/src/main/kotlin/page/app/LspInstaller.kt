@@ -20,6 +20,14 @@ interface LspInstaller {
     fun activeVersion(): String? = installedVersion()
     fun applyVersion(version: String): Boolean = false
 
+    fun versionGroups(versions: List<String>): List<VersionGroup>? = null
+
+    data class VersionGroup(
+        val label: String,
+        val recommended: String,
+        val versions: List<String>,
+    )
+
     fun installDir(version: String?): Path {
         val v = version ?: defaultVersion() ?: "latest"
         return lspHome().resolve(languageId).resolve(v)
