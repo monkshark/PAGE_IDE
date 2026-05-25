@@ -730,9 +730,9 @@ private fun GroupedVersionList(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val arrow = if (isExpanded) "▼" else "▶"
-                Text(
-                    text = arrow,
+                Box(
                     modifier = Modifier
+                        .height(26.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -740,9 +740,14 @@ private fun GroupedVersionList(
                             expandedGroups = if (isExpanded) expandedGroups - group.label else expandedGroups + group.label
                         }
                         .padding(end = 6.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = LocalTextStyle.current.copy(fontSize = 9.sp),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = arrow,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = LocalTextStyle.current.copy(fontSize = 9.sp),
+                    )
+                }
                 Text(
                     text = rec,
                     color = recColor,
