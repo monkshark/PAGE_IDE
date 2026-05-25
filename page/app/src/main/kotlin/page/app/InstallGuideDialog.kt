@@ -706,40 +706,91 @@ private fun GroupedVersionList(
     activeVersion: String?,
     onSelect: (String) -> Unit,
 ) {
-    var expandedGroups by remember { mutableStateOf(setOf(groups.firstOrNull()?.label ?: "")) }
+    var expandedGroups by remember { mutableStateOf(emptySet<String>()) }
     for (group in groups) {
         val isExpanded = group.label in expandedGroups
-        SectionHeader(
-            label = group.label,
-            expanded = isExpanded,
-            toggleable = true,
-            onClick = {
-                expandedGroups = if (isExpanded) expandedGroups - group.label else expandedGroups + group.label
-            },
-        )
-        Spacer(Modifier.height(4.dp))
+        val rec = group.recommended
+        val isRecSelected = rec == selectedVersion
+        val isRecActive = rec == activeVersion
+        val isRecInstalled = rec in installedVersions
+        val rowBg = if (isRecSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+        val recColor = when {
+            isRecActive -> MaterialTheme.colorScheme.primary
+            isRecInstalled -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(26.dp)
+                .background(rowBg)
+                .clickable { onSelect(rec) }
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val arrow = if (isExpanded) "▼" else "▶"
+                Text(
+                    text = arrow,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            expandedGroups = if (isExpanded) expandedGroups - group.label else expandedGroups + group.label
+                        }
+                        .padding(end = 6.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = LocalTextStyle.current.copy(fontSize = 9.sp),
+                )
+                Text(
+                    text = rec,
+                    color = recColor,
+                    style = LocalTextStyle.current.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeightStyle = LineHeightStyle(
+                            alignment = LineHeightStyle.Alignment.Center,
+                            trim = LineHeightStyle.Trim.Both,
+                        ),
+                    ),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = group.label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                )
+                if (isRecActive) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "· current",
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                    )
+                } else if (isRecInstalled) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "· installed",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                    )
+                }
+            }
+        }
         if (isExpanded) {
-            group.versions.forEach { v ->
+            group.versions.drop(1).forEach { v ->
                 VersionRow(
                     version = v,
                     selected = v == selectedVersion,
                     installed = v in installedVersions,
                     active = v == activeVersion,
                     onClick = { onSelect(v) },
-                    badge = if (v == group.recommended) "recommended" else null,
                 )
             }
-        } else {
-            VersionRow(
-                version = group.recommended,
-                selected = group.recommended == selectedVersion,
-                installed = group.recommended in installedVersions,
-                active = group.recommended == activeVersion,
-                onClick = { onSelect(group.recommended) },
-                badge = "recommended",
-            )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(2.dp))
     }
 }
 
