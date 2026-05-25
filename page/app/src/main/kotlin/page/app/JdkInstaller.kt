@@ -2,7 +2,6 @@ package page.app
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import com.google.gson.annotations.SerializedName
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
@@ -22,7 +21,7 @@ class JdkInstaller(
     private val versionsFetcher: (String, String, String) -> List<String> = { owner, repo, tag ->
         GitHubReleases.listAssetNames(owner, repo, tag)
     },
-    private val adoptiumFetcher: () -> List<String> = { fetchAdoptiumVersions() },
+    private val manifestFetcher: () -> List<String> = { fetchManifestVersions() },
 ) : LspInstaller {
 
     override val languageId: String = "jdk"
@@ -72,9 +71,9 @@ class JdkInstaller(
 
     override fun availableVersions(): List<String> {
         val bundled = discoverBundleVersions()
-        val adoptium = runCatching { adoptiumFetcher() }.getOrDefault(emptyList())
+        val manifest = runCatching { manifestFetcher() }.getOrDefault(emptyList())
         val installed = installedVersions()
-        val combined = (adoptium + bundled + sanitize(defaultJdkVersion) + installed).filter { it.isNotBlank() }
+        val combined = (manifest + bundled + sanitize(defaultJdkVersion) + installed).filter { it.isNotBlank() }
         return combined.map(::sanitize).distinct().sortedWith(VERSION_DESC)
     }
 
@@ -198,7 +197,8 @@ class JdkInstaller(
         const val DEFAULT_RELEASE_TAG = "jdk-bundle"
         const val DEFAULT_JDK_VERSION = "21.0.5+11"
 
-        private val LTS_MAJORS = intArrayOf(8, 11, 17, 21, 25)
+        const val MANIFEST_URL = "https://monkshark.github.io/page-ide/jdk/versions.json"
+
         private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 
         internal fun sanitize(version: String): String =
@@ -221,28 +221,10 @@ class JdkInstaller(
             .toIntArray()
             .let { if (it.isEmpty()) intArrayOf(-1) else it }
 
-        private data class AdoptiumVersionsResponse(val versions: List<AdoptiumVersion>? = null)
-        private data class AdoptiumVersion(
-            @SerializedName("openjdk_version") val openjdkVersion: String? = null,
-            val semver: String? = null,
-        )
+        private data class JdkManifest(val versions: List<JdkManifestEntry>? = null)
+        private data class JdkManifestEntry(val semver: String? = null)
 
-        internal fun fetchAdoptiumVersions(majors: IntArray = LTS_MAJORS): List<String> {
-            val results = Array(majors.size) { emptyList<String>() }
-            val workers = majors.mapIndexed { idx, m ->
-                val next = m + 1
-                val url = "https://api.adoptium.net/v3/info/release_versions?" +
-                    "release_type=ga&page_size=1&heap_size=normal&image_type=jdk&jvm_impl=hotspot&vendor=eclipse" +
-                    "&version=%5B${m}%2C${next}%29&sort_order=DESC"
-                Thread {
-                    results[idx] = runCatching { fetchAdoptiumPage(url) }.getOrDefault(emptyList())
-                }.also { it.isDaemon = true; it.start() }
-            }
-            for (t in workers) runCatching { t.join(10_000) }
-            return results.flatMap { it }
-        }
-
-        private fun fetchAdoptiumPage(url: String): List<String> {
+        internal fun fetchManifestVersions(url: String = MANIFEST_URL): List<String> {
             val conn = URI(url).toURL().openConnection() as HttpURLConnection
             conn.connectTimeout = 5_000
             conn.readTimeout = 10_000
@@ -252,10 +234,8 @@ class JdkInstaller(
                 val code = conn.responseCode
                 if (code !in 200..299) return emptyList()
                 val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val doc = gson.fromJson(body, AdoptiumVersionsResponse::class.java) ?: return emptyList()
-                return doc.versions?.mapNotNull { v ->
-                    v.semver?.takeIf(String::isNotBlank) ?: v.openjdkVersion?.takeIf(String::isNotBlank)
-                } ?: emptyList()
+                val doc = gson.fromJson(body, JdkManifest::class.java) ?: return emptyList()
+                return doc.versions?.mapNotNull { it.semver?.takeIf(String::isNotBlank) } ?: emptyList()
             } finally {
                 conn.disconnect()
             }

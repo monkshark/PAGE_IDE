@@ -83,7 +83,7 @@ class JdkInstallerTest {
             onProgress(1, 1)
         },
         versionsFetcher = { _, _, _ -> versions },
-        adoptiumFetcher = { emptyList() },
+        manifestFetcher = { emptyList() },
     )
 
     private fun linuxInstaller(
@@ -97,7 +97,7 @@ class JdkInstallerTest {
             onProgress(1, 1)
         },
         versionsFetcher = { _, _, _ -> versions },
-        adoptiumFetcher = { emptyList() },
+        manifestFetcher = { emptyList() },
     )
 
     @Test
@@ -129,7 +129,7 @@ class JdkInstallerTest {
             osKey = "windows", archKey = "amd64", isWindows = true,
             downloader = { _, _, _ -> },
             versionsFetcher = { _, _, _ -> emptyList() },
-            adoptiumFetcher = { emptyList() },
+            manifestFetcher = { emptyList() },
         )
         assertNull(installer.executable())
         assertFalse(installer.isInstalled())
@@ -168,7 +168,7 @@ class JdkInstallerTest {
                 writeJdkZip(target)
             },
             versionsFetcher = { _, _, _ -> emptyList() },
-            adoptiumFetcher = { emptyList() },
+            manifestFetcher = { emptyList() },
         )
         installer.install("21.0.5+11") { }
         val firstDownloads = downloads
@@ -192,7 +192,7 @@ class JdkInstallerTest {
                     "noise-not-matching.tar.gz",
                 )
             },
-            adoptiumFetcher = { emptyList() },
+            manifestFetcher = { emptyList() },
         )
         val versions = installer.availableVersions()
         assertEquals(listOf("21.0.5-11", "17.0.13-11", "11.0.25-9"), versions)
@@ -210,7 +210,7 @@ class JdkInstallerTest {
                 writeJdkZip(target)
             },
             versionsFetcher = { _, _, _ -> emptyList() },
-            adoptiumFetcher = { emptyList() },
+            manifestFetcher = { emptyList() },
         )
         installer.install("17.0.13+11") { }
         installer.install("21.0.5+11") { }
@@ -257,7 +257,7 @@ class JdkInstallerTest {
             osKey = "windows", archKey = "amd64", isWindows = true,
             downloader = { _, _, _ -> },
             versionsFetcher = { _, _, _ -> emptyList() },
-            adoptiumFetcher = { emptyList() },
+            manifestFetcher = { emptyList() },
         )
         assertTrue("17.0.13-11" in offline.availableVersions(), "installed roots must survive offline fetch")
     }
@@ -276,11 +276,17 @@ class JdkInstallerTest {
     }
 
     @Test
-    fun fetchAdoptiumVersionsReturnsJdk8And21() {
-        val versions = JdkInstaller.fetchAdoptiumVersions(intArrayOf(8, 21))
-        assertTrue(versions.isNotEmpty(), "Adoptium API should return versions, got empty")
-        assertTrue(versions.any { it.startsWith("8.") }, "should contain JDK 8, got: $versions")
-        assertTrue(versions.any { it.startsWith("21.") }, "should contain JDK 21, got: $versions")
-        assertEquals(2, versions.size, "page_size=1 per major → expect 2 total, got: $versions")
+    fun availableVersionsIncludesManifestEntries() {
+        useTempHome()
+        val installer = JdkInstaller(
+            osKey = "linux", archKey = "amd64", isWindows = false,
+            downloader = { _, _, _ -> },
+            versionsFetcher = { _, _, _ -> emptyList() },
+            manifestFetcher = { listOf("21.0.7+6", "17.0.13+11", "8.0.492+9") },
+        )
+        val versions = installer.availableVersions()
+        assertTrue("21.0.7-6" in versions, "should contain 21.0.7-6, got: $versions")
+        assertTrue("17.0.13-11" in versions, "should contain 17.0.13-11, got: $versions")
+        assertTrue("8.0.492-9" in versions, "should contain 8.0.492-9, got: $versions")
     }
 }
