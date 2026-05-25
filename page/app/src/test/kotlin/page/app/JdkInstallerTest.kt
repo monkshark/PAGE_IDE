@@ -83,6 +83,7 @@ class JdkInstallerTest {
             onProgress(1, 1)
         },
         versionsFetcher = { _, _, _ -> versions },
+        adoptiumFetcher = { emptyList() },
     )
 
     private fun linuxInstaller(
@@ -96,6 +97,7 @@ class JdkInstallerTest {
             onProgress(1, 1)
         },
         versionsFetcher = { _, _, _ -> versions },
+        adoptiumFetcher = { emptyList() },
     )
 
     @Test
@@ -127,6 +129,7 @@ class JdkInstallerTest {
             osKey = "windows", archKey = "amd64", isWindows = true,
             downloader = { _, _, _ -> },
             versionsFetcher = { _, _, _ -> emptyList() },
+            adoptiumFetcher = { emptyList() },
         )
         assertNull(installer.executable())
         assertFalse(installer.isInstalled())
@@ -165,6 +168,7 @@ class JdkInstallerTest {
                 writeJdkZip(target)
             },
             versionsFetcher = { _, _, _ -> emptyList() },
+            adoptiumFetcher = { emptyList() },
         )
         installer.install("21.0.5+11") { }
         val firstDownloads = downloads
@@ -188,6 +192,7 @@ class JdkInstallerTest {
                     "noise-not-matching.tar.gz",
                 )
             },
+            adoptiumFetcher = { emptyList() },
         )
         val versions = installer.availableVersions()
         assertEquals(listOf("21.0.5-11", "17.0.13-11", "11.0.25-9"), versions)
@@ -205,6 +210,7 @@ class JdkInstallerTest {
                 writeJdkZip(target)
             },
             versionsFetcher = { _, _, _ -> emptyList() },
+            adoptiumFetcher = { emptyList() },
         )
         installer.install("17.0.13+11") { }
         installer.install("21.0.5+11") { }
@@ -251,6 +257,7 @@ class JdkInstallerTest {
             osKey = "windows", archKey = "amd64", isWindows = true,
             downloader = { _, _, _ -> },
             versionsFetcher = { _, _, _ -> emptyList() },
+            adoptiumFetcher = { emptyList() },
         )
         assertTrue("17.0.13-11" in offline.availableVersions(), "installed roots must survive offline fetch")
     }

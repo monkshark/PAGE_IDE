@@ -1,6 +1,11 @@
 package page.app
 
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.annotations.SerializedName
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -17,6 +22,7 @@ class JdkInstaller(
     private val versionsFetcher: (String, String, String) -> List<String> = { owner, repo, tag ->
         GitHubReleases.listAssetNames(owner, repo, tag)
     },
+    private val adoptiumFetcher: () -> List<String> = { fetchAdoptiumVersions() },
 ) : LspInstaller {
 
     override val languageId: String = "jdk"
@@ -65,9 +71,10 @@ class JdkInstaller(
     }
 
     override fun availableVersions(): List<String> {
-        val discovered = discoverBundleVersions()
+        val bundled = discoverBundleVersions()
+        val adoptium = runCatching { adoptiumFetcher() }.getOrDefault(emptyList())
         val installed = installedVersions()
-        val combined = (discovered + sanitize(defaultJdkVersion) + installed).filter { it.isNotBlank() }
+        val combined = (adoptium + bundled + sanitize(defaultJdkVersion) + installed).filter { it.isNotBlank() }
         return combined.map(::sanitize).distinct().sortedWith(VERSION_DESC)
     }
 
@@ -191,6 +198,9 @@ class JdkInstaller(
         const val DEFAULT_RELEASE_TAG = "jdk-bundle"
         const val DEFAULT_JDK_VERSION = "21.0.5+11"
 
+        private val LTS_MAJORS = intArrayOf(8, 11, 17, 21, 25)
+        private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+
         internal fun sanitize(version: String): String =
             version.replace('+', '-').replace(Regex("[\\\\/:*?\"<>|]"), "_")
 
@@ -210,5 +220,40 @@ class JdkInstaller(
             .mapNotNull { it.toIntOrNull() }
             .toIntArray()
             .let { if (it.isEmpty()) intArrayOf(-1) else it }
+
+        private data class AdoptiumVersionsResponse(val versions: List<AdoptiumVersion>? = null)
+        private data class AdoptiumVersion(
+            @SerializedName("openjdk_version") val openjdkVersion: String? = null,
+        )
+
+        internal fun fetchAdoptiumVersions(majors: IntArray = LTS_MAJORS): List<String> {
+            val out = mutableListOf<String>()
+            for (m in majors) {
+                val next = m + 1
+                val url = "https://api.adoptium.net/v3/info/release_versions?" +
+                    "release_type=ga&page_size=5&heap_size=normal&image_type=jdk&jvm_impl=hotspot&vendor=eclipse" +
+                    "&version=%5B${m}%2C${next}%29&sort_order=DESC"
+                val versions = runCatching { fetchAdoptiumPage(url) }.getOrDefault(emptyList())
+                out.addAll(versions)
+            }
+            return out
+        }
+
+        private fun fetchAdoptiumPage(url: String): List<String> {
+            val conn = URI(url).toURL().openConnection() as HttpURLConnection
+            conn.connectTimeout = 8_000
+            conn.readTimeout = 15_000
+            conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("User-Agent", "PAGE-IDE/0.1 JdkInstaller")
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299) return emptyList()
+                val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val doc = gson.fromJson(body, AdoptiumVersionsResponse::class.java) ?: return emptyList()
+                return doc.versions?.mapNotNull { it.openjdkVersion?.takeIf(String::isNotBlank) } ?: emptyList()
+            } finally {
+                conn.disconnect()
+            }
+        }
     }
 }
