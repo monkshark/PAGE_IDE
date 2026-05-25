@@ -77,6 +77,21 @@ class JdkInstaller(
         return combined.map(::sanitize).distinct().sortedWith(VERSION_DESC)
     }
 
+    override fun versionGroups(versions: List<String>): List<LspInstaller.VersionGroup> {
+        val grouped = versions.groupBy { majorOf(it) }.toSortedMap(compareByDescending { it })
+        return grouped.map { (major, patches) ->
+            val sorted = patches.sortedWith(VERSION_DESC)
+            LspInstaller.VersionGroup(
+                label = "JDK $major",
+                recommended = sorted.first(),
+                versions = sorted,
+            )
+        }
+    }
+
+    private fun majorOf(version: String): Int =
+        version.split('.', '-', '_', '+').firstOrNull()?.toIntOrNull() ?: 0
+
     private fun discoverBundleVersions(): List<String> {
         val (owner, repo) = parseRepo(assetsRepo) ?: return emptyList()
         val pattern = assetNamePattern() ?: return emptyList()

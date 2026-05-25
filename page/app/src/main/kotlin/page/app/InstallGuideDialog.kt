@@ -294,6 +294,7 @@ internal fun InstallGuideDialog(
                                     ),
                                 )
                                 Spacer(Modifier.height(10.dp))
+                                val groups = installer?.versionGroups(availableVersions)
                                 val forkVersions = if (kls != null) {
                                     availableVersions.filter {
                                         KlsLspInstaller.parseLabel(it).second != KlsLspInstaller.UPSTREAM
@@ -304,21 +305,33 @@ internal fun InstallGuideDialog(
                                         KlsLspInstaller.parseLabel(it).second == KlsLspInstaller.UPSTREAM
                                     }
                                 } else emptyList()
-                                SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
-                                Spacer(Modifier.height(4.dp))
                                 if (versionsLoading) {
+                                    SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = "Loading versions…",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = LocalTextStyle.current.copy(fontSize = 10.sp),
                                     )
+                                } else if (groups != null && groups.isNotEmpty()) {
+                                    GroupedVersionList(
+                                        groups = groups,
+                                        selectedVersion = selectedVersion,
+                                        installedVersions = installedVersions,
+                                        activeVersion = installedVersion,
+                                        onSelect = { selectedVersion = it },
+                                    )
                                 } else if (forkVersions.isEmpty()) {
+                                    SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = "No versions available (network or rate-limit)",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = LocalTextStyle.current.copy(fontSize = 10.sp),
                                     )
                                 } else {
+                                    SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
+                                    Spacer(Modifier.height(4.dp))
                                     forkVersions.take(50).forEach { v ->
                                         VersionRow(
                                             version = v,
@@ -686,12 +699,58 @@ private fun OsTab(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
+private fun GroupedVersionList(
+    groups: List<LspInstaller.VersionGroup>,
+    selectedVersion: String?,
+    installedVersions: List<String>,
+    activeVersion: String?,
+    onSelect: (String) -> Unit,
+) {
+    var expandedGroups by remember { mutableStateOf(setOf(groups.firstOrNull()?.label ?: "")) }
+    for (group in groups) {
+        val isExpanded = group.label in expandedGroups
+        SectionHeader(
+            label = group.label,
+            expanded = isExpanded,
+            toggleable = true,
+            onClick = {
+                expandedGroups = if (isExpanded) expandedGroups - group.label else expandedGroups + group.label
+            },
+        )
+        Spacer(Modifier.height(4.dp))
+        if (isExpanded) {
+            group.versions.forEach { v ->
+                VersionRow(
+                    version = v,
+                    selected = v == selectedVersion,
+                    installed = v in installedVersions,
+                    active = v == activeVersion,
+                    onClick = { onSelect(v) },
+                    badge = if (v == group.recommended) "recommended" else null,
+                )
+            }
+        } else {
+            VersionRow(
+                version = group.recommended,
+                selected = group.recommended == selectedVersion,
+                installed = group.recommended in installedVersions,
+                active = group.recommended == activeVersion,
+                onClick = { onSelect(group.recommended) },
+                badge = "recommended",
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable
 private fun VersionRow(
     version: String,
     selected: Boolean,
     installed: Boolean,
     active: Boolean,
     onClick: () -> Unit,
+    badge: String? = null,
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
     val versionColor = when {
@@ -725,6 +784,7 @@ private fun VersionRow(
             val suffix = when {
                 active -> "· current"
                 installed -> "· installed"
+                badge != null -> "· $badge"
                 else -> null
             }
             if (suffix != null) {
