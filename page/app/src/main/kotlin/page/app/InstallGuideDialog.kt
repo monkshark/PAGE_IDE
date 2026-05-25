@@ -294,6 +294,7 @@ internal fun InstallGuideDialog(
                                     ),
                                 )
                                 Spacer(Modifier.height(10.dp))
+                                val groups = installer?.versionGroups(availableVersions)
                                 val forkVersions = if (kls != null) {
                                     availableVersions.filter {
                                         KlsLspInstaller.parseLabel(it).second != KlsLspInstaller.UPSTREAM
@@ -304,21 +305,33 @@ internal fun InstallGuideDialog(
                                         KlsLspInstaller.parseLabel(it).second == KlsLspInstaller.UPSTREAM
                                     }
                                 } else emptyList()
-                                SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
-                                Spacer(Modifier.height(4.dp))
                                 if (versionsLoading) {
+                                    SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = "Loading versions…",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = LocalTextStyle.current.copy(fontSize = 10.sp),
                                     )
+                                } else if (groups != null && groups.isNotEmpty()) {
+                                    GroupedVersionList(
+                                        groups = groups,
+                                        selectedVersion = selectedVersion,
+                                        installedVersions = installedVersions,
+                                        activeVersion = installedVersion,
+                                        onSelect = { selectedVersion = it },
+                                    )
                                 } else if (forkVersions.isEmpty()) {
+                                    SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
+                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = "No versions available (network or rate-limit)",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         style = LocalTextStyle.current.copy(fontSize = 10.sp),
                                     )
                                 } else {
+                                    SectionHeader(label = "Recommended (verified)", expanded = true, toggleable = false)
+                                    Spacer(Modifier.height(4.dp))
                                     forkVersions.take(50).forEach { v ->
                                         VersionRow(
                                             version = v,
@@ -686,12 +699,116 @@ private fun OsTab(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
+private fun GroupedVersionList(
+    groups: List<LspInstaller.VersionGroup>,
+    selectedVersion: String?,
+    installedVersions: List<String>,
+    activeVersion: String?,
+    onSelect: (String) -> Unit,
+) {
+    var expandedGroups by remember { mutableStateOf(emptySet<String>()) }
+    for (group in groups) {
+        val isExpanded = group.label in expandedGroups
+        val rec = group.recommended
+        val isRecSelected = rec == selectedVersion
+        val isRecActive = rec == activeVersion
+        val isRecInstalled = rec in installedVersions
+        val rowBg = if (isRecSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+        val recColor = when {
+            isRecActive -> MaterialTheme.colorScheme.primary
+            isRecInstalled -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(26.dp)
+                .background(rowBg)
+                .clickable { onSelect(rec) }
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val arrow = if (isExpanded) "▼" else "▶"
+                Text(
+                    text = arrow,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            expandedGroups = if (isExpanded) expandedGroups - group.label else expandedGroups + group.label
+                        }
+                        .padding(end = 6.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = LocalTextStyle.current.copy(
+                        fontSize = 9.sp,
+                        lineHeight = 9.sp,
+                        lineHeightStyle = LineHeightStyle(
+                            alignment = LineHeightStyle.Alignment.Center,
+                            trim = LineHeightStyle.Trim.Both,
+                        ),
+                    ),
+                )
+                Text(
+                    text = rec,
+                    color = recColor,
+                    style = LocalTextStyle.current.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeightStyle = LineHeightStyle(
+                            alignment = LineHeightStyle.Alignment.Center,
+                            trim = LineHeightStyle.Trim.Both,
+                        ),
+                    ),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = group.label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                )
+                if (isRecActive) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "· current",
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                    )
+                } else if (isRecInstalled) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "· installed",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                    )
+                }
+            }
+        }
+        if (isExpanded) {
+            group.versions.drop(1).forEach { v ->
+                VersionRow(
+                    version = v,
+                    selected = v == selectedVersion,
+                    installed = v in installedVersions,
+                    active = v == activeVersion,
+                    onClick = { onSelect(v) },
+                )
+            }
+        }
+        Spacer(Modifier.height(2.dp))
+    }
+}
+
+@Composable
 private fun VersionRow(
     version: String,
     selected: Boolean,
     installed: Boolean,
     active: Boolean,
     onClick: () -> Unit,
+    badge: String? = null,
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
     val versionColor = when {
@@ -725,6 +842,7 @@ private fun VersionRow(
             val suffix = when {
                 active -> "· current"
                 installed -> "· installed"
+                badge != null -> "· $badge"
                 else -> null
             }
             if (suffix != null) {
