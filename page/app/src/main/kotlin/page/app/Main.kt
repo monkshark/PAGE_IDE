@@ -3061,7 +3061,8 @@ private fun Shell(
     val jdkScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            jdkActiveVersion.value = runCatching { JdkInstaller().activeVersion() }.getOrNull()
+            val managed = runCatching { JdkInstaller().activeVersion() }.getOrNull()
+            jdkActiveVersion.value = managed ?: System.getProperty("java.version")
         }
     }
     Box(modifier = Modifier.fillMaxSize()) {
@@ -3343,7 +3344,8 @@ private fun Shell(
             onInstalled = {
                 jdkScope.launch {
                     withContext(Dispatchers.IO) {
-                        jdkActiveVersion.value = runCatching { JdkInstaller().activeVersion() }.getOrNull()
+                        val managed = runCatching { JdkInstaller().activeVersion() }.getOrNull()
+                        jdkActiveVersion.value = managed ?: System.getProperty("java.version")
                     }
                 }
             },
