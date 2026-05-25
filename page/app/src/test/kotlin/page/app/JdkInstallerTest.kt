@@ -274,4 +274,13 @@ class JdkInstallerTest {
         val sorted = mixed.sortedWith(JdkInstaller.VERSION_DESC)
         assertEquals(listOf("21.0.5-11", "17.0.13-11", "11.0.25-9", "8.0.452-9"), sorted)
     }
+
+    @Test
+    fun fetchAdoptiumVersionsReturnsJdk8And21() {
+        val versions = JdkInstaller.fetchAdoptiumVersions(intArrayOf(8, 21))
+        assertTrue(versions.isNotEmpty(), "Adoptium API should return versions, got empty")
+        assertTrue(versions.any { it.startsWith("8.") }, "should contain JDK 8, got: $versions")
+        assertTrue(versions.any { it.startsWith("21.") }, "should contain JDK 21, got: $versions")
+        assertEquals(2, versions.size, "page_size=1 per major → expect 2 total, got: $versions")
+    }
 }

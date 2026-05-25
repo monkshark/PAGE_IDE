@@ -228,27 +228,18 @@ class JdkInstaller(
         )
 
         internal fun fetchAdoptiumVersions(majors: IntArray = LTS_MAJORS): List<String> {
-            val threads = majors.map { m ->
+            val results = Array(majors.size) { emptyList<String>() }
+            val workers = majors.mapIndexed { idx, m ->
                 val next = m + 1
                 val url = "https://api.adoptium.net/v3/info/release_versions?" +
-                    "release_type=ga&page_size=5&heap_size=normal&image_type=jdk&jvm_impl=hotspot&vendor=eclipse" +
+                    "release_type=ga&page_size=1&heap_size=normal&image_type=jdk&jvm_impl=hotspot&vendor=eclipse" +
                     "&version=%5B${m}%2C${next}%29&sort_order=DESC"
-                Thread { Thread.currentThread().name = "adoptium-$m" }.let {
-                    val result = mutableListOf<String>()
-                    val t = Thread {
-                        runCatching { fetchAdoptiumPage(url) }.getOrDefault(emptyList()).let(result::addAll)
-                    }
-                    t.isDaemon = true
-                    t.start()
-                    t to result
-                }
+                Thread {
+                    results[idx] = runCatching { fetchAdoptiumPage(url) }.getOrDefault(emptyList())
+                }.also { it.isDaemon = true; it.start() }
             }
-            val out = mutableListOf<String>()
-            for ((t, result) in threads) {
-                runCatching { t.join(10_000) }
-                out.addAll(result)
-            }
-            return out
+            for (t in workers) runCatching { t.join(10_000) }
+            return results.flatMap { it }
         }
 
         private fun fetchAdoptiumPage(url: String): List<String> {
