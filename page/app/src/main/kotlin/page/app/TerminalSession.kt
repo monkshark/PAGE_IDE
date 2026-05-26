@@ -141,10 +141,10 @@ class TerminalSession internal constructor(
             if (!elevated) return base
             var gsudo = findGsudo()
             if (gsudo == null) {
-                installGsudo()
+                val log = installGsudo()
                 gsudo = findGsudo()
                     ?: throw IllegalStateException(
-                        "gsudo auto-install failed. Install manually: winget install gerardog.gsudo\nThen restart PAGE IDE."
+                        "gsudo auto-install failed.\n$log\nInstall manually: winget install gerardog.gsudo\nThen restart PAGE IDE."
                     )
             }
             return arrayOf(gsudo) + base
@@ -161,17 +161,20 @@ class TerminalSession internal constructor(
             return knownPaths.firstOrNull { java.io.File(it).exists() }
         }
 
-        private fun installGsudo() {
+        private fun installGsudo(): String {
             val winget = findOnPath("winget") ?: findOnPath("winget.exe")
                 ?: System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WindowsApps\\winget.exe" }?.takeIf { java.io.File(it).exists() }
-                ?: return
-            try {
-                val p = ProcessBuilder(winget, "install", "--id", "gerardog.gsudo", "--accept-package-agreements", "--accept-source-agreements", "--silent")
+                ?: return "winget not found"
+            return try {
+                val p = ProcessBuilder(winget, "install", "--id", "gerardog.gsudo", "--accept-package-agreements", "--accept-source-agreements")
                     .redirectErrorStream(true)
                     .start()
-                p.inputStream.bufferedReader().use { it.readText() }
-                p.waitFor()
-            } catch (_: Throwable) {}
+                val output = p.inputStream.bufferedReader().use { it.readText() }
+                val exitCode = p.waitFor()
+                "winget=$winget exit=$exitCode\n$output\ngsudo search: ${findGsudo() ?: "not found"}"
+            } catch (t: Throwable) {
+                "winget=$winget error=${t.message}"
+            }
         }
 
         fun detectShells(): List<ShellOption> {
