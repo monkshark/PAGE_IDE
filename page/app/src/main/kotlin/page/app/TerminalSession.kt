@@ -139,21 +139,32 @@ class TerminalSession internal constructor(
         internal fun buildCommand(shell: ShellOption, elevated: Boolean): Array<String> {
             val base = arrayOf(shell.executable) + shell.args.toTypedArray()
             if (!elevated) return base
-            var gsudo = findOnPath("gsudo") ?: findOnPath("gsudo.exe")
+            var gsudo = findGsudo()
             if (gsudo == null) {
                 installGsudo()
-                gsudo = findOnPath("gsudo") ?: findOnPath("gsudo.exe")
+                gsudo = findGsudo()
                     ?: throw IllegalStateException(
-                        "gsudo auto-install failed. Install manually: winget install gerardog.gsudo"
+                        "gsudo auto-install failed. Install manually: winget install gerardog.gsudo\nThen restart PAGE IDE."
                     )
             }
             return arrayOf(gsudo) + base
         }
 
+        private fun findGsudo(): String? {
+            findOnPath("gsudo")?.let { return it }
+            findOnPath("gsudo.exe")?.let { return it }
+            val knownPaths = listOfNotNull(
+                System.getenv("ProgramFiles")?.let { "$it\\gsudo\\Current\\gsudo.exe" },
+                System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WinGet\\Links\\gsudo.exe" },
+                System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WinGet\\Packages\\gerardog.gsudo_Microsoft.Winget.Source_8wekyb3d8bbwe\\gsudo.exe" },
+            )
+            return knownPaths.firstOrNull { java.io.File(it).exists() }
+        }
+
         private fun installGsudo() {
             val winget = findOnPath("winget") ?: findOnPath("winget.exe") ?: return
             try {
-                val p = ProcessBuilder(winget, "install", "--id", "gerardog.gsudo", "--accept-package-agreements", "--accept-source-agreements")
+                val p = ProcessBuilder(winget, "install", "--id", "gerardog.gsudo", "--accept-package-agreements", "--accept-source-agreements", "--silent")
                     .redirectErrorStream(true)
                     .start()
                 p.inputStream.bufferedReader().use { it.readText() }
