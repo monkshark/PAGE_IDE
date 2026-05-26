@@ -456,9 +456,13 @@ private fun TerminalBody(
     var focused by remember { mutableStateOf(false) }
 
     var caretOn by remember { mutableStateOf(true) }
-    LaunchedEffect(alive) {
+    LaunchedEffect(alive, focused) {
         if (!alive) {
             caretOn = false
+            return@LaunchedEffect
+        }
+        if (!focused) {
+            caretOn = true
             return@LaunchedEffect
         }
         caretOn = true
@@ -491,12 +495,13 @@ private fun TerminalBody(
                 val displayEnd = (cursorLineIndex + 2).coerceAtMost(lines.size)
                 for (idx in 0 until displayEnd) {
                     val line = lines[idx]
-                    val showCaret = idx == cursorLineIndex && alive && cursorVisible && caretOn
+                    val showCaret = idx == cursorLineIndex && alive && cursorVisible && (caretOn || !focused)
                     Text(
                         text = line.toAnnotatedString(
                             showCaret = showCaret,
                             caretColor = caretColor,
                             caretCol = if (showCaret) cursorCol else -1,
+                            caretFocused = focused,
                         ),
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -559,7 +564,9 @@ private fun TerminalLine.toAnnotatedString(
     showCaret: Boolean = false,
     caretColor: Color = Color.Unspecified,
     caretCol: Int = -1,
+    caretFocused: Boolean = true,
 ): AnnotatedString = buildAnnotatedString {
+    val caretChar = if (caretFocused) '█' else '▯'
     var charIndex = 0
     for (span in spans) {
         val spanStyle = SpanStyle(
@@ -574,7 +581,7 @@ private fun TerminalLine.toAnnotatedString(
             if (localPos > 0) {
                 withStyle(spanStyle) { append(span.text.substring(0, localPos)) }
             }
-            withStyle(SpanStyle(color = caretColor)) { append('█') }
+            withStyle(SpanStyle(color = caretColor)) { append(caretChar) }
             if (localPos + 1 < span.text.length) {
                 withStyle(spanStyle) { append(span.text.substring(localPos + 1)) }
             }
@@ -588,7 +595,7 @@ private fun TerminalLine.toAnnotatedString(
             append(' ')
             charIndex++
         }
-        withStyle(SpanStyle(color = caretColor)) { append('█') }
+        withStyle(SpanStyle(color = caretColor)) { append(caretChar) }
     }
 }
 
