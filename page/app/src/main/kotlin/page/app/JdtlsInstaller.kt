@@ -114,6 +114,7 @@ class JdtlsInstaller(
                 runCatching { Files.deleteIfExists(tmp) }
             }
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installRoot(version?.takeIf { it.isNotBlank() } ?: defaultVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }

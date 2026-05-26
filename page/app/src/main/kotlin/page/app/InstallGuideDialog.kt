@@ -430,11 +430,31 @@ internal fun InstallGuideDialog(
                                 )
                             }
                             (installProgress as? LspInstaller.Progress.Failed)?.let { failed ->
+                                val errMsg = failed.error.message ?: failed.error.toString()
                                 Spacer(Modifier.height(10.dp))
-                                SectionLabel("Install failed")
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    SectionLabel("Install failed")
+                                    var errCopied by remember { mutableStateOf(false) }
+                                    val errClipboard = LocalClipboardManager.current
+                                    Text(
+                                        text = if (errCopied) "Copied" else "Copy",
+                                        color = if (errCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = LocalTextStyle.current.copy(fontSize = 10.sp),
+                                        modifier = Modifier
+                                            .clickable {
+                                                errClipboard.setText(AnnotatedString(errMsg))
+                                                errCopied = true
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                                    )
+                                }
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = failed.error.message ?: failed.error.toString(),
+                                    text = errMsg,
                                     color = MaterialTheme.colorScheme.error,
                                     style = LocalTextStyle.current.copy(fontSize = 11.sp),
                                 )
@@ -1055,25 +1075,37 @@ private fun OutputLogBox(modifier: Modifier = Modifier, lines: List<String>, fai
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp)) {
             if (failedMessage != null) {
                 val errorScroll = rememberScrollState()
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 180.dp)
-                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
-                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
-                        .verticalScroll(errorScroll)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.foundation.LocalContextMenuRepresentation provides page.ui.CompactContextMenuRepresentation,
                 ) {
-                    SelectionContainer {
-                        Text(
-                            text = "Install failed: $failedMessage",
-                            color = MaterialTheme.colorScheme.error,
-                            style = LocalTextStyle.current.copy(
-                                fontSize = 11.sp,
-                                lineHeight = 14.sp,
-                                fontFamily = FontFamily.Monospace,
-                            ),
-                        )
+                    androidx.compose.foundation.ContextMenuArea(
+                        items = {
+                            listOf(
+                                androidx.compose.foundation.ContextMenuItem("Copy error") {
+                                    clipboard.setText(AnnotatedString(failedMessage))
+                                },
+                            )
+                        },
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
+                                .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                                .verticalScroll(errorScroll)
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "Install failed: $failedMessage",
+                                color = MaterialTheme.colorScheme.error,
+                                style = LocalTextStyle.current.copy(
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                ),
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))

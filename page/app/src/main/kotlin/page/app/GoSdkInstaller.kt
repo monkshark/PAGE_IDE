@@ -99,12 +99,16 @@ class GoSdkInstaller(
             }
 
             if (!Files.exists(go)) {
-                throw IOException("go binary missing after extraction: $go")
+                val listing = runCatching {
+                    java.nio.file.Files.walk(root).use { s -> s.limit(20).map { root.relativize(it).toString() }.toList().joinToString(", ") }
+                }.getOrDefault("(empty)")
+                throw IOException("go binary missing after extraction: $go\nExtracted contents: $listing")
             }
             runCatching { go.toFile().setExecutable(true, false) }
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(go))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(goRoot(version?.takeIf { it.isNotBlank() } ?: defaultGoVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
@@ -130,7 +134,7 @@ class GoSdkInstaller(
 
     fun goRoot(version: String): Path = goBase().resolve(version)
 
-    private fun goBase(): Path = LspInstaller.lspHome().resolve("go-sdk")
+    private fun goBase(): Path = LspInstaller.lspHome().resolve("go-runtime")
 
     override fun installDir(version: String?): Path {
         val v = version?.takeIf { it.isNotBlank() } ?: defaultGoVersion
@@ -179,7 +183,7 @@ class GoSdkInstaller(
         private data class GoRelease(val version: String? = null, val stable: Boolean = false)
 
         internal fun fetchGoVersions(): List<String> {
-            val url = "https://go.dev/dl/?mode=json"
+            val url = "https://go.dev/dl/?mode=json&include=all"
             val conn = URI(url).toURL().openConnection() as HttpURLConnection
             conn.connectTimeout = 5_000
             conn.readTimeout = 10_000

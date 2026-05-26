@@ -130,6 +130,7 @@ class MetalsInstaller(
             runCatching { javaExe.toFile().setExecutable(true, false) }
             onProgress(LspInstaller.Progress.Done(exe))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installRoot(version?.takeIf { it.isNotBlank() } ?: defaultVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
