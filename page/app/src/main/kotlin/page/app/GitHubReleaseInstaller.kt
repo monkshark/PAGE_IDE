@@ -64,6 +64,7 @@ class GitHubReleaseInstaller(
                 runCatching { Files.deleteIfExists(tmp) }
             }
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installDir(version)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }

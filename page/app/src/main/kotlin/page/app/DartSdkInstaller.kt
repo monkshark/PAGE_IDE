@@ -92,6 +92,7 @@ class DartSdkInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(wrapper))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installRoot(version?.takeIf { it.isNotBlank() } ?: defaultDartVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
