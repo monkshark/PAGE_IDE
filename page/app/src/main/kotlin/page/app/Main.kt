@@ -3400,10 +3400,10 @@ private fun PaneRegion(
     val active = pane.book.active
     val kind = active?.let { FileKinds.classify(it.path) }
     val activeLexer = active?.path?.let { SyntaxLexers.forPath(it) }
-    val isJavaFile = remember(active?.path) {
-        active?.path?.fileName?.toString()?.lowercase()?.endsWith(".java") == true
+    val activeExt = remember(active?.path) {
+        active?.path?.fileName?.toString()?.lowercase()?.substringAfterLast('.', "") ?: ""
     }
-    val effectiveJdkVersion = if (isJavaFile) jdkVersion else null
+    val effectiveJdkVersion = if (activeExt == "java") jdkVersion else null
     Column(
         modifier = modifier.fillMaxSize()
             .pointerInput(side) {
@@ -3529,7 +3529,7 @@ private fun PaneRegion(
                     onScrollChange = { v, h ->
                         onEditorScrollChange(active.path, EditorScrollSnapshot(v, h))
                     },
-                    jdkVersion = jdkVersion,
+                    jdkVersion = effectiveJdkVersion,
                     onJdkVersionClick = onJdkVersionClick,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
