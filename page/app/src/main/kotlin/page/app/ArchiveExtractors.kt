@@ -174,7 +174,7 @@ object ArchiveExtractors {
     private fun enforceInside(outPath: Path, root: Path, entryName: String) {
         val normalizedOut = outPath.normalize()
         val normalizedRoot = root.normalize()
-        if (!normalizedOut.startsWith(normalizedRoot) || normalizedOut == normalizedRoot) {
+        if (!normalizedOut.startsWith(normalizedRoot)) {
             throw IOException("zip slip detected: $entryName")
         }
     }

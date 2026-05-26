@@ -73,6 +73,7 @@ class HaskellHlsInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(wrapper))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installRoot(version?.takeIf { it.isNotBlank() } ?: defaultHlsVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }

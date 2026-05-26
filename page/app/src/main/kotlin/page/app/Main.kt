@@ -3056,13 +3056,12 @@ private fun Shell(
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
     val installGuideOpen by lsp.installGuideOpen.collectAsState()
-    var jdkDialogOpen by remember { mutableStateOf(false) }
-    val jdkActiveVersion = remember { mutableStateOf<String?>(null) }
-    val jdkScope = rememberCoroutineScope()
+    var runtimeDialogOpen by remember { mutableStateOf<String?>(null) }
+    val runtimeVersions = remember { mutableStateOf(mapOf<String, String>()) }
+    val runtimeScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val managed = runCatching { JdkInstaller().activeVersion() }.getOrNull()
-            jdkActiveVersion.value = managed ?: System.getProperty("java.version")
+            runtimeVersions.value = detectRuntimeVersions()
         }
     }
     Box(modifier = Modifier.fillMaxSize()) {
@@ -3154,8 +3153,8 @@ private fun Shell(
                                 editorScrollFor = editorScrollFor,
                                 onEditorScrollChange = onEditorScrollChange,
                                 tabContextActions = tabContextActionsFor(PaneSide.PRIMARY),
-                                jdkVersion = jdkActiveVersion.value,
-                                onJdkVersionClick = { jdkDialogOpen = true },
+                                runtimeVersions = runtimeVersions.value,
+                                onRuntimeClick = { id -> runtimeDialogOpen = id },
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -3195,8 +3194,8 @@ private fun Shell(
                                 editorScrollFor = editorScrollFor,
                                 onEditorScrollChange = onEditorScrollChange,
                                 tabContextActions = tabContextActionsFor(PaneSide.SECONDARY),
-                                jdkVersion = jdkActiveVersion.value,
-                                onJdkVersionClick = { jdkDialogOpen = true },
+                                runtimeVersions = runtimeVersions.value,
+                                onRuntimeClick = { id -> runtimeDialogOpen = id },
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -3235,8 +3234,8 @@ private fun Shell(
                         editorScrollFor = editorScrollFor,
                         onEditorScrollChange = onEditorScrollChange,
                         tabContextActions = tabContextActionsFor(PaneSide.PRIMARY),
-                        jdkVersion = jdkActiveVersion.value,
-                        onJdkVersionClick = { jdkDialogOpen = true },
+                        runtimeVersions = runtimeVersions.value,
+                        onRuntimeClick = { id -> runtimeDialogOpen = id },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -3326,32 +3325,54 @@ private fun Shell(
             lsp.closeInstallGuide()
         }
     }
-    if (jdkDialogOpen) {
-        val jdkDef = page.lsp.LanguageDefinition(
-            id = "jdk",
-            displayName = "Eclipse Temurin JDK",
-            extensions = listOf("java"),
-            lspBinaries = emptyList(),
-            lspWindowsBinaries = emptyList(),
-            installGuideUrl = "https://adoptium.net/",
-            install = emptyMap(),
-            runCommand = null,
+    val runtimeDialogId = runtimeDialogOpen
+    if (runtimeDialogId != null) {
+        val runtimeDefs = mapOf(
+            "jdk" to page.lsp.LanguageDefinition("jdk", "Eclipse Temurin JDK", listOf("java"), emptyList(), emptyList(), "https://adoptium.net/", emptyMap(), null),
+            "node" to page.lsp.LanguageDefinition("node", "Node.js", listOf("js"), emptyList(), emptyList(), "https://nodejs.org/", emptyMap(), null),
+            "python-runtime" to page.lsp.LanguageDefinition("python-runtime", "Python", listOf("py"), emptyList(), emptyList(), "https://python.org/", emptyMap(), null),
+            "go-sdk" to page.lsp.LanguageDefinition("go-sdk", "Go SDK", listOf("go"), emptyList(), emptyList(), "https://go.dev/", emptyMap(), null),
         )
-        InstallGuideDialog(
-            definition = jdkDef,
-            attempted = emptyList(),
-            onDismiss = { jdkDialogOpen = false },
-            onInstalled = {
-                jdkScope.launch {
-                    withContext(Dispatchers.IO) {
-                        val managed = runCatching { JdkInstaller().activeVersion() }.getOrNull()
-                        jdkActiveVersion.value = managed ?: System.getProperty("java.version")
+        val def = runtimeDefs[runtimeDialogId]
+        if (def != null) {
+            InstallGuideDialog(
+                definition = def,
+                attempted = emptyList(),
+                onDismiss = { runtimeDialogOpen = null },
+                onInstalled = {
+                    runtimeScope.launch {
+                        withContext(Dispatchers.IO) { runtimeVersions.value = detectRuntimeVersions() }
                     }
-                }
-            },
-        )
+                },
+            )
+        } else {
+            runtimeDialogOpen = null
+        }
     }
     }
+}
+
+private fun detectRuntimeVersions(): Map<String, String> {
+    val vers = mutableMapOf<String, String>()
+    val jdk = runCatching { JdkInstaller().activeVersion() }.getOrNull() ?: System.getProperty("java.version")
+    if (!jdk.isNullOrBlank()) vers["java"] = jdk
+    val node = runCatching { NodeInstaller().activeVersion() }.getOrNull()
+        ?: runCatching { captureVersion("node", "--version")?.removePrefix("v") }.getOrNull()
+    if (!node.isNullOrBlank()) vers["js"] = node
+    val py = runCatching { PythonInstaller().activeVersion() }.getOrNull()
+        ?: runCatching { captureVersion("python", "--version")?.substringAfter("Python ")?.trim() }.getOrNull()
+    if (!py.isNullOrBlank()) vers["py"] = py
+    val go = runCatching { GoSdkInstaller().activeVersion() }.getOrNull()
+        ?: runCatching { captureVersion("go", "version")?.let { Regex("go(\\d+\\.\\d+\\.\\d+)").find(it)?.groupValues?.get(1) } }.getOrNull()
+    if (!go.isNullOrBlank()) vers["go"] = go
+    return vers
+}
+
+private fun captureVersion(cmd: String, vararg args: String): String? {
+    val p = ProcessBuilder(cmd, *args).redirectErrorStream(true).start()
+    val out = p.inputStream.bufferedReader().use { it.readLine() }
+    p.waitFor()
+    return out?.trim()?.takeIf { it.isNotBlank() }
 }
 
 private fun paneFor(side: PaneSide, primary: EditorPaneState, secondary: EditorPaneState) =
@@ -3393,17 +3414,25 @@ private fun PaneRegion(
     editorScrollFor: (Path) -> EditorScrollSnapshot? = { null },
     onEditorScrollChange: (Path, EditorScrollSnapshot) -> Unit = { _, _ -> },
     tabContextActions: TabContextActions? = null,
-    jdkVersion: String? = null,
-    onJdkVersionClick: (() -> Unit)? = null,
+    runtimeVersions: Map<String, String> = emptyMap(),
+    onRuntimeClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val active = pane.book.active
     val kind = active?.let { FileKinds.classify(it.path) }
     val activeLexer = active?.path?.let { SyntaxLexers.forPath(it) }
-    val isJavaFile = remember(active?.path) {
-        active?.path?.fileName?.toString()?.lowercase()?.endsWith(".java") == true
+    val activeExt = remember(active?.path) {
+        active?.path?.fileName?.toString()?.lowercase()?.substringAfterLast('.', "") ?: ""
     }
-    val effectiveJdkVersion = if (isJavaFile) jdkVersion else null
+    val runtimeInfo: Pair<String, String>? = remember(activeExt, runtimeVersions) {
+        when (activeExt) {
+            "java" -> "JDK ${runtimeVersions["java"] ?: "?"}" to "jdk"
+            "js", "mjs", "cjs", "ts" -> "Node ${runtimeVersions["js"] ?: "?"}" to "node"
+            "py" -> "Python ${runtimeVersions["py"] ?: "?"}" to "python-runtime"
+            "go" -> "Go ${runtimeVersions["go"] ?: "?"}" to "go-sdk"
+            else -> null
+        }
+    }
     Column(
         modifier = modifier.fillMaxSize()
             .pointerInput(side) {
@@ -3529,8 +3558,8 @@ private fun PaneRegion(
                     onScrollChange = { v, h ->
                         onEditorScrollChange(active.path, EditorScrollSnapshot(v, h))
                     },
-                    jdkVersion = jdkVersion,
-                    onJdkVersionClick = onJdkVersionClick,
+                    jdkVersion = runtimeInfo?.first,
+                    onJdkVersionClick = runtimeInfo?.let { (_, id) -> { onRuntimeClick?.invoke(id) } },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }

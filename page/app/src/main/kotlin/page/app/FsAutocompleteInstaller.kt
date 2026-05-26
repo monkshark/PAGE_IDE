@@ -96,6 +96,7 @@ class FsAutocompleteInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(fsac))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installRoot(version?.takeIf { it.isNotBlank() } ?: defaultFsacVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }

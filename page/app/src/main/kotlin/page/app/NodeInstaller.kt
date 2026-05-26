@@ -106,6 +106,7 @@ class NodeInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(node))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(nodeRoot(version?.takeIf { it.isNotBlank() } ?: defaultNodeVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
@@ -113,6 +114,7 @@ class NodeInstaller(
     internal fun downloadUrl(version: String): String {
         val os = when (osKey) {
             "macos" -> "darwin"
+            "windows" -> "win"
             else -> osKey
         }
         val arch = when (archKey) {
@@ -126,10 +128,11 @@ class NodeInstaller(
 
     fun nodeBinary(version: String): Path {
         val name = if (isWindows) "node.exe" else "node"
-        return nodeRoot(version).resolve("bin").resolve(name).let {
-            if (Files.exists(it) || !isWindows) it
-            else nodeRoot(version).resolve(name)
-        }
+        val binDir = nodeRoot(version).resolve("bin").resolve(name)
+        if (Files.exists(binDir)) return binDir
+        val rootDir = nodeRoot(version).resolve(name)
+        if (Files.exists(rootDir)) return rootDir
+        return if (isWindows) rootDir else binDir
     }
 
     fun nodeHome(version: String): Path = nodeRoot(version)

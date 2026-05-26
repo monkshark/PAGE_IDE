@@ -1,7 +1,5 @@
 package page.app
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
@@ -13,9 +11,13 @@ class PythonInstaller(
     private val archKey: String = ArchDetect.archKey(),
     private val isWindows: Boolean = LspInstaller.isWindows(),
     private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
-    private val zipExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractZip(src, dst, flatten) },
     private val tarGzExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractTarGz(src, dst, flatten) },
     private val defaultPythonVersion: String = DEFAULT_PYTHON_VERSION,
+    private val assetsRepo: String = DEFAULT_ASSETS_REPO,
+    private val releaseTag: String = DEFAULT_RELEASE_TAG,
+    private val versionsFetcher: (String, String, String) -> List<String> = { owner, repo, tag ->
+        GitHubReleases.listAssetNames(owner, repo, tag)
+    },
     private val manifestFetcher: () -> List<String> = { fetchPythonVersions() },
 ) : LspInstaller {
 
@@ -25,7 +27,7 @@ class PythonInstaller(
     override val heavyInstall: LspInstaller.HeavyInstallEstimate = LspInstaller.HeavyInstallEstimate(
         sizeEstimate = "~25 MB to 100 MB",
         durationEstimate = "~1 to 3 min",
-        notes = "PAGE downloads a standalone Python build from python-build-standalone and extracts it into an isolated directory.",
+        notes = "PAGE downloads a standalone Python build from page-ide-assets and extracts it into an isolated directory.",
     )
 
     override fun isInstalled(): Boolean = executable() != null
@@ -36,7 +38,6 @@ class PythonInstaller(
     }
 
     override fun defaultVersion(): String? = defaultPythonVersion
-
     override fun installedVersion(): String? = currentInstalledVersion()
 
     override fun installedVersions(): List<String> {
@@ -63,9 +64,24 @@ class PythonInstaller(
     }
 
     override fun availableVersions(): List<String> {
-        val manifest = runCatching { manifestFetcher() }.getOrDefault(emptyList())
+        val bundled = discoverBundleVersions()
         val installed = installedVersions()
-        return (manifest + defaultPythonVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
+        return (bundled + defaultPythonVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
+    }
+
+    private fun discoverBundleVersions(): List<String> {
+        val parts = assetsRepo.split('/')
+        if (parts.size != 2) return emptyList()
+        val pattern = assetNamePattern() ?: return emptyList()
+        return runCatching {
+            versionsFetcher(parts[0], parts[1], releaseTag)
+                .mapNotNull { pattern.find(it)?.groupValues?.get(1) }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun assetNamePattern(): Regex? {
+        val arch = when (archKey) { "arm64" -> "aarch64"; else -> "x86_64" }
+        return Regex("^page-python-cpython-$osKey-$arch-(.+?)\\.tar\\.gz$")
     }
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
@@ -73,61 +89,59 @@ class PythonInstaller(
             val resolved = version?.takeIf { it.isNotBlank() } ?: defaultPythonVersion
             val root = pythonRoot(resolved)
 
-            val py = pythonBinary(resolved)
-            if (Files.exists(py)) {
+            val precheck = pythonBinary(resolved)
+            if (Files.exists(precheck)) {
                 writePointer(resolved)
-                onProgress(LspInstaller.Progress.Done(py))
+                onProgress(LspInstaller.Progress.Done(precheck))
                 return
             }
             if (Files.exists(root)) ArchiveExtractors.deleteRecursively(root)
             Files.createDirectories(root)
 
             val url = downloadUrl(resolved)
-            val ext = if (isWindows) "zip" else "tar.gz"
-            val tmp = Files.createTempFile("page-python-", ".$ext")
+            val tmp = Files.createTempFile("page-python-", ".tar.gz")
             try {
                 onProgress(LspInstaller.Progress.CommandOutput("> GET $url"))
                 downloader(url, tmp) { read, total ->
                     onProgress(LspInstaller.Progress.Downloading(read, total))
                 }
                 onProgress(LspInstaller.Progress.Extracting("Extracting Python $resolved …"))
-                if (isWindows) zipExtractor(tmp, root, 0)
-                else tarGzExtractor(tmp, root, 0)
+                tarGzExtractor(tmp, root, 0)
+                if (isWindows) requestDefenderExclusion(root, onProgress)
             } catch (t: Throwable) {
                 throw IOException("Python download failed ($url): ${t.message}", t)
             } finally {
                 runCatching { Files.deleteIfExists(tmp) }
             }
 
+            val py = pythonBinary(resolved)
             if (!Files.exists(py)) {
-                throw IOException("python binary missing after extraction: $py")
+                val topFiles = runCatching {
+                    Files.list(root).use { s -> s.limit(30).map { it.fileName.toString() }.toList().joinToString(", ") }
+                }.getOrDefault("(empty)")
+                throw IOException("python binary missing after extraction: $py\nTop-level contents: $topFiles")
             }
             runCatching { py.toFile().setExecutable(true, false) }
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(py))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(pythonRoot(version?.takeIf { it.isNotBlank() } ?: defaultPythonVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
 
     internal fun downloadUrl(version: String): String {
-        val os = when (osKey) {
-            "macos" -> "apple-darwin"
-            "windows" -> "pc-windows-msvc-shared"
-            else -> "unknown-linux-gnu"
-        }
-        val arch = when (archKey) {
-            "arm64" -> "aarch64"
-            else -> "x86_64"
-        }
-        val ext = if (isWindows) "zip" else "tar.gz"
-        return "https://github.com/indygreg/python-build-standalone/releases/download/latest/cpython-$version+latest-$arch-$os-install_only_stripped.$ext"
+        val arch = when (archKey) { "arm64" -> "aarch64"; else -> "x86_64" }
+        return "https://github.com/$assetsRepo/releases/download/$releaseTag/page-python-cpython-$osKey-$arch-$version.tar.gz"
     }
 
     fun pythonBinary(version: String): Path {
         val name = if (isWindows) "python.exe" else "python3"
-        val binDir = if (isWindows) pythonRoot(version) else pythonRoot(version).resolve("bin")
-        return binDir.resolve(name)
+        val candidates = listOf(
+            pythonRoot(version).resolve("bin").resolve(name),
+            pythonRoot(version).resolve(name),
+        )
+        return candidates.firstOrNull { Files.exists(it) } ?: candidates.first()
     }
 
     fun pythonRoot(version: String): Path = pythonBase().resolve(version)
@@ -137,6 +151,18 @@ class PythonInstaller(
     override fun installDir(version: String?): Path {
         val v = version?.takeIf { it.isNotBlank() } ?: defaultPythonVersion
         return pythonRoot(v)
+    }
+
+    private fun requestDefenderExclusion(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
+        val pathLiteral = target.toString().replace("'", "''")
+        val innerCommand = "try { Add-MpPreference -ExclusionPath ''$pathLiteral''; exit 0 } catch { exit 2 }"
+        val outerCommand = "Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait " +
+            "-ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \"$innerCommand\"'"
+        val cmd = listOf("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", outerCommand)
+        val exit = try {
+            Runtime.getRuntime().exec(cmd.toTypedArray()).waitFor()
+        } catch (_: Throwable) { -1 }
+        if (exit == 0) onProgress(LspInstaller.Progress.CommandOutput("[info] Defender exclusion registered"))
     }
 
     fun currentInstalledVersion(): String? {
@@ -157,9 +183,9 @@ class PythonInstaller(
     }
 
     companion object {
-        const val DEFAULT_PYTHON_VERSION = "3.13.3"
-
-        private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+        const val DEFAULT_PYTHON_VERSION = "3.13.13"
+        const val DEFAULT_ASSETS_REPO = "monkshark/page-ide-assets"
+        const val DEFAULT_RELEASE_TAG = "python-bundle"
 
         internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
             val pa = versionTokens(a)

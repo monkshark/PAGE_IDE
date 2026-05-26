@@ -116,6 +116,7 @@ class FlutterSdkInstaller(
             writePointer(release.version)
             onProgress(LspInstaller.Progress.Done(wrapper))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(installRoot(version?.takeIf { it.isNotBlank() } ?: defaultFlutterVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
