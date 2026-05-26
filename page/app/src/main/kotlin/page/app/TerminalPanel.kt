@@ -443,7 +443,7 @@ private fun TerminalBody(
                 stickToBottom.value = max == 0 || value >= max - 4
             }
     }
-    LaunchedEffect(lines.size) {
+    LaunchedEffect(lines.size, cursorRow) {
         if (stickToBottom.value) scrollState.scrollTo(scrollState.maxValue)
     }
 
@@ -488,7 +488,9 @@ private fun TerminalBody(
                     .verticalScroll(scrollState)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             ) {
-                for ((idx, line) in lines.withIndex()) {
+                val displayEnd = (cursorLineIndex + 1).coerceAtMost(lines.size)
+                for (idx in 0 until displayEnd) {
+                    val line = lines[idx]
                     val showCaret = idx == cursorLineIndex && alive && cursorVisible
                     Text(
                         text = line.toAnnotatedString(
