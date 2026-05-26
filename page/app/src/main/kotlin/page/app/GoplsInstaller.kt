@@ -81,6 +81,8 @@ class GoplsInstaller(
             writePointer(versionTag)
             onProgress(LspInstaller.Progress.Done(gopls))
         } catch (t: Throwable) {
+            val resolved = (version ?: defaultGoVersion).removePrefix("go")
+            runCatching { ArchiveExtractors.deleteRecursively(sdkRoot("go$resolved")) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
