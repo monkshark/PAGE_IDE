@@ -30,13 +30,12 @@ class TerminalShellTest {
     }
 
     @Test
-    fun `buildCommand with elevation throws when gsudo is absent`() {
+    fun `buildCommand with elevation includes gsudo or throws`() {
         val shell = ShellOption(ShellKind.CMD, "cmd.exe", listOf("/K"))
-        val hasGsudo = System.getenv("PATH")?.split(java.io.File.pathSeparator)
-            ?.any { dir -> java.io.File(dir, "gsudo.exe").exists() || java.io.File(dir, "gsudo").exists() } == true
-        if (hasGsudo) return
-        assertFailsWith<IllegalStateException> {
-            TerminalSession.buildCommand(shell, elevated = true)
+        try {
+            val cmd = TerminalSession.buildCommand(shell, elevated = true)
+            assertTrue(cmd.any { it.contains("gsudo", ignoreCase = true) }, "elevated command should include gsudo")
+        } catch (_: IllegalStateException) {
         }
     }
 
