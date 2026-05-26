@@ -108,6 +108,7 @@ class GoSdkInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(go))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(goRoot(version?.takeIf { it.isNotBlank() } ?: defaultGoVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }

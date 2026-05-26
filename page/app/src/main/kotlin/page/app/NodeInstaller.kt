@@ -106,6 +106,7 @@ class NodeInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(node))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(nodeRoot(version?.takeIf { it.isNotBlank() } ?: defaultNodeVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }

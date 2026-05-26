@@ -124,6 +124,7 @@ class PythonInstaller(
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(py))
         } catch (t: Throwable) {
+            runCatching { ArchiveExtractors.deleteRecursively(pythonRoot(version?.takeIf { it.isNotBlank() } ?: defaultPythonVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
