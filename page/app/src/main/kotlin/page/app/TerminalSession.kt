@@ -96,6 +96,15 @@ class TerminalSession internal constructor(
             val env = HashMap(System.getenv()).apply {
                 put("TERM", "xterm-256color")
                 put("LANG", get("LANG") ?: "en_US.UTF-8")
+                val jdkHome = runCatching { JdkInstaller().javaHome() }.getOrNull()
+                if (jdkHome != null) {
+                    put("JAVA_HOME", jdkHome.toAbsolutePath().toString())
+                    val sep = System.getProperty("path.separator") ?: ";"
+                    val jdkBin = jdkHome.resolve("bin").toAbsolutePath().toString()
+                    val pathKey = keys.firstOrNull { it.equals("PATH", ignoreCase = true) } ?: "PATH"
+                    val current = get(pathKey).orEmpty()
+                    put(pathKey, "$jdkBin$sep$current")
+                }
             }
             val process = PtyProcessBuilder()
                 .setCommand(cmd)
