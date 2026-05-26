@@ -3061,7 +3061,7 @@ private fun Shell(
     val runtimeScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            runtimeVersions.value = detectRuntimeVersions()
+            runtimeVersions.value = detectRuntimeVersions(rootDir)
         }
     }
     Box(modifier = Modifier.fillMaxSize()) {
@@ -3332,6 +3332,7 @@ private fun Shell(
             "node" to page.lsp.LanguageDefinition("node", "Node.js", listOf("js"), emptyList(), emptyList(), "https://nodejs.org/", emptyMap(), null),
             "python-runtime" to page.lsp.LanguageDefinition("python-runtime", "Python", listOf("py"), emptyList(), emptyList(), "https://python.org/", emptyMap(), null),
             "go-sdk" to page.lsp.LanguageDefinition("go-sdk", "Go SDK", listOf("go"), emptyList(), emptyList(), "https://go.dev/", emptyMap(), null),
+            "cpp-toolchain" to page.lsp.LanguageDefinition("cpp-toolchain", "LLVM/Clang Toolchain", listOf("c", "cpp"), emptyList(), emptyList(), "https://llvm.org/", emptyMap(), null),
         )
         val def = runtimeDefs[runtimeDialogId]
         if (def != null) {
@@ -3341,7 +3342,7 @@ private fun Shell(
                 onDismiss = { runtimeDialogOpen = null },
                 onInstalled = {
                     runtimeScope.launch {
-                        withContext(Dispatchers.IO) { runtimeVersions.value = detectRuntimeVersions() }
+                        withContext(Dispatchers.IO) { runtimeVersions.value = detectRuntimeVersions(rootDir) }
                     }
                 },
             )
@@ -3352,7 +3353,7 @@ private fun Shell(
     }
 }
 
-private fun detectRuntimeVersions(): Map<String, String> {
+private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<String, String> {
     val vers = mutableMapOf<String, String>()
     val jdk = runCatching { JdkInstaller().activeVersion() }.getOrNull() ?: System.getProperty("java.version")
     if (!jdk.isNullOrBlank()) vers["java"] = jdk
@@ -3365,6 +3366,22 @@ private fun detectRuntimeVersions(): Map<String, String> {
     val go = runCatching { GoSdkInstaller().activeVersion() }.getOrNull()
         ?: runCatching { captureVersion("go", "version")?.let { Regex("go(\\d+\\.\\d+\\.\\d+)").find(it)?.groupValues?.get(1) } }.getOrNull()
     if (!go.isNullOrBlank()) vers["go"] = go
+    val cpp = runCatching { CppToolchainInstaller().activeVersion() }.getOrNull()
+        ?: runCatching { captureVersion("clang", "--version")?.let { Regex("(\\d+\\.\\d+\\.\\d+)").find(it)?.groupValues?.get(1) } }.getOrNull()
+    if (!cpp.isNullOrBlank()) vers["cpp"] = cpp
+    if (projectRoot != null) {
+        val detected = runCatching { BuildFileVersionDetector.detect(projectRoot) }.getOrDefault(emptyList())
+        for (d in detected) {
+            val key = when (d.runtime) {
+                "jdk" -> "java"
+                "node" -> "js"
+                "python-runtime" -> "py"
+                "go-sdk" -> "go"
+                else -> continue
+            }
+            vers[key] = "${d.version} (${d.source})"
+        }
+    }
     return vers
 }
 
@@ -3430,6 +3447,7 @@ private fun PaneRegion(
             "js", "mjs", "cjs", "ts" -> "Node ${runtimeVersions["js"] ?: "?"}" to "node"
             "py" -> "Python ${runtimeVersions["py"] ?: "?"}" to "python-runtime"
             "go" -> "Go ${runtimeVersions["go"] ?: "?"}" to "go-sdk"
+            "c", "cpp", "cc", "cxx", "h", "hpp" -> "Clang ${runtimeVersions["cpp"] ?: "?"}" to "cpp-toolchain"
             else -> null
         }
     }

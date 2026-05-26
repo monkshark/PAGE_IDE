@@ -53,6 +53,18 @@ object LanguageRunDefaults {
             argTemplate = listOf("run", FILE_TOKEN),
         ),
         LanguageRunTemplate(
+            displayName = "C (clang)",
+            extensions = setOf("c"),
+            command = "clang",
+            argTemplate = listOf(FILE_TOKEN, "-o", NAME_TOKEN, "&&", NAME_TOKEN),
+        ),
+        LanguageRunTemplate(
+            displayName = "C++ (clang++)",
+            extensions = setOf("cpp", "cc", "cxx"),
+            command = "clang++",
+            argTemplate = listOf(FILE_TOKEN, "-o", NAME_TOKEN, "&&", NAME_TOKEN),
+        ),
+        LanguageRunTemplate(
             displayName = "Rust (cargo run)",
             extensions = setOf("rs"),
             command = "cargo",
@@ -95,6 +107,18 @@ object LanguageRunDefaults {
             val home = go.goHome() ?: return null
             val bin = go.executable() ?: return null
             return bin.toAbsolutePath().toString() to mapOf("GOROOT" to home.toAbsolutePath().toString())
+        }
+        if ("c" in template.extensions || "cpp" in template.extensions) {
+            val llvm = runCatching { CppToolchainInstaller() }.getOrNull() ?: return null
+            val home = llvm.llvmHome() ?: return null
+            val name = if ("cpp" in template.extensions || "cc" in template.extensions || "cxx" in template.extensions) {
+                if (LspInstaller.isWindows()) "clang++.exe" else "clang++"
+            } else {
+                if (LspInstaller.isWindows()) "clang.exe" else "clang"
+            }
+            val bin = home.resolve("bin").resolve(name)
+            if (!java.nio.file.Files.exists(bin)) return null
+            return bin.toAbsolutePath().toString() to emptyMap()
         }
         return null
     }

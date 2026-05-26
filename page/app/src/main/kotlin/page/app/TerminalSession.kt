@@ -119,6 +119,10 @@ class TerminalSession internal constructor(
                     put("GOROOT", goHome.toAbsolutePath().toString())
                     prependBins += goHome.resolve("bin").toAbsolutePath().toString()
                 }
+                val llvmHome = runCatching { CppToolchainInstaller().llvmHome() }.getOrNull()
+                if (llvmHome != null) {
+                    prependBins += llvmHome.resolve("bin").toAbsolutePath().toString()
+                }
                 if (prependBins.isNotEmpty()) {
                     val current = get(pathKey).orEmpty()
                     put(pathKey, (prependBins + current).joinToString(sep))
