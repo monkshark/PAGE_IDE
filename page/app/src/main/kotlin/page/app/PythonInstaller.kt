@@ -107,6 +107,7 @@ class PythonInstaller(
                 }
                 onProgress(LspInstaller.Progress.Extracting("Extracting Python $resolved …"))
                 tarGzExtractor(tmp, root, 0)
+                if (isWindows) requestDefenderExclusion(root, onProgress)
             } catch (t: Throwable) {
                 throw IOException("Python download failed ($url): ${t.message}", t)
             } finally {
@@ -114,10 +115,10 @@ class PythonInstaller(
             }
 
             if (!Files.exists(py)) {
-                val listing = runCatching {
-                    Files.walk(root).use { s -> s.limit(20).map { root.relativize(it).toString() }.toList().joinToString(", ") }
+                val topFiles = runCatching {
+                    Files.list(root).use { s -> s.limit(30).map { it.fileName.toString() }.toList().joinToString(", ") }
                 }.getOrDefault("(empty)")
-                throw IOException("python binary missing after extraction: $py\nExtracted contents: $listing")
+                throw IOException("python binary missing after extraction: $py\nTop-level contents: $topFiles")
             }
             runCatching { py.toFile().setExecutable(true, false) }
             writePointer(resolved)
@@ -148,6 +149,18 @@ class PythonInstaller(
     override fun installDir(version: String?): Path {
         val v = version?.takeIf { it.isNotBlank() } ?: defaultPythonVersion
         return pythonRoot(v)
+    }
+
+    private fun requestDefenderExclusion(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
+        val pathLiteral = target.toString().replace("'", "''")
+        val innerCommand = "try { Add-MpPreference -ExclusionPath ''$pathLiteral''; exit 0 } catch { exit 2 }"
+        val outerCommand = "Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait " +
+            "-ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \"$innerCommand\"'"
+        val cmd = listOf("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", outerCommand)
+        val exit = try {
+            Runtime.getRuntime().exec(cmd.toTypedArray()).waitFor()
+        } catch (_: Throwable) { -1 }
+        if (exit == 0) onProgress(LspInstaller.Progress.CommandOutput("[info] Defender exclusion registered"))
     }
 
     fun currentInstalledVersion(): String? {
