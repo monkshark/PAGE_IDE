@@ -2,6 +2,7 @@ package page.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class TerminalShellTest {
@@ -29,11 +30,13 @@ class TerminalShellTest {
     }
 
     @Test
-    fun `buildCommand with elevation falls back to base when gsudo is absent`() {
+    fun `buildCommand with elevation includes gsudo or throws`() {
         val shell = ShellOption(ShellKind.CMD, "cmd.exe", listOf("/K"))
-        val cmd = TerminalSession.buildCommand(shell, elevated = true)
-        assertTrue(cmd.contains("cmd.exe"), "command should still include base executable")
-        assertTrue(cmd.contains("/K"), "command should still include base args")
+        try {
+            val cmd = TerminalSession.buildCommand(shell, elevated = true)
+            assertTrue(cmd.any { it.contains("gsudo", ignoreCase = true) }, "elevated command should include gsudo")
+        } catch (_: IllegalStateException) {
+        }
     }
 
     @Test

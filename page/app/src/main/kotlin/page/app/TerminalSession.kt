@@ -139,8 +139,42 @@ class TerminalSession internal constructor(
         internal fun buildCommand(shell: ShellOption, elevated: Boolean): Array<String> {
             val base = arrayOf(shell.executable) + shell.args.toTypedArray()
             if (!elevated) return base
-            val gsudo = findOnPath("gsudo") ?: findOnPath("gsudo.exe")
-            return if (gsudo != null) arrayOf(gsudo) + base else base
+            var gsudo = findGsudo()
+            if (gsudo == null) {
+                val log = installGsudo()
+                gsudo = findGsudo()
+                    ?: throw IllegalStateException(
+                        "gsudo auto-install failed.\n$log\nInstall manually: winget install gerardog.gsudo\nThen restart PAGE IDE."
+                    )
+            }
+            return arrayOf(gsudo) + base
+        }
+
+        private fun findGsudo(): String? {
+            findOnPath("gsudo")?.let { return it }
+            findOnPath("gsudo.exe")?.let { return it }
+            val knownPaths = listOfNotNull(
+                System.getenv("ProgramFiles")?.let { "$it\\gsudo\\Current\\gsudo.exe" },
+                System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WinGet\\Links\\gsudo.exe" },
+                System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WinGet\\Packages\\gerardog.gsudo_Microsoft.Winget.Source_8wekyb3d8bbwe\\gsudo.exe" },
+            )
+            return knownPaths.firstOrNull { java.io.File(it).exists() }
+        }
+
+        private fun installGsudo(): String {
+            val winget = findOnPath("winget") ?: findOnPath("winget.exe")
+                ?: System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WindowsApps\\winget.exe" }
+                ?: return "winget not found"
+            return try {
+                val p = ProcessBuilder(winget, "install", "--id", "gerardog.gsudo", "--accept-package-agreements", "--accept-source-agreements")
+                    .redirectErrorStream(true)
+                    .start()
+                val output = p.inputStream.bufferedReader().use { it.readText() }
+                val exitCode = p.waitFor()
+                "winget=$winget exit=$exitCode\n$output\ngsudo search: ${findGsudo() ?: "not found"}"
+            } catch (t: Throwable) {
+                "winget=$winget error=${t.message}"
+            }
         }
 
         fun detectShells(): List<ShellOption> {
