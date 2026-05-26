@@ -1706,7 +1706,7 @@ private fun EditorStatusBar(
                     LspActivitiesItem(activities = lspActivities)
                 }
                 if (showJdk) {
-                    RuntimeVersionItem(label = "JDK $jdkVersion", onClick = onJdkVersionClick)
+                    RuntimeVersionItem(label = jdkVersion!!, onClick = onJdkVersionClick)
                 }
             }
         }
