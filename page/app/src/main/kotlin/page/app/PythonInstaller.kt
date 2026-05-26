@@ -83,16 +83,14 @@ class PythonInstaller(
             Files.createDirectories(root)
 
             val url = downloadUrl(resolved)
-            val ext = if (isWindows) "zip" else "tar.gz"
-            val tmp = Files.createTempFile("page-python-", ".$ext")
+            val tmp = Files.createTempFile("page-python-", ".tar.gz")
             try {
                 onProgress(LspInstaller.Progress.CommandOutput("> GET $url"))
                 downloader(url, tmp) { read, total ->
                     onProgress(LspInstaller.Progress.Downloading(read, total))
                 }
                 onProgress(LspInstaller.Progress.Extracting("Extracting Python $resolved …"))
-                if (isWindows) zipExtractor(tmp, root, 0)
-                else tarGzExtractor(tmp, root, 0)
+                tarGzExtractor(tmp, root, 1)
             } catch (t: Throwable) {
                 throw IOException("Python download failed ($url): ${t.message}", t)
             } finally {
@@ -113,21 +111,26 @@ class PythonInstaller(
     internal fun downloadUrl(version: String): String {
         val os = when (osKey) {
             "macos" -> "apple-darwin"
-            "windows" -> "pc-windows-msvc-shared"
+            "windows" -> "pc-windows-msvc"
             else -> "unknown-linux-gnu"
         }
         val arch = when (archKey) {
             "arm64" -> "aarch64"
             else -> "x86_64"
         }
-        val ext = if (isWindows) "zip" else "tar.gz"
-        return "https://github.com/indygreg/python-build-standalone/releases/download/latest/cpython-$version+latest-$arch-$os-install_only_stripped.$ext"
+        val ext = "tar.gz"
+        return "https://github.com/astral-sh/python-build-standalone/releases/latest/download/cpython-$version-$arch-$os-install_only_stripped.$ext"
     }
 
     fun pythonBinary(version: String): Path {
         val name = if (isWindows) "python.exe" else "python3"
-        val binDir = if (isWindows) pythonRoot(version) else pythonRoot(version).resolve("bin")
-        return binDir.resolve(name)
+        val candidates = listOf(
+            pythonRoot(version).resolve("bin").resolve(name),
+            pythonRoot(version).resolve(name),
+            pythonRoot(version).resolve("python").resolve("bin").resolve(name),
+            pythonRoot(version).resolve("python").resolve(name),
+        )
+        return candidates.firstOrNull { Files.exists(it) } ?: candidates.first()
     }
 
     fun pythonRoot(version: String): Path = pythonBase().resolve(version)

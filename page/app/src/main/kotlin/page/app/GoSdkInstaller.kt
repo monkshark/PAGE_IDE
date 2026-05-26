@@ -179,7 +179,7 @@ class GoSdkInstaller(
         private data class GoRelease(val version: String? = null, val stable: Boolean = false)
 
         internal fun fetchGoVersions(): List<String> {
-            val url = "https://go.dev/dl/?mode=json"
+            val url = "https://go.dev/dl/?mode=json&include=all"
             val conn = URI(url).toURL().openConnection() as HttpURLConnection
             conn.connectTimeout = 5_000
             conn.readTimeout = 10_000
