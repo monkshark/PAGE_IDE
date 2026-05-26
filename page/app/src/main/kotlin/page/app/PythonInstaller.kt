@@ -1,7 +1,5 @@
 package page.app
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
@@ -13,9 +11,13 @@ class PythonInstaller(
     private val archKey: String = ArchDetect.archKey(),
     private val isWindows: Boolean = LspInstaller.isWindows(),
     private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
-    private val zipExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractZip(src, dst, flatten) },
     private val tarGzExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractTarGz(src, dst, flatten) },
     private val defaultPythonVersion: String = DEFAULT_PYTHON_VERSION,
+    private val assetsRepo: String = DEFAULT_ASSETS_REPO,
+    private val releaseTag: String = DEFAULT_RELEASE_TAG,
+    private val versionsFetcher: (String, String, String) -> List<String> = { owner, repo, tag ->
+        GitHubReleases.listAssetNames(owner, repo, tag)
+    },
     private val manifestFetcher: () -> List<String> = { fetchPythonVersions() },
 ) : LspInstaller {
 
@@ -25,7 +27,7 @@ class PythonInstaller(
     override val heavyInstall: LspInstaller.HeavyInstallEstimate = LspInstaller.HeavyInstallEstimate(
         sizeEstimate = "~25 MB to 100 MB",
         durationEstimate = "~1 to 3 min",
-        notes = "PAGE downloads a standalone Python build from python-build-standalone and extracts it into an isolated directory.",
+        notes = "PAGE downloads a standalone Python build from page-ide-assets and extracts it into an isolated directory.",
     )
 
     override fun isInstalled(): Boolean = executable() != null
@@ -36,7 +38,6 @@ class PythonInstaller(
     }
 
     override fun defaultVersion(): String? = defaultPythonVersion
-
     override fun installedVersion(): String? = currentInstalledVersion()
 
     override fun installedVersions(): List<String> {
@@ -63,9 +64,25 @@ class PythonInstaller(
     }
 
     override fun availableVersions(): List<String> {
+        val bundled = discoverBundleVersions()
         val manifest = runCatching { manifestFetcher() }.getOrDefault(emptyList())
         val installed = installedVersions()
-        return (manifest + defaultPythonVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
+        return (bundled + manifest + defaultPythonVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
+    }
+
+    private fun discoverBundleVersions(): List<String> {
+        val parts = assetsRepo.split('/')
+        if (parts.size != 2) return emptyList()
+        val pattern = assetNamePattern() ?: return emptyList()
+        return runCatching {
+            versionsFetcher(parts[0], parts[1], releaseTag)
+                .mapNotNull { pattern.find(it)?.groupValues?.get(1) }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun assetNamePattern(): Regex? {
+        val arch = when (archKey) { "arm64" -> "aarch64"; else -> "x86_64" }
+        return Regex("^page-python-cpython-$osKey-$arch-(.+?)\\.tar\\.gz$")
     }
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
@@ -90,7 +107,7 @@ class PythonInstaller(
                     onProgress(LspInstaller.Progress.Downloading(read, total))
                 }
                 onProgress(LspInstaller.Progress.Extracting("Extracting Python $resolved …"))
-                tarGzExtractor(tmp, root, 1)
+                tarGzExtractor(tmp, root, 0)
             } catch (t: Throwable) {
                 throw IOException("Python download failed ($url): ${t.message}", t)
             } finally {
@@ -109,48 +126,15 @@ class PythonInstaller(
     }
 
     internal fun downloadUrl(version: String): String {
-        val os = when (osKey) {
-            "macos" -> "apple-darwin"
-            "windows" -> "pc-windows-msvc"
-            else -> "unknown-linux-gnu"
-        }
-        val arch = when (archKey) {
-            "arm64" -> "aarch64"
-            else -> "x86_64"
-        }
-        val pattern = "cpython-$version+*-$arch-$os-install_only_stripped.tar.gz"
-        val url = resolveAssetUrl(pattern)
-        if (url != null) return url
-        return "https://github.com/astral-sh/python-build-standalone/releases/latest/download/cpython-$version-$arch-$os-install_only_stripped.tar.gz"
+        val arch = when (archKey) { "arm64" -> "aarch64"; else -> "x86_64" }
+        return "https://github.com/$assetsRepo/releases/download/$releaseTag/page-python-cpython-$osKey-$arch-$version.tar.gz"
     }
-
-    private fun resolveAssetUrl(glob: String): String? = runCatching {
-        val regex = Regex(glob.replace("*", ".*").replace("+", "\\+"))
-        val conn = java.net.URI("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest")
-            .toURL().openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 5_000
-        conn.readTimeout = 10_000
-        conn.setRequestProperty("Accept", "application/vnd.github+json")
-        conn.setRequestProperty("User-Agent", "PAGE-IDE/0.1")
-        try {
-            if (conn.responseCode !in 200..299) return@runCatching null
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val urlRegex = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"")
-            urlRegex.findAll(body)
-                .map { it.groupValues[1] }
-                .firstOrNull { regex.containsMatchIn(it.substringAfterLast('/')) }
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()
 
     fun pythonBinary(version: String): Path {
         val name = if (isWindows) "python.exe" else "python3"
         val candidates = listOf(
             pythonRoot(version).resolve("bin").resolve(name),
             pythonRoot(version).resolve(name),
-            pythonRoot(version).resolve("python").resolve("bin").resolve(name),
-            pythonRoot(version).resolve("python").resolve(name),
         )
         return candidates.firstOrNull { Files.exists(it) } ?: candidates.first()
     }
@@ -183,8 +167,8 @@ class PythonInstaller(
 
     companion object {
         const val DEFAULT_PYTHON_VERSION = "3.13.3"
-
-        private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+        const val DEFAULT_ASSETS_REPO = "monkshark/page-ide-assets"
+        const val DEFAULT_RELEASE_TAG = "python-bundle"
 
         internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
             val pa = versionTokens(a)

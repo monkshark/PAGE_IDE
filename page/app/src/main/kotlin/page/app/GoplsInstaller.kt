@@ -55,6 +55,10 @@ class GoplsInstaller(
             if (!Files.exists(goBin)) throw IOException("Go SDK 다운로드 후 바이너리 누락: $goBin")
             runCatching { goBin.toFile().setExecutable(true, false) }
 
+            if (isWindows) {
+                requestDefenderExclusion(target, onProgress)
+            }
+
             val gopath = gopathFor(versionTag)
             Files.createDirectories(gopath)
 
@@ -102,6 +106,33 @@ class GoplsInstaller(
     private fun gopathFor(versionTag: String): Path = sdkRoot(versionTag).resolve("gopath")
 
     private fun sdkBase(): Path = LspInstaller.lspHome().resolve("go-sdk")
+
+    private fun requestDefenderExclusion(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
+        onProgress(LspInstaller.Progress.Extracting("Requesting Windows Defender exclusion (UAC prompt)…"))
+        val pathLiteral = target.toString().replace("'", "''")
+        val innerCommand = "try { Add-MpPreference -ExclusionPath ''" + pathLiteral +
+            "''; exit 0 } catch { exit 2 }"
+        val outerCommand = "Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait " +
+            "-ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \"" + innerCommand + "\"'"
+        val cmd = listOf("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", outerCommand)
+        val exit = try {
+            processRunner.runStreaming(cmd) { line ->
+                onProgress(LspInstaller.Progress.CommandOutput(line))
+            }
+        } catch (t: Throwable) {
+            onProgress(LspInstaller.Progress.CommandOutput(
+                "[warning] Defender exclusion failed (${t.javaClass.simpleName}) — go install may fail if Defender blocks compile.exe",
+            ))
+            return
+        }
+        if (exit != 0) {
+            onProgress(LspInstaller.Progress.CommandOutput(
+                "[warning] Defender exclusion request failed (exit=$exit) — go install may fail",
+            ))
+        } else {
+            onProgress(LspInstaller.Progress.CommandOutput("[info] Defender exclusion registered"))
+        }
+    }
 
     fun currentInstalledVersion(): String? {
         val pointer = sdkBase().resolve("CURRENT")
