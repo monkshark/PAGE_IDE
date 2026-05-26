@@ -1075,55 +1075,37 @@ private fun OutputLogBox(modifier: Modifier = Modifier, lines: List<String>, fai
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp)) {
             if (failedMessage != null) {
                 val errorScroll = rememberScrollState()
-                var errorCopied by remember { mutableStateOf(false) }
-                LaunchedEffect(errorCopied) {
-                    if (errorCopied) { kotlinx.coroutines.delay(1200); errorCopied = false }
-                }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 200.dp)
-                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
-                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.foundation.LocalContextMenuRepresentation provides page.ui.CompactContextMenuRepresentation,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "Install failed",
-                            color = MaterialTheme.colorScheme.error,
-                            style = LocalTextStyle.current.copy(fontSize = 11.sp),
-                        )
-                        Text(
-                            text = if (errorCopied) "Copied" else "Copy",
-                            color = if (errorCopied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = LocalTextStyle.current.copy(fontSize = 10.sp),
-                            modifier = Modifier
-                                .clickable {
+                    androidx.compose.foundation.ContextMenuArea(
+                        items = {
+                            listOf(
+                                androidx.compose.foundation.ContextMenuItem("Copy error") {
                                     clipboard.setText(AnnotatedString(failedMessage))
-                                    errorCopied = true
-                                }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(errorScroll)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                },
+                            )
+                        },
                     ) {
-                        Text(
-                            text = failedMessage,
-                            color = MaterialTheme.colorScheme.error,
-                            style = LocalTextStyle.current.copy(
-                                fontSize = 11.sp,
-                                lineHeight = 14.sp,
-                                fontFamily = FontFamily.Monospace,
-                            ),
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 180.dp)
+                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f))
+                                .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                                .verticalScroll(errorScroll)
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "Install failed: $failedMessage",
+                                color = MaterialTheme.colorScheme.error,
+                                style = LocalTextStyle.current.copy(
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                ),
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
