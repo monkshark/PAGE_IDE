@@ -39,6 +39,10 @@ class GoplsInstaller(
             val versionTag = "go$resolved"
             val url = downloadUrl(versionTag)
             val target = sdkRoot(versionTag)
+            val goplsExists = Files.exists(goplsBinary(versionTag))
+            if (Files.exists(target) && !goplsExists) {
+                ArchiveExtractors.deleteRecursively(target)
+            }
             Files.createDirectories(target)
             if (isWindows) {
                 requestDefenderExclusion(target, onProgress)
