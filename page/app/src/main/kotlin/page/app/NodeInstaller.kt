@@ -113,6 +113,7 @@ class NodeInstaller(
     internal fun downloadUrl(version: String): String {
         val os = when (osKey) {
             "macos" -> "darwin"
+            "windows" -> "win"
             else -> osKey
         }
         val arch = when (archKey) {

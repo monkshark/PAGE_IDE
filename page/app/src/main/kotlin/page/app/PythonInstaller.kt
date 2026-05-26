@@ -118,9 +118,31 @@ class PythonInstaller(
             "arm64" -> "aarch64"
             else -> "x86_64"
         }
-        val ext = "tar.gz"
-        return "https://github.com/astral-sh/python-build-standalone/releases/latest/download/cpython-$version-$arch-$os-install_only_stripped.$ext"
+        val pattern = "cpython-$version+*-$arch-$os-install_only_stripped.tar.gz"
+        val url = resolveAssetUrl(pattern)
+        if (url != null) return url
+        return "https://github.com/astral-sh/python-build-standalone/releases/latest/download/cpython-$version-$arch-$os-install_only_stripped.tar.gz"
     }
+
+    private fun resolveAssetUrl(glob: String): String? = runCatching {
+        val regex = Regex(glob.replace("*", ".*").replace("+", "\\+"))
+        val conn = java.net.URI("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest")
+            .toURL().openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 5_000
+        conn.readTimeout = 10_000
+        conn.setRequestProperty("Accept", "application/vnd.github+json")
+        conn.setRequestProperty("User-Agent", "PAGE-IDE/0.1")
+        try {
+            if (conn.responseCode !in 200..299) return@runCatching null
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val urlRegex = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"")
+            urlRegex.findAll(body)
+                .map { it.groupValues[1] }
+                .firstOrNull { regex.containsMatchIn(it.substringAfterLast('/')) }
+        } finally {
+            conn.disconnect()
+        }
+    }.getOrNull()
 
     fun pythonBinary(version: String): Path {
         val name = if (isWindows) "python.exe" else "python3"

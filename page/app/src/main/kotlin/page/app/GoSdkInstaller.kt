@@ -130,7 +130,7 @@ class GoSdkInstaller(
 
     fun goRoot(version: String): Path = goBase().resolve(version)
 
-    private fun goBase(): Path = LspInstaller.lspHome().resolve("go-sdk")
+    private fun goBase(): Path = LspInstaller.lspHome().resolve("go-runtime")
 
     override fun installDir(version: String?): Path {
         val v = version?.takeIf { it.isNotBlank() } ?: defaultGoVersion
