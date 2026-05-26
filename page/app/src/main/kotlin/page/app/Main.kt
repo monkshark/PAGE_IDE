@@ -3374,7 +3374,16 @@ private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<
     val dotnet = runCatching { captureVersion("dotnet", "--version") }.getOrNull()
     if (!dotnet.isNullOrBlank()) vers["cs"] = dotnet
     if (projectRoot != null) {
-        val detected = runCatching { BuildFileVersionDetector.detect(projectRoot) }.getOrDefault(emptyList())
+        var detected = runCatching { BuildFileVersionDetector.detect(projectRoot) }.getOrDefault(emptyList())
+        if (detected.isEmpty()) {
+            detected = runCatching {
+                java.nio.file.Files.list(projectRoot).use { stream ->
+                    stream.filter { java.nio.file.Files.isDirectory(it) }
+                        .flatMap { BuildFileVersionDetector.detect(it).stream() }
+                        .toList()
+                }
+            }.getOrDefault(emptyList())
+        }
         for (d in detected) {
             val key = when (d.runtime) {
                 "jdk" -> "java"
@@ -3383,7 +3392,7 @@ private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<
                 "go-sdk" -> "go"
                 else -> continue
             }
-            vers[key] = "${d.version} (${d.source})"
+            vers[key] = d.version
         }
     }
     return vers
