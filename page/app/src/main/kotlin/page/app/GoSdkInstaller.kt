@@ -99,7 +99,10 @@ class GoSdkInstaller(
             }
 
             if (!Files.exists(go)) {
-                throw IOException("go binary missing after extraction: $go")
+                val listing = runCatching {
+                    java.nio.file.Files.walk(root).use { s -> s.limit(20).map { root.relativize(it).toString() }.toList().joinToString(", ") }
+                }.getOrDefault("(empty)")
+                throw IOException("go binary missing after extraction: $go\nExtracted contents: $listing")
             }
             runCatching { go.toFile().setExecutable(true, false) }
             writePointer(resolved)

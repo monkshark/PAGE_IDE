@@ -65,9 +65,8 @@ class PythonInstaller(
 
     override fun availableVersions(): List<String> {
         val bundled = discoverBundleVersions()
-        val manifest = runCatching { manifestFetcher() }.getOrDefault(emptyList())
         val installed = installedVersions()
-        return (bundled + manifest + defaultPythonVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
+        return (bundled + defaultPythonVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
     }
 
     private fun discoverBundleVersions(): List<String> {
@@ -115,7 +114,10 @@ class PythonInstaller(
             }
 
             if (!Files.exists(py)) {
-                throw IOException("python binary missing after extraction: $py")
+                val listing = runCatching {
+                    Files.walk(root).use { s -> s.limit(20).map { root.relativize(it).toString() }.toList().joinToString(", ") }
+                }.getOrDefault("(empty)")
+                throw IOException("python binary missing after extraction: $py\nExtracted contents: $listing")
             }
             runCatching { py.toFile().setExecutable(true, false) }
             writePointer(resolved)
