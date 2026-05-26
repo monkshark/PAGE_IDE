@@ -89,10 +89,10 @@ class PythonInstaller(
             val resolved = version?.takeIf { it.isNotBlank() } ?: defaultPythonVersion
             val root = pythonRoot(resolved)
 
-            val py = pythonBinary(resolved)
-            if (Files.exists(py)) {
+            val precheck = pythonBinary(resolved)
+            if (Files.exists(precheck)) {
                 writePointer(resolved)
-                onProgress(LspInstaller.Progress.Done(py))
+                onProgress(LspInstaller.Progress.Done(precheck))
                 return
             }
             if (Files.exists(root)) ArchiveExtractors.deleteRecursively(root)
@@ -114,6 +114,7 @@ class PythonInstaller(
                 runCatching { Files.deleteIfExists(tmp) }
             }
 
+            val py = pythonBinary(resolved)
             if (!Files.exists(py)) {
                 val topFiles = runCatching {
                     Files.list(root).use { s -> s.limit(30).map { it.fileName.toString() }.toList().joinToString(", ") }
