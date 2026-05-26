@@ -162,7 +162,9 @@ class TerminalSession internal constructor(
         }
 
         private fun installGsudo() {
-            val winget = findOnPath("winget") ?: findOnPath("winget.exe") ?: return
+            val winget = findOnPath("winget") ?: findOnPath("winget.exe")
+                ?: System.getenv("LOCALAPPDATA")?.let { "$it\\Microsoft\\WindowsApps\\winget.exe" }?.takeIf { java.io.File(it).exists() }
+                ?: return
             try {
                 val p = ProcessBuilder(winget, "install", "--id", "gerardog.gsudo", "--accept-package-agreements", "--accept-source-agreements", "--silent")
                     .redirectErrorStream(true)
