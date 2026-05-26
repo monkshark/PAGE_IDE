@@ -3402,7 +3402,14 @@ private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<
                 "go-sdk" -> "go"
                 else -> continue
             }
-            vers[key] = d.version
+            val hasManaged = when (d.runtime) {
+                "jdk" -> runCatching { JdkInstaller().activeVersion() }.getOrNull() != null
+                "node" -> runCatching { NodeInstaller().activeVersion() }.getOrNull() != null
+                "python-runtime" -> runCatching { PythonInstaller().activeVersion() }.getOrNull() != null
+                "go-sdk" -> runCatching { GoSdkInstaller().activeVersion() }.getOrNull() != null
+                else -> false
+            }
+            if (!hasManaged) vers[key] = d.version
         }
     }
     return vers
