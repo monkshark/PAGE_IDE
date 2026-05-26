@@ -5,14 +5,17 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 class GoplsInstaller(
-    private val processRunner: ProcessRunner = DefaultProcessRunner,
     private val osKey: String = LspInstaller.osKey(),
     private val archKey: String = ArchDetect.archKey(),
     private val isWindows: Boolean = LspInstaller.isWindows(),
-    private val versionsFetcher: () -> List<String> = { GoDlManifest.fetchVersions() },
     private val downloader: (url: String, target: Path, onProgress: (Long, Long) -> Unit) -> Unit = InstallerHttp::download,
-    private val defaultGoVersion: String = "1.22.5",
-    private val goplsSpec: String = "golang.org/x/tools/gopls@latest",
+    private val tarGzExtractor: (Path, Path, Int) -> Unit = { src, dst, flatten -> ArchiveExtractors.extractTarGz(src, dst, flatten) },
+    private val assetsRepo: String = DEFAULT_ASSETS_REPO,
+    private val releaseTag: String = DEFAULT_RELEASE_TAG,
+    private val defaultGoplsVersion: String = DEFAULT_GOPLS_VERSION,
+    private val versionsFetcher: (String, String, String) -> List<String> = { owner, repo, tag ->
+        GitHubReleases.listAssetNames(owner, repo, tag)
+    },
 ) : LspInstaller {
 
     override val languageId: String = "go"
@@ -23,132 +26,152 @@ class GoplsInstaller(
 
     override fun executable(): Path? {
         val ver = currentInstalledVersion() ?: return null
-        val exe = goplsBinary(ver)
-        return exe.takeIf { Files.exists(it) }
+        return goplsBinary(ver).takeIf { Files.exists(it) }
     }
 
-    override fun defaultVersion(): String? = defaultGoVersion
-
+    override fun defaultVersion(): String? = defaultGoplsVersion
     override fun installedVersion(): String? = currentInstalledVersion()
 
-    override fun availableVersions(): List<String> = runCatching { versionsFetcher() }.getOrDefault(emptyList())
+    override fun installedVersions(): List<String> {
+        val base = goplsBase()
+        if (!Files.isDirectory(base)) return emptyList()
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream
+                    .filter { Files.isDirectory(it) && it.fileName.toString() != "CURRENT" }
+                    .map { it.fileName.toString() }
+                    .filter { Files.exists(goplsBinary(it)) }
+                    .toList()
+                    .sortedWith(VERSION_DESC)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun activeVersion(): String? = currentInstalledVersion()
+
+    override fun applyVersion(version: String): Boolean {
+        if (!Files.exists(goplsBinary(version))) return false
+        writePointer(version)
+        return true
+    }
+
+    override fun availableVersions(): List<String> {
+        val bundled = discoverBundleVersions()
+        val installed = installedVersions()
+        return (bundled + defaultGoplsVersion + installed).filter { it.isNotBlank() }.distinct().sortedWith(VERSION_DESC)
+    }
+
+    private fun discoverBundleVersions(): List<String> {
+        val parts = assetsRepo.split('/')
+        if (parts.size != 2) return emptyList()
+        val pattern = assetNamePattern() ?: return emptyList()
+        return runCatching {
+            versionsFetcher(parts[0], parts[1], releaseTag)
+                .mapNotNull { pattern.find(it)?.groupValues?.get(1) }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun assetNamePattern(): Regex? {
+        val arch = assetArch()
+        return Regex("^page-go-gopls-$osKey-$arch-(.+?)\\.tar\\.gz$")
+    }
 
     override fun install(version: String?, onProgress: (LspInstaller.Progress) -> Unit) {
         try {
-            val resolved = (version ?: defaultGoVersion).removePrefix("go")
-            val versionTag = "go$resolved"
-            val url = downloadUrl(versionTag)
-            val target = sdkRoot(versionTag)
-            val goplsExists = Files.exists(goplsBinary(versionTag))
-            if (Files.exists(target) && !goplsExists) {
-                ArchiveExtractors.deleteRecursively(target)
+            val resolved = version?.takeIf { it.isNotBlank() } ?: defaultGoplsVersion
+            val root = goplsRoot(resolved)
+
+            val gopls = goplsBinary(resolved)
+            if (Files.exists(gopls)) {
+                writePointer(resolved)
+                onProgress(LspInstaller.Progress.Done(gopls))
+                return
             }
-            Files.createDirectories(target)
-            if (isWindows) {
-                requestDefenderExclusion(target, onProgress)
-                Thread.sleep(3000)
-            }
-            val tmp = Files.createTempFile("page-go-", if (isWindows) ".zip" else ".tar.gz")
+            if (Files.exists(root)) ArchiveExtractors.deleteRecursively(root)
+            Files.createDirectories(root)
+
+            val url = downloadUrl(resolved)
+            val tmp = Files.createTempFile("page-gopls-", ".tar.gz")
             try {
+                onProgress(LspInstaller.Progress.CommandOutput("> GET $url"))
                 downloader(url, tmp) { read, total ->
                     onProgress(LspInstaller.Progress.Downloading(read, total))
                 }
-                onProgress(LspInstaller.Progress.Extracting("Extracting Go SDK…"))
-                if (isWindows) ArchiveExtractors.extractZip(tmp, target, flatten = 1)
-                else ArchiveExtractors.extractTarGz(tmp, target, flatten = 1)
+                onProgress(LspInstaller.Progress.Extracting("Extracting gopls $resolved …"))
+                tarGzExtractor(tmp, root, 0)
+            } catch (t: Throwable) {
+                throw IOException("gopls download failed ($url): ${t.message}", t)
             } finally {
                 runCatching { Files.deleteIfExists(tmp) }
             }
 
-            val goBin = goBinary(versionTag)
-            if (!Files.exists(goBin)) throw IOException("Go SDK 다운로드 후 바이너리 누락: $goBin")
-            runCatching { goBin.toFile().setExecutable(true, false) }
-
-            val gopath = gopathFor(versionTag)
-            Files.createDirectories(gopath)
-
-            val env = mapOf(
-                "GOPATH" to gopath.toString(),
-                "GOROOT" to target.toString(),
-                "GOTOOLCHAIN" to "local",
-                "GO111MODULE" to "on",
-            )
-            onProgress(LspInstaller.Progress.CommandOutput("> go install $goplsSpec"))
-            val exit = processRunner.runStreaming(listOf(goBin.toString(), "install", goplsSpec), env) { line ->
-                onProgress(LspInstaller.Progress.CommandOutput(line))
+            val binary = goplsBinary(resolved)
+            if (!Files.exists(binary)) {
+                val listing = runCatching {
+                    Files.list(root).use { s -> s.limit(20).map { it.fileName.toString() }.toList().joinToString(", ") }
+                }.getOrDefault("(empty)")
+                throw IOException("gopls binary missing after extraction: $binary\nContents: $listing")
             }
-            if (exit != 0) throw IOException("go install gopls 종료 코드 $exit")
-
-            val gopls = goplsBinary(versionTag)
-            if (!Files.exists(gopls)) throw IOException("gopls 설치 후 바이너리 누락: $gopls")
-            runCatching { gopls.toFile().setExecutable(true, false) }
-
-            writePointer(versionTag)
-            onProgress(LspInstaller.Progress.Done(gopls))
+            runCatching { binary.toFile().setExecutable(true, false) }
+            writePointer(resolved)
+            onProgress(LspInstaller.Progress.Done(binary))
         } catch (t: Throwable) {
-            val resolved = (version ?: defaultGoVersion).removePrefix("go")
-            runCatching { ArchiveExtractors.deleteRecursively(sdkRoot("go$resolved")) }
+            runCatching { ArchiveExtractors.deleteRecursively(goplsRoot(version?.takeIf { it.isNotBlank() } ?: defaultGoplsVersion)) }
             onProgress(LspInstaller.Progress.Failed(t))
         }
     }
 
-    internal fun downloadUrl(versionTag: String): String {
-        val osDl = when (osKey) {
-            "macos" -> "darwin"
-            "windows" -> "windows"
-            else -> "linux"
-        }
-        val ext = if (isWindows) "zip" else "tar.gz"
-        return "https://go.dev/dl/$versionTag.$osDl-$archKey.$ext"
+    internal fun downloadUrl(version: String): String {
+        val arch = assetArch()
+        return "https://github.com/$assetsRepo/releases/download/$releaseTag/page-go-gopls-$osKey-$arch-$version.tar.gz"
     }
 
-    fun goBinary(versionTag: String): Path =
-        sdkRoot(versionTag).resolve("bin").resolve(if (isWindows) "go.exe" else "go")
+    private fun assetArch(): String = when (archKey) {
+        "arm64" -> "aarch64"
+        "amd64" -> "x86_64"
+        else -> archKey
+    }
 
-    fun goplsBinary(versionTag: String): Path =
-        gopathFor(versionTag).resolve("bin").resolve(if (isWindows) "gopls.exe" else "gopls")
+    fun goplsBinary(version: String): Path {
+        val name = if (isWindows) "gopls.exe" else "gopls"
+        return goplsRoot(version).resolve(name)
+    }
 
-    fun sdkRoot(versionTag: String): Path = sdkBase().resolve(versionTag)
+    fun goplsRoot(version: String): Path = goplsBase().resolve(version)
 
-    private fun gopathFor(versionTag: String): Path = sdkRoot(versionTag).resolve("gopath")
+    private fun goplsBase(): Path = LspInstaller.lspHome().resolve("gopls")
 
-    private fun sdkBase(): Path = LspInstaller.lspHome().resolve("go-sdk")
-
-    private fun requestDefenderExclusion(target: Path, onProgress: (LspInstaller.Progress) -> Unit) {
-        onProgress(LspInstaller.Progress.Extracting("Requesting Windows Defender exclusion (UAC prompt)…"))
-        val pathLiteral = target.toString().replace("'", "''")
-        val innerCommand = "try { Add-MpPreference -ExclusionPath ''" + pathLiteral +
-            "''; exit 0 } catch { exit 2 }"
-        val outerCommand = "Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait " +
-            "-ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \"" + innerCommand + "\"'"
-        val cmd = listOf("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", outerCommand)
-        val exit = try {
-            processRunner.runStreaming(cmd) { line ->
-                onProgress(LspInstaller.Progress.CommandOutput(line))
-            }
-        } catch (t: Throwable) {
-            onProgress(LspInstaller.Progress.CommandOutput(
-                "[warning] Defender exclusion failed (${t.javaClass.simpleName}) — go install may fail if Defender blocks compile.exe",
-            ))
-            return
-        }
-        if (exit != 0) {
-            onProgress(LspInstaller.Progress.CommandOutput(
-                "[warning] Defender exclusion request failed (exit=$exit) — go install may fail",
-            ))
-        } else {
-            onProgress(LspInstaller.Progress.CommandOutput("[info] Defender exclusion registered"))
-        }
+    override fun installDir(version: String?): Path {
+        val v = version?.takeIf { it.isNotBlank() } ?: defaultGoplsVersion
+        return goplsRoot(v)
     }
 
     fun currentInstalledVersion(): String? {
-        val pointer = sdkBase().resolve("CURRENT")
+        val pointer = goplsBase().resolve("CURRENT")
         return runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull()
     }
 
-    private fun writePointer(versionTag: String) {
-        val pointer = sdkBase().resolve("CURRENT")
+    private fun writePointer(version: String) {
+        val pointer = goplsBase().resolve("CURRENT")
         Files.createDirectories(pointer.parent)
-        Files.writeString(pointer, versionTag)
+        Files.writeString(pointer, version)
+    }
+
+    companion object {
+        const val DEFAULT_ASSETS_REPO = "monkshark/page-ide-assets"
+        const val DEFAULT_RELEASE_TAG = "gopls-bundle"
+        const val DEFAULT_GOPLS_VERSION = "v0.22.0"
+
+        internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->
+            val pa = a.removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
+            val pb = b.removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
+            val len = maxOf(pa.size, pb.size)
+            for (i in 0 until len) {
+                val va = pa.getOrElse(i) { 0 }
+                val vb = pb.getOrElse(i) { 0 }
+                if (va != vb) return@Comparator vb.compareTo(va)
+            }
+            0
+        }
     }
 }
