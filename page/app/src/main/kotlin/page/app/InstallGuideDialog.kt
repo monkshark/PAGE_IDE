@@ -76,13 +76,14 @@ internal fun InstallGuideDialog(
     onInstalled: () -> Unit = {},
     onDismiss: () -> Unit,
     installer: LspInstaller? = null,
+    suggestedVersion: String? = null,
 ) {
     @Suppress("NAME_SHADOWING")
     val installer = installer ?: remember(definition.id) { LspInstallers.forId(definition.id) }
     val initialOs = remember { InstallGuide.initialOsKey() }
     var selectedOs by remember { mutableStateOf(initialOs) }
     var installProgress by remember { mutableStateOf<LspInstaller.Progress?>(null) }
-    var selectedVersion by remember(installer) { mutableStateOf<String?>(installer?.installedVersion() ?: installer?.defaultVersion()) }
+    var selectedVersion by remember(installer) { mutableStateOf<String?>(suggestedVersion ?: installer?.installedVersion() ?: installer?.defaultVersion()) }
     var availableVersions by remember(installer) { mutableStateOf<List<String>>(emptyList()) }
     var versionsLoading by remember(installer) { mutableStateOf(true) }
     var showUpstream by remember(installer) { mutableStateOf(false) }
