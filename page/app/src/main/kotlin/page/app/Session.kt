@@ -1,6 +1,7 @@
 package page.app
 
 import page.runtime.*
+import page.workspace.*
 
 import com.google.gson.reflect.TypeToken
 import page.editor.FileDocument

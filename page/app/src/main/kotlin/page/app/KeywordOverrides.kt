@@ -1,6 +1,7 @@
 package page.app
 
 import page.runtime.*
+import page.workspace.*
 
 import androidx.compose.ui.graphics.Color
 import com.google.gson.reflect.TypeToken

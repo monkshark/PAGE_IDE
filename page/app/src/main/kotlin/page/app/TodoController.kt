@@ -1,6 +1,7 @@
 package page.app
 
 import page.runtime.*
+import page.workspace.*
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
