@@ -3351,6 +3351,12 @@ private fun Shell(
             "dotnet-runtime" to page.lsp.LanguageDefinition("dotnet-runtime", ".NET SDK", listOf("cs"), emptyList(), emptyList(), "https://dotnet.microsoft.com/download", emptyMap(), null),
         )
         val def = runtimeDefs[runtimeDialogId]
+        val buildFileKey = when (runtimeDialogId) {
+            "jdk" -> "java"; "node" -> "js"; "python-runtime" -> "py"
+            "go-sdk" -> "go"; "rust-runtime" -> "rs"; "dotnet-runtime" -> "cs"
+            else -> null
+        }
+        val suggested = buildFileKey?.let { runtimeBuildFileVersions.value[it] }
         if (def != null) {
             InstallGuideDialog(
                 definition = def,
@@ -3359,13 +3365,15 @@ private fun Shell(
                 onInstalled = {
                     runtimeScope.launch {
                         withContext(Dispatchers.IO) {
-                            val (vers, srcs) = detectRuntimeVersionsWithSources(rootDir)
+                            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(rootDir)
                             runtimeVersions.value = vers
                             runtimeSources.value = srcs
+                            runtimeBuildFileVersions.value = bvs
                         }
                     }
                 },
                 installer = LspInstallers.forId(runtimeDialogId),
+                suggestedVersion = suggested,
             )
         } else {
             runtimeDialogOpen = null
