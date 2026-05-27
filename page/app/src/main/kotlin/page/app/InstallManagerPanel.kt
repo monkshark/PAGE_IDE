@@ -57,6 +57,7 @@ internal fun InstallManagerPanel(
     initialSelection: String? = null,
     onClose: () -> Unit,
     onInstallRequested: (String) -> Unit,
+    onVersionChanged: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val entries = remember { buildManagerEntries() }
@@ -80,7 +81,7 @@ internal fun InstallManagerPanel(
             ManagerDetailPane(
                 entry = entry,
                 onInstallRequested = onInstallRequested,
-                onVersionDeleted = {},
+                onVersionChanged = onVersionChanged,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         } else {
@@ -166,7 +167,7 @@ private fun ManagerSidebar(
 private fun ManagerDetailPane(
     entry: ManagerEntry,
     onInstallRequested: (String) -> Unit,
-    onVersionDeleted: () -> Unit,
+    onVersionChanged: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val installer = remember(entry.id) { LspInstallers.forId(entry.id) }
@@ -201,7 +202,7 @@ private fun ManagerDetailPane(
             runCatching { ArchiveExtractors.deleteRecursively(dir) }
             withContext(Dispatchers.Main) {
                 refreshVersions()
-                onVersionDeleted()
+                onVersionChanged()
             }
         }
     }
@@ -283,6 +284,7 @@ private fun ManagerDetailPane(
                                     modifier = Modifier.clickable {
                                         installer?.applyVersion(v)
                                         refreshVersions()
+                                        onVersionChanged()
                                     }.padding(horizontal = 6.dp),
                                 )
                             }

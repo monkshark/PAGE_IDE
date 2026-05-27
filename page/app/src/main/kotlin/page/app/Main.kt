@@ -3126,6 +3126,16 @@ private fun Shell(
                             installManagerOpen = null
                             runtimeDialogOpen = id
                         },
+                        onVersionChanged = {
+                            runtimeScope.launch {
+                                withContext(Dispatchers.IO) {
+                                    val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(rootDir)
+                                    runtimeVersions.value = vers
+                                    runtimeSources.value = srcs
+                                    runtimeBuildFileVersions.value = bvs
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else if (splitEnabled) {
