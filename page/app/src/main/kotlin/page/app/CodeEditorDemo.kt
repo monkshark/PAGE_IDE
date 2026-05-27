@@ -1,6 +1,7 @@
 package page.app
 
 import page.runtime.*
+import page.workspace.*
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxSize

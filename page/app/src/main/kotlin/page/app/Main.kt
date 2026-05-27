@@ -1,6 +1,7 @@
 package page.app
 
 import page.runtime.*
+import page.workspace.*
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -1027,7 +1028,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         if (plan.newSelfText != null) {
             val abs = newPath.toAbsolutePath().normalize()
             val current = readFileTextWithTabs(abs)
-            if (current != null) rewrites[abs] = current to plan.newSelfText
+            val newText = plan.newSelfText
+            if (current != null && newText != null) rewrites[abs] = current to newText
         }
         rootDir?.let { root ->
             val newPathAbs = newPath.toAbsolutePath().normalize()

@@ -1,6 +1,7 @@
 package page.app
 
 import page.runtime.*
+import page.workspace.*
 
 import page.lsp.LanguageDefinition
 import page.lsp.LanguageRegistry
