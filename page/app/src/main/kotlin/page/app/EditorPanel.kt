@@ -1764,24 +1764,12 @@ private fun LspLifecycleItem(text: String, onClick: (() -> Unit)? = null) {
     val mod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     Row(verticalAlignment = Alignment.CenterVertically, modifier = mod) {
         if (isLoading) {
-            val transition = rememberInfiniteTransition()
-            val offset by transition.animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1200, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart,
-                ),
+            androidx.compose.material3.LinearProgressIndicator(
+                modifier = Modifier.width(72.dp).height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
             )
-            Canvas(modifier = Modifier.width(40.dp).height(3.dp).padding(end = 6.dp)) {
-                val barWidth = size.width * 0.35f
-                val x = offset * (size.width + barWidth) - barWidth
-                drawRect(
-                    color = androidx.compose.ui.graphics.Color(0xFF6EA8FE),
-                    topLeft = Offset(x.coerceAtLeast(0f), 0f),
-                    size = Size((barWidth).coerceAtMost(size.width - x.coerceAtLeast(0f)), size.height),
-                )
-            }
+            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
         }
         Text(
             text = text,
