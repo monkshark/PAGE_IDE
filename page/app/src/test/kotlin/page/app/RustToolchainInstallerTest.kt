@@ -42,7 +42,7 @@ class RustToolchainInstallerTest {
         val installer = RustToolchainInstaller(osKey = "windows", archKey = "amd64", isWindows = true)
         val url = installer.downloadUrl("1.82.0")
         assertEquals(
-            "https://github.com/monkshark/page-ide-assets/releases/download/rust-bundle/page-rust-toolchain-windows-x86_64-1.82.0.tar.gz",
+            "https://github.com/monkshark/page-ide-assets/releases/download/rust-toolchain-bundle/page-rust-toolchain-windows-x86_64-1.82.0.tar.gz",
             url,
         )
     }
@@ -52,7 +52,7 @@ class RustToolchainInstallerTest {
         val installer = RustToolchainInstaller(osKey = "macos", archKey = "arm64", isWindows = false)
         val url = installer.downloadUrl("1.75.0")
         assertEquals(
-            "https://github.com/monkshark/page-ide-assets/releases/download/rust-bundle/page-rust-toolchain-macos-aarch64-1.75.0.tar.gz",
+            "https://github.com/monkshark/page-ide-assets/releases/download/rust-toolchain-bundle/page-rust-toolchain-macos-aarch64-1.75.0.tar.gz",
             url,
         )
     }
@@ -62,7 +62,7 @@ class RustToolchainInstallerTest {
         val installer = RustToolchainInstaller(osKey = "linux", archKey = "amd64", isWindows = false)
         val url = installer.downloadUrl("1.82.0")
         assertEquals(
-            "https://github.com/monkshark/page-ide-assets/releases/download/rust-bundle/page-rust-toolchain-linux-x86_64-1.82.0.tar.gz",
+            "https://github.com/monkshark/page-ide-assets/releases/download/rust-toolchain-bundle/page-rust-toolchain-linux-x86_64-1.82.0.tar.gz",
             url,
         )
     }
