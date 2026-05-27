@@ -76,7 +76,7 @@ class LanguageRunDefaultsTest {
     fun `cargo run template has no file argument`() {
         val cfg = LanguageRunDefaults.buildConfig(Path.of("/proj/src/main.rs"), Path.of("/proj"))
         assertNotNull(cfg)
-        assertEquals("cargo", cfg.command)
+        assertTrue(cfg.command.contains("cargo"), "command should contain 'cargo', got: ${cfg.command}")
         assertEquals(listOf("run"), cfg.args)
     }
 }

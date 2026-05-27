@@ -3344,6 +3344,8 @@ private fun Shell(
             "python-runtime" to page.lsp.LanguageDefinition("python-runtime", "Python", listOf("py"), emptyList(), emptyList(), "https://python.org/", emptyMap(), null),
             "go-sdk" to page.lsp.LanguageDefinition("go-sdk", "Go SDK", listOf("go"), emptyList(), emptyList(), "https://go.dev/", emptyMap(), null),
             "cpp-toolchain" to page.lsp.LanguageDefinition("cpp-toolchain", "LLVM/Clang Toolchain", listOf("c", "cpp"), emptyList(), emptyList(), "https://llvm.org/", emptyMap(), null),
+            "rust-runtime" to page.lsp.LanguageDefinition("rust-runtime", "Rust Toolchain", listOf("rs"), emptyList(), emptyList(), "https://rustup.rs/", emptyMap(), null),
+            "dotnet-runtime" to page.lsp.LanguageDefinition("dotnet-runtime", ".NET SDK", listOf("cs"), emptyList(), emptyList(), "https://dotnet.microsoft.com/download", emptyMap(), null),
         )
         val def = runtimeDefs[runtimeDialogId]
         if (def != null) {
@@ -3360,6 +3362,7 @@ private fun Shell(
                         }
                     }
                 },
+                installer = LspInstallers.forId(runtimeDialogId),
             )
         } else {
             runtimeDialogOpen = null
@@ -3384,9 +3387,10 @@ private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<
     val cpp = runCatching { CppToolchainInstaller().activeVersion() }.getOrNull()
         ?: runCatching { captureVersion("clang", "--version")?.let { Regex("(\\d+\\.\\d+\\.\\d+)").find(it)?.groupValues?.get(1) } }.getOrNull()
     if (!cpp.isNullOrBlank()) vers["cpp"] = cpp
-    val rust = runCatching { captureVersion("rustc", "--version")?.let { Regex("(\\d+\\.\\d+\\.\\d+)").find(it)?.groupValues?.get(1) } }.getOrNull()
+    val rust = runCatching { RustToolchainInstaller().activeVersion() }.getOrNull()
+        ?: runCatching { captureVersion("rustc", "--version")?.let { Regex("(\\d+\\.\\d+\\.\\d+)").find(it)?.groupValues?.get(1) } }.getOrNull()
     if (!rust.isNullOrBlank()) vers["rs"] = rust
-    val dotnet = runCatching { captureVersion("dotnet", "--version") }.getOrNull()
+    val dotnet = runCatching { GenericProcessBackend.DOTNET.activeVersion() }.getOrNull()
     if (!dotnet.isNullOrBlank()) vers["cs"] = dotnet
     if (projectRoot != null) {
         var detected = runCatching { BuildFileVersionDetector.detect(projectRoot) }.getOrDefault(emptyList())
@@ -3405,6 +3409,8 @@ private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<
                 "node" -> "js"
                 "python-runtime" -> "py"
                 "go-sdk" -> "go"
+                "rust" -> "rs"
+                "dotnet" -> "cs"
                 else -> continue
             }
             val hasManaged = when (d.runtime) {

@@ -4,7 +4,7 @@ object LspInstallers {
 
     private val registry: Map<String, () -> LspInstaller> = mapOf(
         "kotlin" to { KlsLspInstaller() },
-        "rust" to ::rustAnalyzerInstaller,
+        "rust" to { RustAnalyzerInstaller() },
         "c" to ::clangdInstaller,
         "cpp" to ::clangdInstaller,
         "lua" to ::luaLanguageServerInstaller,
@@ -42,37 +42,13 @@ object LspInstallers {
         "python-runtime" to { PythonInstaller() },
         "cpp-toolchain" to { CppToolchainInstaller() },
         "go-sdk" to { GoSdkInstaller() },
+        "rust-runtime" to { RustToolchainInstaller() },
+        "dotnet-runtime" to { GenericProcessBackend.DOTNET },
     )
 
     fun forId(languageId: String): LspInstaller? = registry[languageId]?.invoke()
 
     fun supports(languageId: String): Boolean = registry.containsKey(languageId)
-
-    private fun rustAnalyzerInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "rust",
-            displayName = "rust-analyzer",
-            owner = "rust-lang",
-            repo = "rust-analyzer",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/rust-lang/rust-analyzer/releases/download/{tag}/rust-analyzer-aarch64-apple-darwin.gz",
-                    executableRelative = "rust-analyzer",
-                    archiveType = ArchiveType.GZ_BINARY,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/rust-lang/rust-analyzer/releases/download/{tag}/rust-analyzer-x86_64-unknown-linux-gnu.gz",
-                    executableRelative = "rust-analyzer",
-                    archiveType = ArchiveType.GZ_BINARY,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/rust-lang/rust-analyzer/releases/download/{tag}/rust-analyzer-x86_64-pc-windows-msvc.gz",
-                    executableRelative = "rust-analyzer.exe",
-                    archiveType = ArchiveType.GZ_BINARY,
-                ),
-            ),
-        ),
-    )
 
     private fun clangdInstaller(): LspInstaller = GitHubReleaseInstaller(
         GitHubReleaseDescriptor(

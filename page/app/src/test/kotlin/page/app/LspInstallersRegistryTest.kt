@@ -39,7 +39,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun gitHubReleaseInstallersHaveAllThreeOsBlocks() {
-        val ids = listOf("rust", "c", "cpp", "lua", "markdown", "zig", "elixir", "clojure")
+        val ids = listOf("c", "cpp", "lua", "markdown", "zig", "elixir", "clojure")
         for (id in ids) {
             val installer = LspInstallers.forId(id)
             assertTrue(installer is GitHubReleaseInstaller, "$id should be GitHubReleaseInstaller")
@@ -52,12 +52,21 @@ class LspInstallersRegistryTest {
 
     @Test
     fun gitHubReleaseInstallersOwnerRepoNonEmpty() {
-        val ids = listOf("rust", "c", "cpp", "lua", "markdown", "zig", "elixir", "clojure")
+        val ids = listOf("c", "cpp", "lua", "markdown", "zig", "elixir", "clojure")
         for (id in ids) {
             val installer = LspInstallers.forId(id) as GitHubReleaseInstaller
             assertTrue(installer.descriptor.owner.isNotBlank(), "$id missing owner")
             assertTrue(installer.descriptor.repo.isNotBlank(), "$id missing repo")
         }
+    }
+
+    @Test
+    fun rustUsesRustAnalyzerInstaller() {
+        assertTrue(LspInstallers.supports("rust"))
+        val installer = LspInstallers.forId("rust")
+        assertNotNull(installer)
+        assertTrue(installer is RustAnalyzerInstaller, "rust should be RustAnalyzerInstaller, got ${installer::class}")
+        assertEquals("rust-analyzer", installer.displayName)
     }
 
     @Test
