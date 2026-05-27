@@ -33,18 +33,12 @@ object SyntaxLexers {
             ext == "php" -> TreeSitterLexers.php
             ext == "swift" -> TreeSitterLexers.swift
             ext == "scala" || ext == "sc" -> TreeSitterLexers.scala
-            ext == "hs" || ext == "lhs" -> TreeSitterLexers.haskell
             ext == "lua" -> TreeSitterLexers.lua
             ext == "yaml" || ext == "yml" -> TreeSitterLexers.yaml
             ext == "html" || ext == "htm" -> TreeSitterLexers.html
             ext == "css" || ext == "scss" || ext == "less" -> TreeSitterLexers.css
             ext == "md" || ext == "markdown" -> TreeSitterLexers.markdown
             ext == "sql" -> TreeSitterLexers.sql
-            ext == "r" -> TreeSitterLexers.r
-            ext == "pl" || ext == "pm" -> TreeSitterLexers.perl
-            ext == "ex" || ext == "exs" -> TreeSitterLexers.elixir
-            ext == "clj" || ext == "cljs" || ext == "cljc" -> TreeSitterLexers.clojure
-            ext == "ml" || ext == "mli" -> TreeSitterLexers.ocaml
             ext == "zig" -> TreeSitterLexers.zig
             ext == "vue" -> TreeSitterLexers.vue
             ext == "svelte" -> TreeSitterLexers.svelte

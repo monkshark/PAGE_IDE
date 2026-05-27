@@ -10,7 +10,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun supportsAllStep1Languages() {
-        for (id in listOf("kotlin", "rust", "c", "cpp", "lua", "markdown", "zig", "elixir", "clojure", "java")) {
+        for (id in listOf("kotlin", "rust", "c", "cpp", "lua", "markdown", "zig", "java")) {
             assertTrue(LspInstallers.supports(id), "expected support for $id")
             assertNotNull(LspInstallers.forId(id), "expected installer for $id")
         }
@@ -39,7 +39,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun gitHubReleaseInstallersHaveAllThreeOsBlocks() {
-        val ids = listOf("c", "cpp", "lua", "markdown", "zig", "elixir", "clojure")
+        val ids = listOf("c", "cpp", "lua", "markdown", "zig")
         for (id in ids) {
             val installer = LspInstallers.forId(id)
             assertTrue(installer is GitHubReleaseInstaller, "$id should be GitHubReleaseInstaller")
@@ -52,7 +52,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun gitHubReleaseInstallersOwnerRepoNonEmpty() {
-        val ids = listOf("c", "cpp", "lua", "markdown", "zig", "elixir", "clojure")
+        val ids = listOf("c", "cpp", "lua", "markdown", "zig")
         for (id in ids) {
             val installer = LspInstallers.forId(id) as GitHubReleaseInstaller
             assertTrue(installer.descriptor.owner.isNotBlank(), "$id missing owner")
@@ -133,22 +133,6 @@ class LspInstallersRegistryTest {
     }
 
     @Test
-    fun supportsAllStep3ShellLanguages() {
-        val shellIds = mapOf(
-            "ocaml" to "opam",
-            "perl" to "cpan",
-            "r" to "Rscript",
-        )
-        for ((id, manager) in shellIds) {
-            assertTrue(LspInstallers.supports(id), "expected support for $id")
-            val installer = LspInstallers.forId(id)
-            assertNotNull(installer, "expected installer for $id")
-            assertTrue(installer is ShellPackageInstaller, "$id should be ShellPackageInstaller, got ${installer::class}")
-            assertEquals(manager, installer.descriptor.managerName, "$id manager mismatch")
-        }
-    }
-
-    @Test
     fun rubyShellFallbackKeepsGemManager() {
         val installer = LspInstallers.shellRubyInstaller()
         assertTrue(installer is ShellPackageInstaller, "shellRubyInstaller should return ShellPackageInstaller")
@@ -170,8 +154,8 @@ class LspInstallersRegistryTest {
     }
 
     @Test
-    fun heavyInstallSetForRubyOcamlPerl() {
-        for (id in listOf("ruby", "ocaml", "perl")) {
+    fun heavyInstallSetForRuby() {
+        for (id in listOf("ruby")) {
             val installer = LspInstallers.forId(id)
             assertNotNull(installer, "expected installer for $id")
             val heavy = installer.heavyInstall
@@ -184,7 +168,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun heavyInstallNullForLightInstallers() {
-        for (id in listOf("r", "typescript", "rust", "go", "scala", "haskell", "dart")) {
+        for (id in listOf("typescript", "rust", "go", "scala", "dart")) {
             val installer = LspInstallers.forId(id)
             assertNotNull(installer, "expected installer for $id")
             assertNull(installer.heavyInstall, "$id should not flag heavy install")
@@ -226,15 +210,6 @@ class LspInstallersRegistryTest {
     }
 
     @Test
-    fun haskellUsesHaskellHlsInstallerNotShellPackage() {
-        assertTrue(LspInstallers.supports("haskell"))
-        val installer = LspInstallers.forId("haskell")
-        assertNotNull(installer)
-        assertTrue(installer is HaskellHlsInstaller, "haskell should be HaskellHlsInstaller, got ${installer::class}")
-        assertEquals("haskell-language-server", installer.displayName)
-    }
-
-    @Test
     fun dartUsesDartSdkInstallerNotToolchainDetect() {
         assertTrue(LspInstallers.supports("dart"))
         val installer = LspInstallers.forId("dart")
@@ -246,8 +221,8 @@ class LspInstallersRegistryTest {
     fun registryCoversAllThirtyJsonLanguages() {
         val expected = listOf(
             "kotlin", "java", "python", "javascript", "typescript", "go", "rust", "c", "cpp", "dart",
-            "bash", "ruby", "php", "swift", "scala", "haskell", "lua", "json", "yaml", "html",
-            "css", "markdown", "sql", "r", "perl", "elixir", "clojure", "fsharp", "ocaml", "zig",
+            "bash", "ruby", "php", "swift", "scala", "lua", "json", "yaml", "html",
+            "css", "markdown", "sql", "fsharp", "zig",
         )
         for (id in expected) {
             assertTrue(LspInstallers.supports(id), "registry missing language id: $id")
