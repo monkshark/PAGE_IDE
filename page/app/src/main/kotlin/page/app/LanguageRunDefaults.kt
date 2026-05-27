@@ -71,6 +71,12 @@ object LanguageRunDefaults {
             argTemplate = listOf("run"),
         ),
         LanguageRunTemplate(
+            displayName = "C# (dotnet run)",
+            extensions = setOf("cs"),
+            command = "dotnet",
+            argTemplate = listOf("run"),
+        ),
+        LanguageRunTemplate(
             displayName = "Bash",
             extensions = setOf("sh", "bash"),
             command = "bash",
@@ -119,6 +125,15 @@ object LanguageRunDefaults {
             val bin = home.resolve("bin").resolve(name)
             if (!java.nio.file.Files.exists(bin)) return null
             return bin.toAbsolutePath().toString() to emptyMap()
+        }
+        if ("rs" in template.extensions) {
+            val rust = runCatching { RustToolchainInstaller() }.getOrNull() ?: return null
+            val home = rust.rustHome() ?: return null
+            val bin = rust.executable() ?: return null
+            return bin.toAbsolutePath().toString() to mapOf("PATH" to home.resolve("bin").toAbsolutePath().toString() + java.io.File.pathSeparator + (System.getenv("PATH") ?: ""))
+        }
+        if ("cs" in template.extensions) {
+            return GenericProcessBackend.DOTNET.resolve()
         }
         return null
     }
