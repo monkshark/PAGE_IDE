@@ -852,7 +852,12 @@ private fun VersionRow(
     onDelete: (() -> Unit)? = null,
     badge: String? = null,
 ) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent
+    var confirmDelete by remember { mutableStateOf(false) }
+    val bg = when {
+        confirmDelete -> Color(0xFFf85149).copy(alpha = 0.08f)
+        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        else -> Color.Transparent
+    }
     val versionColor = when {
         active -> MaterialTheme.colorScheme.primary
         installed -> MaterialTheme.colorScheme.onSurface
@@ -863,57 +868,86 @@ private fun VersionRow(
             .fillMaxWidth()
             .height(22.dp)
             .background(bg)
-            .clickable(onClick = onClick)
+            .clickable(onClick = {
+                if (confirmDelete) confirmDelete = false
+                else onClick()
+            })
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = version,
-                color = versionColor,
-                style = LocalTextStyle.current.copy(
-                    fontSize = 11.sp,
-                    lineHeight = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeightStyle = LineHeightStyle(
-                        alignment = LineHeightStyle.Alignment.Center,
-                        trim = LineHeightStyle.Trim.Both,
-                    ),
-                ),
-            )
-            val suffix = when {
-                active -> "· current"
-                installed -> "· installed"
-                badge != null -> "· $badge"
-                else -> null
-            }
-            if (suffix != null) {
-                Spacer(Modifier.width(8.dp))
-                val suffixColor = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                else MaterialTheme.colorScheme.onSurfaceVariant
+            if (confirmDelete) {
                 Text(
-                    text = suffix,
-                    color = suffixColor,
+                    text = "Delete $version?",
+                    color = Color(0xFFf85149),
+                    style = LocalTextStyle.current.copy(fontSize = 11.sp, lineHeight = 11.sp),
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "Yes",
+                    color = Color(0xFFf85149),
+                    fontSize = 11.sp,
+                    modifier = Modifier.clickable { confirmDelete = false; onDelete?.invoke() }.padding(horizontal = 6.dp),
+                )
+                Text(
+                    text = "No",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    modifier = Modifier.clickable { confirmDelete = false }.padding(horizontal = 6.dp),
+                )
+            } else {
+                Text(
+                    text = version,
+                    color = versionColor,
                     style = LocalTextStyle.current.copy(
-                        fontSize = 10.sp,
-                        lineHeight = 10.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 11.sp,
+                        fontFamily = FontFamily.Monospace,
                         lineHeightStyle = LineHeightStyle(
                             alignment = LineHeightStyle.Alignment.Center,
                             trim = LineHeightStyle.Trim.Both,
                         ),
                     ),
                 )
-            }
-            if (installed && onDelete != null) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = "×",
-                    color = Color(0xFFf85149).copy(alpha = 0.6f),
-                    fontSize = 12.sp,
-                    modifier = Modifier
-                        .clickable(onClick = onDelete)
-                        .padding(horizontal = 4.dp),
-                )
+                val suffix = when {
+                    active -> "· current"
+                    installed -> "· installed"
+                    badge != null -> "· $badge"
+                    else -> null
+                }
+                if (suffix != null) {
+                    Spacer(Modifier.width(8.dp))
+                    val suffixColor = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        text = suffix,
+                        color = suffixColor,
+                        style = LocalTextStyle.current.copy(
+                            fontSize = 10.sp,
+                            lineHeight = 10.sp,
+                            lineHeightStyle = LineHeightStyle(
+                                alignment = LineHeightStyle.Alignment.Center,
+                                trim = LineHeightStyle.Trim.Both,
+                            ),
+                        ),
+                    )
+                }
+                if (installed && onDelete != null) {
+                    Spacer(Modifier.weight(1f))
+                    Box(
+                        modifier = Modifier
+                            .height(22.dp)
+                            .width(22.dp)
+                            .clickable { confirmDelete = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "×",
+                            color = Color(0xFFf85149).copy(alpha = 0.6f),
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
             }
         }
     }
