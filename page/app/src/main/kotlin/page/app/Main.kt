@@ -3062,6 +3062,7 @@ private fun Shell(
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
     val installGuideOpen by lsp.installGuideOpen.collectAsState()
     var runtimeDialogOpen by remember { mutableStateOf<String?>(null) }
+    var installManagerOpen by remember { mutableStateOf<String?>(null) }
     val runtimeVersions = remember { mutableStateOf(mapOf<String, String>()) }
     val runtimeSources = remember { mutableStateOf(mapOf<String, String>()) }
     val runtimeBuildFileVersions = remember { mutableStateOf(mapOf<String, String>()) }
@@ -3119,7 +3120,27 @@ private fun Shell(
             )
             ResizeHandle(onSidebarResize)
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                if (splitEnabled) {
+                if (installManagerOpen != null) {
+                    InstallManagerPanel(
+                        initialSelection = installManagerOpen,
+                        onClose = { installManagerOpen = null },
+                        onInstallRequested = { id ->
+                            installManagerOpen = null
+                            runtimeDialogOpen = id
+                        },
+                        onVersionChanged = {
+                            runtimeScope.launch {
+                                withContext(Dispatchers.IO) {
+                                    val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(rootDir)
+                                    runtimeVersions.value = vers
+                                    runtimeSources.value = srcs
+                                    runtimeBuildFileVersions.value = bvs
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (splitEnabled) {
                     SplitPane(
                         state = splitState,
                         onStateChange = onSplitStateChange,
@@ -3336,6 +3357,11 @@ private fun Shell(
                 attempted = lsp.missingAttempted.value,
                 onDismiss = { lsp.closeInstallGuide() },
                 onInstalled = { lsp.retry() },
+                onOpenManager = {
+                    val id = def.id
+                    lsp.closeInstallGuide()
+                    installManagerOpen = id
+                },
             )
         } else {
             lsp.closeInstallGuide()
@@ -3376,6 +3402,11 @@ private fun Shell(
                 },
                 installer = LspInstallers.forId(runtimeDialogId),
                 suggestedVersion = suggested,
+                onOpenManager = {
+                    val id = runtimeDialogOpen
+                    runtimeDialogOpen = null
+                    installManagerOpen = id
+                },
             )
         } else {
             runtimeDialogOpen = null
