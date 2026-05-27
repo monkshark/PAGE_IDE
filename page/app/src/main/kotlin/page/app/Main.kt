@@ -623,8 +623,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         val ctrl = lspRouter.controllerFor(p)
         if (ctrl == null) {
             referencesState = referencesState?.copy(isLoading = false, errorMessage = "No LSP for this file type")
-            return@Unit
-        }
+        } else {
         ctrl.references(p, line, char, includeDeclaration = true, symbolName = symbol)
             .whenComplete { results, err ->
                 if (err != null) {
@@ -664,6 +663,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     )
                 }
             }
+    }
     }
 
     val applyRename: (RenameWorkspaceEdit) -> Unit = { edit ->
@@ -2171,8 +2171,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val impactScope = rememberCoroutineScope()
     val impactScanner = remember(currentLspRouter) {
         ReferenceScanner(
-            documentSymbols = { p -> currentLspRouter.controllerFor(p)?.documentSymbols(p) },
-            references = { p, l, c -> currentLspRouter.controllerFor(p)?.references(p, l, c, includeDeclaration = false) },
+            documentSymbols = { p -> currentLspRouter.controllerFor(p)?.documentSymbols(p) ?: java.util.concurrent.CompletableFuture.completedFuture(emptyList()) },
+            references = { p, l, c -> currentLspRouter.controllerFor(p)?.references(p, l, c, includeDeclaration = false) ?: java.util.concurrent.CompletableFuture.completedFuture(emptyList()) },
             ensureOpen = { p ->
                 val langId = currentLspRouter.languageIdFor(p)
                 if (langId != null) {
