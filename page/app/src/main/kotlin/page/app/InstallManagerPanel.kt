@@ -30,8 +30,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -66,8 +75,18 @@ internal fun InstallManagerPanel(
     val entries = remember { buildManagerEntries() }
     var selectedId by remember { mutableStateOf(initialSelection ?: entries.firstOrNull()?.id) }
     val scope = rememberCoroutineScope()
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
 
-    Row(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Row(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        .focusRequester(focusRequester)
+        .focusable()
+        .onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                onClose(); true
+            } else false
+        }
+    ) {
         ManagerSidebar(
             entries = entries,
             selectedId = selectedId,
