@@ -515,7 +515,10 @@ fun EditorPanel(
         if (completionPrefix.isEmpty()) completionItems
         else completionItems.filter { item ->
             val key = item.filterText.takeIf { it.isNotBlank() } ?: item.label
-            key.startsWith(completionPrefix, ignoreCase = true)
+            fuzzyMatch(completionPrefix, key)
+        }.sortedByDescending { item ->
+            val key = item.filterText.takeIf { it.isNotBlank() } ?: item.label
+            fuzzyScore(completionPrefix, key)
         }
     }
     LaunchedEffect(filteredItems.size) {
@@ -652,9 +655,15 @@ fun EditorPanel(
             replaceStart = completionTriggerOffset.coerceIn(0, caret)
             replaceEnd = caret
         }
-        val rawInsert = if (commentKeywordMode && commentKeywordNeedsSpace) " " + item.insertText
+        val baseInsert = if (commentKeywordMode && commentKeywordNeedsSpace) " " + item.insertText
         else item.insertText
-        val expanded = if (item.isSnippet) SnippetExpander.expand(rawInsert)
+        val needsParens = !item.isSnippet &&
+            !baseInsert.contains("(") &&
+            (item.kind == page.lsp.CompletionItemKind.METHOD ||
+             item.kind == page.lsp.CompletionItemKind.FUNCTION ||
+             item.kind == page.lsp.CompletionItemKind.CONSTRUCTOR)
+        val rawInsert = if (needsParens) "$baseInsert($1)" else baseInsert
+        val expanded = if (item.isSnippet || needsParens) SnippetExpander.expand(rawInsert)
         else page.lsp.ExpandedSnippet(rawInsert, rawInsert.length)
         val addEdits = item.additionalEdits
             .map { ed ->
@@ -765,7 +774,7 @@ fun EditorPanel(
                 val hasNonWord = typed.any { !it.isLetterOrDigit() && it != '_' }
                 if (hasNonWord) {
                     closeCompletion()
-                } else if (isInsertOne) {
+                } else {
                     refreshCompletion()
                 }
             }
@@ -1925,4 +1934,42 @@ private fun StatusItem(text: String) {
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+private fun fuzzyMatch(query: String, target: String): Boolean {
+    if (query.isEmpty()) return true
+    val q = query.lowercase()
+    val t = target.lowercase()
+    if (t.startsWith(q)) return true
+    var qi = 0
+    for (ch in t) {
+        if (qi < q.length && ch == q[qi]) qi++
+        if (qi == q.length) return true
+    }
+    return false
+}
+
+private fun fuzzyScore(query: String, target: String): Int {
+    if (query.isEmpty()) return 0
+    val q = query.lowercase()
+    val t = target.lowercase()
+    if (t.startsWith(q)) return 1000 + (100 - t.length)
+    var score = 0
+    var qi = 0
+    var prevMatch = false
+    var consecutiveBonus = 0
+    for ((i, ch) in t.withIndex()) {
+        if (qi < q.length && ch == q[qi]) {
+            score += 10
+            if (i == 0 || t[i - 1] == '.' || t[i - 1] == '-' || t[i - 1] == '_') score += 20
+            if (prevMatch) { consecutiveBonus += 5; score += consecutiveBonus } else consecutiveBonus = 0
+            prevMatch = true
+            qi++
+        } else {
+            prevMatch = false
+            consecutiveBonus = 0
+        }
+    }
+    if (qi < q.length) return -1
+    return score
 }
