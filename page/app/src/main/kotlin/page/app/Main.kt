@@ -2,6 +2,9 @@ package page.app
 
 import page.runtime.*
 import page.workspace.*
+import page.lsp.GenericLanguageBackend
+import page.lsp.LanguageRegistry
+import page.lsp.LspBackends
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -198,8 +201,9 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     var codeActionText by remember { mutableStateOf<String?>(null) }
     var codeActionSelected by remember { mutableStateOf(0) }
     var editorFocusVersion by remember { mutableStateOf(0) }
-    val lsp = rememberLspController(workspaceRoot = rootDir)
-    val currentLsp by rememberUpdatedState(lsp)
+    val lspRouter = rememberLspRouter(workspaceRoot = rootDir)
+    val currentLspRouter by rememberUpdatedState(lspRouter)
+    registerAllBackends()
     val todo = rememberTodoController(workspaceRoot = rootDir)
     val todoItems by todo.items
     val undoTrackerPrimary = remember { UndoGroupTracker() }
@@ -289,7 +293,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     println("[rename] recovery failed: ${recovery.message} ($logHint)")
                 else -> {}
             }
-            lsp.ensureStarted()
+            // controllers are started on-demand via lspRouter.controllerFor()
         }
         todo.scanWorkspaceAsync()
     }
@@ -486,15 +490,18 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val focusedActiveText = focused().editorValue.text
     LaunchedEffect(focusedActivePath) {
         val path = focusedActivePath
-        if (path != null && isKotlinSource(path)) {
-            lsp.ensureStarted()
-            lsp.didOpen(path, "kotlin", focused().editorValue.text)
+        if (path != null) {
+            val ctrl = lspRouter.controllerFor(path)
+            val langId = lspRouter.languageIdFor(path)
+            if (ctrl != null && langId != null) {
+                ctrl.didOpen(path, langId, focused().editorValue.text)
+            }
         }
     }
     LaunchedEffect(focusedActivePath, focusedActiveText) {
         val path = focusedActivePath
-        if (path != null && isKotlinSource(path)) {
-            lsp.didChange(path, focusedActiveText)
+        if (path != null) {
+            lspRouter.controllerFor(path)?.didChange(path, focusedActiveText)
         }
         if (path != null) todo.updateFile(path, focusedActiveText)
     }
@@ -613,7 +620,12 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             results = emptyList(),
             isLoading = true,
         )
-        lsp.references(p, line, char, includeDeclaration = true, symbolName = symbol)
+        val ctrl = lspRouter.controllerFor(p)
+        if (ctrl == null) {
+            referencesState = referencesState?.copy(isLoading = false, errorMessage = "No LSP for this file type")
+            return@Unit
+        }
+        ctrl.references(p, line, char, includeDeclaration = true, symbolName = symbol)
             .whenComplete { results, err ->
                 if (err != null) {
                     referencesState = ReferencesQueryState(
@@ -690,7 +702,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                         editorValue = newEditorValue,
                     ),
                 )
-                lsp.applyExternalChange(change.uri, newText)
+                lspRouter.applyExternalChange(change.uri, newText)
             }
             if (!handled) {
                 val onDisk = FileDocument.loadOrNull(path) ?: continue
@@ -710,7 +722,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     val restored = if (savedActive in appended.tabs.indices) appended.copy(activeIndex = savedActive) else appended
                     it.copy(book = restored)
                 }
-                lsp.applyExternalChange(change.uri, newText)
+                lspRouter.applyExternalChange(change.uri, newText)
             }
         }
     }
@@ -873,13 +885,15 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             pane.book.tabs.forEach { tab ->
                 if (tab.path == new || tab.path.startsWith(new)) {
                     val origin = if (tab.path == new) old else old.resolve(new.relativize(tab.path))
-                    if (isKotlinSource(origin)) affectedOldPaths.add(origin)
-                    if (isKotlinSource(tab.path)) affectedNewPaths.add(tab.path to tab.text)
+                    affectedOldPaths.add(origin)
+                    affectedNewPaths.add(tab.path to tab.text)
                 }
             }
         }
-        affectedOldPaths.distinct().forEach { lsp.didClose(it) }
-        affectedNewPaths.distinctBy { it.first }.forEach { (p, text) -> lsp.didOpen(p, "kotlin", text) }
+        affectedOldPaths.distinct().forEach { lspRouter.controllerFor(it)?.didClose(it) }
+        affectedNewPaths.distinctBy { it.first }.forEach { (p, text) ->
+            lspRouter.languageIdFor(p)?.let { langId -> lspRouter.controllerFor(p)?.didOpen(p, langId, text) }
+        }
     }
     val readFileTextWithTabs: (Path) -> String? = { p ->
         paneOf(PaneSide.PRIMARY).book.tabs.firstOrNull { it.path == p }?.text
@@ -906,7 +920,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         if (!inTab) {
             runCatching { java.nio.file.Files.writeString(path, newText) }
         }
-        runCatching { lsp.applyExternalChange(path.toUri().toString(), newText) }
+        runCatching { lspRouter.applyExternalChange(path.toUri().toString(), newText) }
     }
     fun postUndoRemapForOp(op: FileOpHistory.Op) {
         when (op) {
@@ -1072,7 +1086,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     secondaryPane.book.tabs.any { it.path == p }
                 if (!stillOpenAnywhere) {
                     editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, p)
-                    if (isKotlinSource(p)) lsp.didClose(p)
+                    lspRouter.controllerFor(p)?.didClose(p)
                 }
             }
         }
@@ -1092,7 +1106,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 secondaryPane.book.tabs.any { it.path == tab.path }
             if (!stillOpenAnywhere) {
                 editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, tab.path)
-                if (isKotlinSource(tab.path)) lsp.didClose(tab.path)
+                lspRouter.controllerFor(tab.path)?.didClose(tab.path)
             }
         }
     }
@@ -1117,7 +1131,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     secondaryPane.book.tabs.any { it.path == p }
                 if (!stillOpen) {
                     editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, p)
-                    if (isKotlinSource(p)) lsp.didClose(p)
+                    lspRouter.controllerFor(p)?.didClose(p)
                 }
             }
         }
@@ -1347,11 +1361,11 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 mutatePane(otherSide) { it.copy(book = it.book.undoGroupOnNonActive(groupId)) }
                 for (tab in activeBook.tabs) {
                     if (tab.path != pane.book.tabs.getOrNull(pane.book.activeIndex)?.path) {
-                        runCatching { lsp.applyExternalChange(tab.path.toUri().toString(), tab.text) }
+                        runCatching { lspRouter.applyExternalChange(tab.path.toUri().toString(), tab.text) }
                     }
                 }
                 for (tab in paneOf(otherSide).book.tabs) {
-                    runCatching { lsp.applyExternalChange(tab.path.toUri().toString(), tab.text) }
+                    runCatching { lspRouter.applyExternalChange(tab.path.toUri().toString(), tab.text) }
                 }
             }
         }
@@ -1379,11 +1393,11 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 mutatePane(otherSide) { it.copy(book = it.book.redoGroupOnNonActive(groupId)) }
                 for (tab in activeBook.tabs) {
                     if (tab.path != pane.book.tabs.getOrNull(pane.book.activeIndex)?.path) {
-                        runCatching { lsp.applyExternalChange(tab.path.toUri().toString(), tab.text) }
+                        runCatching { lspRouter.applyExternalChange(tab.path.toUri().toString(), tab.text) }
                     }
                 }
                 for (tab in paneOf(otherSide).book.tabs) {
-                    runCatching { lsp.applyExternalChange(tab.path.toUri().toString(), tab.text) }
+                    runCatching { lspRouter.applyExternalChange(tab.path.toUri().toString(), tab.text) }
                 }
             }
         }
@@ -1464,7 +1478,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         val pane = focused()
         val active = pane.book.active
         if (active != null) {
-            val activeList = currentLsp.diagnosticsFor(active.path).sortedWith(
+            val activeList = (currentLspRouter.controllerFor(active.path)?.diagnosticsFor(active.path) ?: emptyList()).sortedWith(
                 compareBy({ it.start.line }, { it.start.character }),
             )
             if (activeList.isNotEmpty()) {
@@ -1491,7 +1505,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 }
                 jumpToProblem(active.path, target.start.line, target.start.character)
             } else {
-                val anyEntry = currentLsp.diagnosticsByUri.entries
+                val anyEntry = currentLspRouter.allDiagnosticsByUri.entries
                     .firstOrNull { it.value.isNotEmpty() }
                 if (anyEntry != null) {
                     val path = runCatching { Path.of(java.net.URI(anyEntry.key)) }.getOrNull()
@@ -1519,14 +1533,14 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val openDocumentSymbol: () -> Unit = {
         val active = focused().book.active
         val activePath = active?.path
-        val isKt = activePath?.let(::isKotlinSource) == true
-        val status = currentLsp.status.value
+        val ctrl = activePath?.let { currentLspRouter.controllerFor(it) }
+        val status = ctrl?.status?.value
         if (activePath != null
-            && isKt
+            && ctrl != null
             && status == LspController.Status.READY
         ) {
             val uri = activePath.toUri().toString()
-            currentLsp.documentSymbols(activePath).whenComplete { syms, err ->
+            ctrl.documentSymbols(activePath).whenComplete { syms, err ->
                 if (err == null && syms != null) {
                     documentSymbolUri = uri
                     documentSymbolList = syms
@@ -1536,7 +1550,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         }
     }
     val openWorkspaceSymbol: () -> Unit = {
-        val status = currentLsp.status.value
+        val wsActivePath = focused().book.active?.path
+        val status = wsActivePath?.let { currentLspRouter.controllerFor(it)?.status?.value }
         if (status == LspController.Status.READY) {
             workspaceSymbolOpen = true
         }
@@ -1544,12 +1559,12 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val triggerFormat: () -> Unit = {
         val active = focused().book.active
         val activePath = active?.path
-        val isKt = activePath?.let(::isKotlinSource) == true
+        val fmtCtrl = activePath?.let { currentLspRouter.controllerFor(it) }
         if (activePath != null
-            && isKt
-            && currentLsp.status.value == LspController.Status.READY
+            && fmtCtrl != null
+            && fmtCtrl.status.value == LspController.Status.READY
         ) {
-            currentLsp.formatting(activePath).whenComplete { edits, err ->
+            fmtCtrl.formatting(activePath).whenComplete { edits, err ->
                 val list = edits.orEmpty()
                 if (err == null && list.isNotEmpty()) {
                     val change = RenameFileChange(activePath.toUri().toString(), list)
@@ -1561,10 +1576,10 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val triggerCodeAction: () -> Unit = {
         val active = focused().book.active
         val activePath = active?.path
-        val isKt = activePath?.let(::isKotlinSource) == true
+        val caCtrl = activePath?.let { currentLspRouter.controllerFor(it) }
         if (activePath != null
-            && isKt
-            && currentLsp.status.value == LspController.Status.READY
+            && caCtrl != null
+            && caCtrl.status.value == LspController.Status.READY
         ) {
             val text = focused().editorValue.text
             val caret = focused().editorValue.selection.start.coerceIn(0, text.length)
@@ -1576,7 +1591,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 val lineEnd = text.indexOf('\n', lineStart).let { if (it < 0) text.length else it }
                 lineEnd - lineStart
             }
-            currentLsp.codeActions(activePath, line, 0, line, lineLen).whenComplete { actions, err ->
+            caCtrl.codeActions(activePath, line, 0, line, lineLen).whenComplete { actions, err ->
                 if (err == null) {
                     val raw = actions.orEmpty()
                     val list = raw.map { entry ->
@@ -1883,7 +1898,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     primary = primaryPane,
                     secondary = secondaryPane,
                     focusedPane = focusedPane,
-                    lsp = currentLsp,
+                    lspRouter = currentLspRouter,
                     onPaneFocus = { side -> focusedPane = side },
                     onEditorChange = { side, v ->
                         mutatePane(side) {
@@ -2020,7 +2035,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     onReferencesResizeDelta = { delta ->
                         referencesHeight = (referencesHeight + delta).coerceIn(80.dp, 600.dp)
                     },
-                    linePreviewFor = { uri, line -> currentLsp.linePreviewFor(uri, line) },
+                    linePreviewFor = { uri, line -> currentLspRouter.controllerForUri(uri)?.linePreviewFor(uri, line) },
                     foldedLinesFor = foldedLinesFor,
                     onFoldChange = onFoldChange,
                     editorFocusVersion = editorFocusVersion,
@@ -2154,15 +2169,15 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
 
     val activeRenameDialog = renameDialog
     val impactScope = rememberCoroutineScope()
-    val impactScanner = remember(currentLsp) {
+    val impactScanner = remember(currentLspRouter) {
         ReferenceScanner(
-            documentSymbols = { p -> currentLsp.documentSymbols(p) },
-            references = { p, l, c -> currentLsp.references(p, l, c, includeDeclaration = false) },
+            documentSymbols = { p -> currentLspRouter.controllerFor(p)?.documentSymbols(p) },
+            references = { p, l, c -> currentLspRouter.controllerFor(p)?.references(p, l, c, includeDeclaration = false) },
             ensureOpen = { p ->
-                val name = p.fileName?.toString().orEmpty()
-                if (name.endsWith(".kt") || name.endsWith(".kts")) {
+                val langId = currentLspRouter.languageIdFor(p)
+                if (langId != null) {
                     val text = runCatching { java.nio.file.Files.readString(p) }.getOrNull()
-                    if (text != null) currentLsp.didOpen(p, "kotlin", text)
+                    if (text != null) currentLspRouter.controllerFor(p)?.didOpen(p, langId, text)
                 }
             },
             scope = impactScope,
@@ -2237,10 +2252,16 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     }
                     val result: FileTreeActions.RenameResult = if (isDir) {
                         var captured: FileTreeActions.RenameResult? = null
-                        lsp.runWithClientDown("folder rename: ${oldPath.fileName} → $newName") {
+                        val dirCtrl = lspRouter.controllerFor(oldPath)
+                        val doRename = {
                             withFileTreeWatcherClosed {
                                 captured = performAndProcess()
                             }
+                        }
+                        if (dirCtrl != null) {
+                            dirCtrl.runWithClientDown("folder rename: ${oldPath.fileName} → $newName") { doRename() }
+                        } else {
+                            doRename()
                         }
                         captured ?: FileTreeActions.RenameResult.Err("rename did not run")
                     } else {
@@ -2264,19 +2285,21 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
 
                 if (shouldRenameSymbol) {
                     impactScope.launch {
+                        val symCtrl = currentLspRouter.controllerFor(oldPath)
+                        val symLangId = currentLspRouter.languageIdFor(oldPath)
                         val syms = runCatching {
-                            currentLsp.documentSymbols(oldPath).await()
-                        }.getOrDefault(emptyList())
+                            symCtrl?.documentSymbols(oldPath)?.await()
+                        }.getOrNull().orEmpty()
                         val pick = FileSymbolRename.findRenamableTopLevelSymbol(oldStem!!, syms)
-                        if (pick != null) {
+                        if (pick != null && symCtrl != null && symLangId != null) {
                             val openText = paneOf(PaneSide.PRIMARY).book.tabs.firstOrNull { it.path == oldPath }?.text
                                 ?: paneOf(PaneSide.SECONDARY).book.tabs.firstOrNull { it.path == oldPath }?.text
                             val fileText = openText ?: runCatching {
                                 java.nio.file.Files.readString(oldPath)
                             }.getOrNull()
                             if (fileText != null) {
-                                if (!currentLsp.isOpenAt(oldPath)) {
-                                    runCatching { currentLsp.didOpen(oldPath, "kotlin", fileText) }
+                                if (!symCtrl.isOpenAt(oldPath)) {
+                                    runCatching { symCtrl.didOpen(oldPath, symLangId, fileText) }
                                 }
                                 val candidatePaths = mutableListOf<java.nio.file.Path>()
                                 rootDir?.let { root ->
@@ -2285,8 +2308,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                                             stream
                                                 .filter { p -> java.nio.file.Files.isRegularFile(p) }
                                                 .filter { p ->
-                                                    val name = p.fileName?.toString().orEmpty()
-                                                    name.endsWith(".kt") || name.endsWith(".kts")
+                                                    currentLspRouter.languageIdFor(p) == symLangId
                                                 }
                                                 .forEach { p ->
                                                     val norm = p.toAbsolutePath().normalize()
@@ -2296,15 +2318,15 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                                                     }.getOrNull() ?: return@forEach
                                                     if (!text.contains(oldStem)) return@forEach
                                                     candidatePaths.add(norm)
-                                                    if (!currentLsp.isOpenAt(norm)) {
-                                                        runCatching { currentLsp.didOpen(norm, "kotlin", text) }
+                                                    if (!symCtrl.isOpenAt(norm)) {
+                                                        runCatching { symCtrl.didOpen(norm, symLangId, text) }
                                                     }
                                                 }
                                         }
                                     }
                                 }
                                 val edit = runCatching {
-                                    currentLsp.rename(
+                                    symCtrl.rename(
                                         oldPath,
                                         fileText,
                                         pick.selectionRange.startLine,
@@ -2313,7 +2335,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                                     ).await()
                                 }.getOrNull()
                                 val refs = runCatching {
-                                    currentLsp.references(
+                                    symCtrl.references(
                                         oldPath,
                                         pick.selectionRange.startLine,
                                         pick.selectionRange.startCharacter,
@@ -2650,10 +2672,16 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                         }
                         val result: FileTreeActions.MoveResult = if (srcIsDir) {
                             var captured: FileTreeActions.MoveResult? = null
-                            lsp.runWithClientDown("folder move: ${src.fileName} → ${current.destParent.fileName}/$newName") {
+                            val moveCtrl = lspRouter.controllerFor(src)
+                            val doMove = {
                                 withFileTreeWatcherClosed {
                                     captured = performMove()
                                 }
+                            }
+                            if (moveCtrl != null) {
+                                moveCtrl.runWithClientDown("folder move: ${src.fileName} → ${current.destParent.fileName}/$newName") { doMove() }
+                            } else {
+                                doMove()
                             }
                             captured ?: FileTreeActions.MoveResult.Err("move did not run")
                         } else {
@@ -2742,8 +2770,10 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     if (workspaceSymbolOpen) {
         WorkspaceSymbolDialog(
             queryFor = { q ->
-                runCatching { currentLsp.workspaceSymbolsLocated(q).await() }
-                    .getOrDefault(emptyList())
+                val wsPath = focused().book.active?.path
+                val wsCtrl = wsPath?.let { currentLspRouter.controllerFor(it) }
+                if (wsCtrl != null) runCatching { wsCtrl.workspaceSymbolsLocated(q).await() }.getOrDefault(emptyList())
+                else emptyList()
             },
             onPick = { pick ->
                 workspaceSymbolOpen = false
@@ -2802,7 +2832,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                             secondaryPane.book.tabs.any { it.path == p }
                         if (!stillOpen) {
                             editorScrollByPath = EditorScrollMemory.clear(editorScrollByPath, p)
-                            if (isKotlinSource(p)) lsp.didClose(p)
+                            lspRouter.controllerFor(p)?.didClose(p)
                         }
                     }
                 }
@@ -2918,6 +2948,17 @@ private fun isKotlinSource(path: Path): Boolean {
     return name.endsWith(".kt") || name.endsWith(".kts")
 }
 
+private var backendsRegistered = false
+
+private fun registerAllBackends() {
+    if (backendsRegistered) return
+    backendsRegistered = true
+    for (def in LanguageRegistry.all()) {
+        if (LspBackends.byId(def.id) != null) continue
+        LspBackends.register(GenericLanguageBackend(def) { LspInstallers.forId(def.id)?.executable() })
+    }
+}
+
 private fun resolveLanguageForPath(path: Path): page.lsp.LanguageDefinition? {
     val name = path.fileName?.toString() ?: return null
     val dot = name.lastIndexOf('.')
@@ -2926,7 +2967,7 @@ private fun resolveLanguageForPath(path: Path): page.lsp.LanguageDefinition? {
 }
 
 @androidx.compose.runtime.Composable
-private fun lspStatusLineText(lsp: LspController, activePath: Path?): String? {
+private fun lspStatusLineText(lspRouter: LspRouter, activePath: Path?): String? {
     val definition = activePath?.let(::resolveLanguageForPath)
     val langId = definition?.id
     val displayName = definition?.displayName
@@ -2934,13 +2975,14 @@ private fun lspStatusLineText(lsp: LspController, activePath: Path?): String? {
     if (langId == null && !isKotlin) return null
     val resolvedId = langId ?: "kotlin"
     val resolvedName = displayName ?: "Kotlin"
+    val ctrl = activePath?.let { lspRouter.controllerFor(it) }
     val installer = LspInstallers.forId(resolvedId) ?: return when {
-        isKotlin && lsp.status.value == LspController.Status.MISSING -> "LSP · kotlin-language-server missing"
-        isKotlin && lsp.status.value == LspController.Status.FAILED -> "LSP · failed to start"
+        isKotlin && ctrl?.status?.value == LspController.Status.MISSING -> "LSP · kotlin-language-server missing"
+        isKotlin && ctrl?.status?.value == LspController.Status.FAILED -> "LSP · failed to start"
         else -> null
     }
     val installed = installer.installedVersion()
-    val suffix = if (isKotlin) when (lsp.status.value) {
+    val suffix = if (isKotlin) when (ctrl?.status?.value) {
         LspController.Status.FAILED -> " · failed"
         LspController.Status.STARTING -> " · starting"
         LspController.Status.MISSING -> " · not installed"
@@ -2955,7 +2997,7 @@ private fun Shell(
     primary: EditorPaneState,
     secondary: EditorPaneState,
     focusedPane: PaneSide,
-    lsp: LspController,
+    lspRouter: LspRouter,
     onPaneFocus: (PaneSide) -> Unit,
     onEditorChange: (PaneSide, TextFieldValue) -> Unit,
     onActivateTab: (PaneSide, Int) -> Unit,
@@ -3062,7 +3104,9 @@ private fun Shell(
     tabContextActionsFor: (PaneSide) -> TabContextActions? = { null },
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
-    val installGuideOpen by lsp.installGuideOpen.collectAsState()
+    val shellActivePath = paneFor(focusedPane, primary, secondary).book.active?.path
+    val shellCtrl = shellActivePath?.let { lspRouter.controllerFor(it) }
+    val installGuideOpen by (shellCtrl?.installGuideOpen ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsState()
     var runtimeDialogOpen by remember { mutableStateOf<String?>(null) }
     var installManagerOpen by remember { mutableStateOf<String?>(null) }
     val runtimeVersions = remember { mutableStateOf(mapOf<String, String>()) }
@@ -3154,7 +3198,7 @@ private fun Shell(
                             PaneRegion(
                                 pane = primary,
                                 side = PaneSide.PRIMARY,
-                                lsp = lsp,
+                                lspRouter = lspRouter,
                                 isFocused = focusedPane == PaneSide.PRIMARY,
                                 onPaneFocus = onPaneFocus,
                                 onEditorChange = onEditorChange,
@@ -3197,7 +3241,7 @@ private fun Shell(
                             PaneRegion(
                                 pane = secondary,
                                 side = PaneSide.SECONDARY,
-                                lsp = lsp,
+                                lspRouter = lspRouter,
                                 isFocused = focusedPane == PaneSide.SECONDARY,
                                 onPaneFocus = onPaneFocus,
                                 onEditorChange = onEditorChange,
@@ -3241,7 +3285,7 @@ private fun Shell(
                     PaneRegion(
                         pane = primary,
                         side = PaneSide.PRIMARY,
-                        lsp = lsp,
+                        lspRouter = lspRouter,
                         isFocused = true,
                         onPaneFocus = onPaneFocus,
                         onEditorChange = onEditorChange,
@@ -3294,7 +3338,7 @@ private fun Shell(
         }
         if (problemsOpen) {
             ProblemsPanel(
-                diagnostics = lsp.diagnosticsByUri,
+                diagnostics = lspRouter.allDiagnosticsByUri,
                 onJump = onJumpToProblem,
                 onClose = onProblemsClose,
                 height = problemsHeight,
@@ -3347,26 +3391,25 @@ private fun Shell(
             )
         }
     }
-    if (installGuideOpen) {
-        val activeDef = paneFor(focusedPane, primary, secondary).book.active?.path
-            ?.let { resolveLanguageForPath(it) }
+    if (installGuideOpen && shellCtrl != null) {
+        val activeDef = shellActivePath?.let { resolveLanguageForPath(it) }
         val def = activeDef
-            ?: lsp.missingDefinition.value
+            ?: shellCtrl.missingDefinition.value
             ?: page.lsp.LanguageRegistry.byId("kotlin")
         if (def != null) {
             InstallGuideDialog(
                 definition = def,
-                attempted = lsp.missingAttempted.value,
-                onDismiss = { lsp.closeInstallGuide() },
-                onInstalled = { lsp.retry() },
+                attempted = shellCtrl.missingAttempted.value,
+                onDismiss = { shellCtrl.closeInstallGuide() },
+                onInstalled = { shellCtrl.retry() },
                 onOpenManager = {
                     val id = def.id
-                    lsp.closeInstallGuide()
+                    shellCtrl.closeInstallGuide()
                     installManagerOpen = id
                 },
             )
         } else {
-            lsp.closeInstallGuide()
+            shellCtrl.closeInstallGuide()
         }
     }
     val runtimeDialogId = runtimeDialogOpen
@@ -3513,7 +3556,7 @@ private fun paneFor(side: PaneSide, primary: EditorPaneState, secondary: EditorP
 private fun PaneRegion(
     pane: EditorPaneState,
     side: PaneSide,
-    lsp: LspController,
+    lspRouter: LspRouter,
     isFocused: Boolean,
     onPaneFocus: (PaneSide) -> Unit,
     onEditorChange: (PaneSide, TextFieldValue) -> Unit,
@@ -3636,11 +3679,12 @@ private fun PaneRegion(
             else -> if (active == null) {
                 EmptyPanePlaceholder(modifier = Modifier.fillMaxWidth().weight(1f))
             } else {
-                val activeDiagnostics = active.path.let { lsp.diagnosticsFor(it) }
-                val lspStatusText = lspStatusLineText(lsp, active?.path)
-                val lspActivities = lsp.activities.values
-                    .sortedBy { it.startedAtMs }
-                    .toList()
+                val activeCtrl = lspRouter.controllerFor(active.path)
+                val activeDiagnostics = activeCtrl?.diagnosticsFor(active.path).orEmpty()
+                val lspStatusText = lspStatusLineText(lspRouter, active?.path)
+                val lspActivities = activeCtrl?.activities?.values
+                    ?.sortedBy { it.startedAtMs }
+                    ?.toList().orEmpty()
                 EditorPanel(
                     value = pane.editorValue,
                     onValueChange = { v -> onEditorChange(side, v) },
@@ -3659,21 +3703,21 @@ private fun PaneRegion(
                     diagnostics = activeDiagnostics,
                     lspStatusText = lspStatusText,
                     lspActivities = lspActivities,
-                    onLspStatusClick = { lsp.openInstallGuide() },
+                    onLspStatusClick = { activeCtrl?.openInstallGuide() },
                     onProblemsToggle = onProblemsToggle,
                     todoCount = todoCount,
                     onTodoToggle = onTodoToggle,
                     onRequestCompletion = active?.path?.let { p ->
-                        { line, ch, trig -> lsp.completion(p, pane.editorValue.text, line, ch, trig) }
+                        activeCtrl?.let { ctrl -> { line, ch, trig -> ctrl.completion(p, pane.editorValue.text, line, ch, trig) } }
                     },
                     onRequestHover = active?.path?.let { p ->
-                        { line, ch -> lsp.hover(p, line, ch) }
+                        activeCtrl?.let { ctrl -> { line, ch -> ctrl.hover(p, line, ch) } }
                     },
                     onRequestDefinition = active?.path?.let { p ->
-                        { line, ch -> lsp.definition(p, line, ch) }
+                        activeCtrl?.let { ctrl -> { line, ch -> ctrl.definition(p, line, ch) } }
                     },
                     onRequestSignatureHelp = active?.path?.let { p ->
-                        { line, ch, trig, retrig -> lsp.signatureHelp(p, pane.editorValue.text, line, ch, trig, retrig) }
+                        activeCtrl?.let { ctrl -> { line, ch, trig, retrig -> ctrl.signatureHelp(p, pane.editorValue.text, line, ch, trig, retrig) } }
                     },
                     onGoToDefinition = { target ->
                         val path = runCatching {
@@ -3682,19 +3726,19 @@ private fun PaneRegion(
                         if (path != null) onJumpToProblem(path, target.startLine, target.startCharacter)
                     },
                     onRequestPrepareRename = active?.path?.let { p ->
-                        { line, ch -> lsp.prepareRename(p, line, ch) }
+                        activeCtrl?.let { ctrl -> { line, ch -> ctrl.prepareRename(p, line, ch) } }
                     },
                     onRequestRename = active?.path?.let { p ->
-                        { line, ch, name -> lsp.rename(p, pane.editorValue.text, line, ch, name) }
+                        activeCtrl?.let { ctrl -> { line, ch, name -> ctrl.rename(p, pane.editorValue.text, line, ch, name) } }
                     },
                     onApplyRename = onApplyRename,
                     onRequestReferences = active?.path?.let { p ->
                         { line, ch, sym -> onRequestReferences(p, line, ch, sym) }
                     },
                     onRequestInlayHints = active?.path
-                        ?.takeIf { lsp.status.value == LspController.Status.READY }
+                        ?.takeIf { activeCtrl?.status?.value == LspController.Status.READY }
                         ?.let { p ->
-                            { sl, sc, el, ec -> lsp.inlayHints(p, sl, sc, el, ec) }
+                            activeCtrl?.let { ctrl -> { sl, sc, el, ec -> ctrl.inlayHints(p, sl, sc, el, ec) } }
                         },
                     workspaceRoot = workspaceRoot,
                     editorFocusVersion = editorFocusVersion,

@@ -13,7 +13,8 @@
         "linux": "Download release zip from https://github.com/fwcd/kotlin-language-server/releases and add `bin/` to PATH",
         "windows": "Download release zip from https://github.com/fwcd/kotlin-language-server/releases and add `bin\\` to PATH"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": []
     },
     {
       "id": "java",
@@ -27,7 +28,8 @@
         "linux": "Download tarball from https://download.eclipse.org/jdtls/snapshots/?d and put on PATH",
         "windows": "Download tarball from https://download.eclipse.org/jdtls/snapshots/?d and put on PATH"
       },
-      "runCommand": "java"
+      "runCommand": "java",
+      "launchArgs": ["-data", "/tmp/jdtls-workspace"]
     },
     {
       "id": "python",
@@ -41,7 +43,8 @@
         "linux": "npm install -g pyright",
         "windows": "npm install -g pyright"
       },
-      "runCommand": "python"
+      "runCommand": "python",
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "javascript",
@@ -55,7 +58,8 @@
         "linux": "npm install -g typescript-language-server typescript",
         "windows": "npm install -g typescript-language-server typescript"
       },
-      "runCommand": "node"
+      "runCommand": "node",
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "typescript",
@@ -69,7 +73,8 @@
         "linux": "npm install -g typescript-language-server typescript",
         "windows": "npm install -g typescript-language-server typescript"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "go",
@@ -83,7 +88,8 @@
         "linux": "go install golang.org/x/tools/gopls@latest",
         "windows": "go install golang.org/x/tools/gopls@latest"
       },
-      "runCommand": "go run"
+      "runCommand": "go run",
+      "launchArgs": ["serve"]
     },
     {
       "id": "rust",
@@ -97,7 +103,8 @@
         "linux": "rustup component add rust-analyzer",
         "windows": "rustup component add rust-analyzer"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": []
     },
     {
       "id": "c",
@@ -111,7 +118,8 @@
         "linux": "Install via your distro package manager (e.g. `apt install clangd`)",
         "windows": "Install LLVM from https://releases.llvm.org/ and add to PATH"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": []
     },
     {
       "id": "cpp",
@@ -125,7 +133,8 @@
         "linux": "Install via your distro package manager (e.g. `apt install clangd`)",
         "windows": "Install LLVM from https://releases.llvm.org/ and add to PATH"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": []
     },
     {
       "id": "dart",
@@ -139,7 +148,8 @@
         "linux": "Follow https://dart.dev/get-dart",
         "windows": "Follow https://dart.dev/get-dart"
       },
-      "runCommand": "dart run"
+      "runCommand": "dart run",
+      "launchArgs": ["language-server", "--protocol=lsp"]
     },
     {
       "id": "flutter",
@@ -153,7 +163,8 @@
         "linux": "Use PAGE installer (downloads Flutter SDK stable channel)",
         "windows": "Use PAGE installer (downloads Flutter SDK stable channel)"
       },
-      "runCommand": "flutter run"
+      "runCommand": "flutter run",
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "bash",
@@ -167,7 +178,8 @@
         "linux": "npm install -g bash-language-server",
         "windows": "npm install -g bash-language-server"
       },
-      "runCommand": "bash"
+      "runCommand": "bash",
+      "launchArgs": ["start"]
     },
     {
       "id": "ruby",
@@ -181,7 +193,8 @@
         "linux": "gem install solargraph",
         "windows": "gem install solargraph"
       },
-      "runCommand": "ruby"
+      "runCommand": "ruby",
+      "launchArgs": ["stdio"]
     },
     {
       "id": "php",
@@ -195,7 +208,8 @@
         "linux": "npm install -g intelephense",
         "windows": "npm install -g intelephense"
       },
-      "runCommand": "php"
+      "runCommand": "php",
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "swift",
@@ -209,7 +223,8 @@
         "linux": "Install Swift toolchain from https://swift.org/download/",
         "windows": "Install Swift toolchain from https://swift.org/download/"
       },
-      "runCommand": "swift"
+      "runCommand": "swift",
+      "launchArgs": []
     },
     {
       "id": "scala",
@@ -223,7 +238,8 @@
         "linux": "Install coursier then `cs install metals`",
         "windows": "Install coursier then `cs install metals`"
       },
-      "runCommand": "scala"
+      "runCommand": "scala",
+      "launchArgs": []
     },
     {
       "id": "haskell",
@@ -237,7 +253,8 @@
         "linux": "ghcup install hls",
         "windows": "ghcup install hls"
       },
-      "runCommand": "runhaskell"
+      "runCommand": "runhaskell",
+      "launchArgs": ["--lsp"]
     },
     {
       "id": "lua",
@@ -251,7 +268,8 @@
         "linux": "Download from https://github.com/LuaLS/lua-language-server/releases",
         "windows": "Download from https://github.com/LuaLS/lua-language-server/releases"
       },
-      "runCommand": "lua"
+      "runCommand": "lua",
+      "launchArgs": []
     },
     {
       "id": "json",
@@ -265,7 +283,8 @@
         "linux": "npm install -g vscode-langservers-extracted",
         "windows": "npm install -g vscode-langservers-extracted"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "yaml",
@@ -279,7 +298,8 @@
         "linux": "npm install -g yaml-language-server",
         "windows": "npm install -g yaml-language-server"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "html",
@@ -293,7 +313,8 @@
         "linux": "npm install -g vscode-langservers-extracted",
         "windows": "npm install -g vscode-langservers-extracted"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "css",
@@ -307,7 +328,8 @@
         "linux": "npm install -g vscode-langservers-extracted",
         "windows": "npm install -g vscode-langservers-extracted"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "markdown",
@@ -321,7 +343,8 @@
         "linux": "Download from https://github.com/artempyanykh/marksman/releases",
         "windows": "Download from https://github.com/artempyanykh/marksman/releases"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["server"]
     },
     {
       "id": "sql",
@@ -335,7 +358,8 @@
         "linux": "npm install -g sql-language-server",
         "windows": "npm install -g sql-language-server"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["up", "--method", "stdio"]
     },
     {
       "id": "r",
@@ -349,7 +373,8 @@
         "linux": "Rscript -e 'install.packages(\"languageserver\")'",
         "windows": "Rscript -e 'install.packages(\"languageserver\")'"
       },
-      "runCommand": "Rscript"
+      "runCommand": "Rscript",
+      "launchArgs": ["--slave", "-e", "languageserver::run()"]
     },
     {
       "id": "perl",
@@ -363,7 +388,8 @@
         "linux": "cpan Perl::LanguageServer",
         "windows": "cpan Perl::LanguageServer"
       },
-      "runCommand": "perl"
+      "runCommand": "perl",
+      "launchArgs": ["-MPerl::LanguageServer", "-e", "Perl::LanguageServer::run"]
     },
     {
       "id": "elixir",
@@ -377,7 +403,8 @@
         "linux": "Download from https://github.com/elixir-lsp/elixir-ls/releases",
         "windows": "Download from https://github.com/elixir-lsp/elixir-ls/releases"
       },
-      "runCommand": "elixir"
+      "runCommand": "elixir",
+      "launchArgs": []
     },
     {
       "id": "clojure",
@@ -391,7 +418,8 @@
         "linux": "Download from https://github.com/clojure-lsp/clojure-lsp/releases",
         "windows": "Download from https://github.com/clojure-lsp/clojure-lsp/releases"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": []
     },
     {
       "id": "fsharp",
@@ -405,7 +433,8 @@
         "linux": "dotnet tool install -g fsautocomplete",
         "windows": "dotnet tool install -g fsautocomplete"
       },
-      "runCommand": "dotnet fsi"
+      "runCommand": "dotnet fsi",
+      "launchArgs": ["--adaptive-lsp-server-enabled"]
     },
     {
       "id": "ocaml",
@@ -419,7 +448,8 @@
         "linux": "opam install ocaml-lsp-server",
         "windows": "opam install ocaml-lsp-server"
       },
-      "runCommand": "ocaml"
+      "runCommand": "ocaml",
+      "launchArgs": []
     },
     {
       "id": "zig",
@@ -433,7 +463,8 @@
         "linux": "Download from https://github.com/zigtools/zls/releases",
         "windows": "Download from https://github.com/zigtools/zls/releases"
       },
-      "runCommand": "zig run"
+      "runCommand": "zig run",
+      "launchArgs": []
     },
     {
       "id": "vue",
@@ -447,7 +478,8 @@
         "linux": "npm install -g @vue/language-server",
         "windows": "npm install -g @vue/language-server"
       },
-      "runCommand": "node"
+      "runCommand": "node",
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "svelte",
@@ -461,7 +493,8 @@
         "linux": "npm install -g svelte-language-server",
         "windows": "npm install -g svelte-language-server"
       },
-      "runCommand": "node"
+      "runCommand": "node",
+      "launchArgs": ["--stdio"]
     },
     {
       "id": "dockerfile",
@@ -475,7 +508,8 @@
         "linux": "npm install -g dockerfile-language-server-nodejs",
         "windows": "npm install -g dockerfile-language-server-nodejs"
       },
-      "runCommand": null
+      "runCommand": null,
+      "launchArgs": ["--stdio"]
     }
   ]
 }

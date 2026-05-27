@@ -632,6 +632,7 @@ fun EditorPanel(
             closeCompletion()
             return@lambda
         }
+        page.lsp.CompletionFrecency.recordSelection(item.label, item.kind)
         val text = value.text
         val caret = value.selection.end.coerceIn(0, text.length)
         val edit = item.edit
@@ -807,6 +808,8 @@ fun EditorPanel(
                     label = displayLabel,
                     kindHint = kindHint(item.kind),
                     detail = item.detail?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() },
+                    documentation = item.documentation,
+                    kindColor = kindColor(item.kind),
                 )
             }
         }
@@ -1177,6 +1180,10 @@ fun EditorPanel(
                 completionItems = completionDisplay,
                 completionSelectedIndex = completionSelectedIndex,
                 completionAnchorOffset = completionTriggerOffset.takeIf { it >= 0 },
+                onCompletionItemClick = { idx ->
+                    completionSelectedIndex = idx
+                    applySelected()
+                },
                 signatureHelp = lspSignatureInfo?.let { info ->
                     val sig = info.active ?: return@let null
                     val activeIdx = lspSignatureActiveParam.coerceAtLeast(0)
@@ -1272,6 +1279,20 @@ private fun kindHint(kind: LspCompletionItemKind): String = when (kind) {
     LspCompletionItemKind.STRUCT -> "S"
     LspCompletionItemKind.TYPE_PARAMETER -> "T"
     else -> "•"
+}
+
+private fun kindColor(kind: LspCompletionItemKind): Color = when (kind) {
+    LspCompletionItemKind.METHOD, LspCompletionItemKind.FUNCTION -> Color(0xFF3B82F6)
+    LspCompletionItemKind.CONSTRUCTOR -> Color(0xFF8B5CF6)
+    LspCompletionItemKind.CLASS, LspCompletionItemKind.INTERFACE, LspCompletionItemKind.STRUCT -> Color(0xFFF59E0B)
+    LspCompletionItemKind.VARIABLE, LspCompletionItemKind.FIELD, LspCompletionItemKind.PROPERTY -> Color(0xFF6366F1)
+    LspCompletionItemKind.KEYWORD -> Color(0xFFEF4444)
+    LspCompletionItemKind.SNIPPET -> Color(0xFF10B981)
+    LspCompletionItemKind.ENUM, LspCompletionItemKind.ENUM_MEMBER -> Color(0xFFEC4899)
+    LspCompletionItemKind.MODULE -> Color(0xFF14B8A6)
+    LspCompletionItemKind.CONSTANT -> Color(0xFFF97316)
+    LspCompletionItemKind.TYPE_PARAMETER -> Color(0xFF0EA5E9)
+    else -> Color(0xFF9CA3AF)
 }
 
 private fun sanitizeLabel(s: String?): String? {

@@ -16,10 +16,39 @@ object SyntaxLexers {
     fun forPath(path: Path): SyntaxLexer? {
         val name = path.fileName?.toString()?.lowercase(Locale.ROOT) ?: return null
         val ext = name.substringAfterLast('.', missingDelimiterValue = "")
-        return when (ext) {
-            "kt", "kts" -> KotlinLexer
-            "java" -> if (treeSitterEnabled("java")) TreeSitterJavaLexer else JavaLexer
-            "json" -> JsonLexer
+        return when {
+            ext == "kt" || ext == "kts" -> KotlinLexer
+            ext == "java" -> if (treeSitterEnabled("java")) TreeSitterJavaLexer else JavaLexer
+            ext == "json" -> JsonLexer
+            ext == "py" || ext == "pyi" -> TreeSitterLexers.python
+            ext == "js" || ext == "jsx" || ext == "mjs" || ext == "cjs" -> TreeSitterLexers.javascript
+            ext == "ts" || ext == "tsx" -> TreeSitterLexers.typescript
+            ext == "go" -> TreeSitterLexers.go
+            ext == "rs" -> TreeSitterLexers.rust
+            ext == "c" || ext == "h" -> TreeSitterLexers.c
+            ext == "cc" || ext == "cpp" || ext == "cxx" || ext == "hh" || ext == "hpp" || ext == "hxx" -> TreeSitterLexers.cpp
+            ext == "dart" -> TreeSitterLexers.dart
+            ext == "sh" || ext == "bash" -> TreeSitterLexers.bash
+            ext == "rb" -> TreeSitterLexers.ruby
+            ext == "php" -> TreeSitterLexers.php
+            ext == "swift" -> TreeSitterLexers.swift
+            ext == "scala" || ext == "sc" -> TreeSitterLexers.scala
+            ext == "hs" || ext == "lhs" -> TreeSitterLexers.haskell
+            ext == "lua" -> TreeSitterLexers.lua
+            ext == "yaml" || ext == "yml" -> TreeSitterLexers.yaml
+            ext == "html" || ext == "htm" -> TreeSitterLexers.html
+            ext == "css" || ext == "scss" || ext == "less" -> TreeSitterLexers.css
+            ext == "md" || ext == "markdown" -> TreeSitterLexers.markdown
+            ext == "sql" -> TreeSitterLexers.sql
+            ext == "r" -> TreeSitterLexers.r
+            ext == "pl" || ext == "pm" -> TreeSitterLexers.perl
+            ext == "ex" || ext == "exs" -> TreeSitterLexers.elixir
+            ext == "clj" || ext == "cljs" || ext == "cljc" -> TreeSitterLexers.clojure
+            ext == "ml" || ext == "mli" -> TreeSitterLexers.ocaml
+            ext == "zig" -> TreeSitterLexers.zig
+            ext == "vue" -> TreeSitterLexers.vue
+            ext == "svelte" -> TreeSitterLexers.svelte
+            name == "dockerfile" || ext == "dockerfile" -> TreeSitterLexers.dockerfile
             else -> null
         }
     }

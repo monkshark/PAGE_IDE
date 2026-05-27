@@ -2,6 +2,7 @@ package page.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -117,6 +121,7 @@ fun CodeEditor(
     completionItems: List<CompletionDisplay> = emptyList(),
     completionSelectedIndex: Int = 0,
     completionAnchorOffset: Int? = null,
+    onCompletionItemClick: ((Int) -> Unit)? = null,
     signatureHelp: SignatureHelpDisplay? = null,
     signatureHelpAnchorOffset: Int? = null,
     manageHistory: Boolean = true,
@@ -691,6 +696,7 @@ fun CodeEditor(
                 items = completionItems,
                 selectedIndex = completionSelectedIndex.coerceIn(0, completionItems.size - 1),
                 textStyle = textStyle,
+                onItemClick = onCompletionItemClick,
             )
         }
         val sigSnapshot = signatureHelp
@@ -725,6 +731,8 @@ data class CompletionDisplay(
     val label: String,
     val kindHint: String,
     val detail: String? = null,
+    val documentation: String? = null,
+    val kindColor: Color? = null,
 )
 
 data class SignatureHelpDisplay(
@@ -844,6 +852,7 @@ private fun CompletionPopup(
     items: List<CompletionDisplay>,
     selectedIndex: Int,
     textStyle: TextStyle,
+    onItemClick: ((Int) -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(selectedIndex, items.size) {
@@ -856,6 +865,7 @@ private fun CompletionPopup(
             listState.scrollToItem(target)
         }
     }
+    val selectedDoc = items.getOrNull(selectedIndex)?.documentation?.takeIf { it.isNotBlank() }
     Popup(
         offset = IntOffset(
             x = anchor.x.toInt(),
@@ -863,68 +873,97 @@ private fun CompletionPopup(
         ),
         focusable = false,
     ) {
-        Surface(
-            modifier = Modifier.requiredWidth(360.dp),
-            color = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shadowElevation = 6.dp,
-            tonalElevation = 4.dp,
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .padding(vertical = 4.dp)
-                    .requiredHeight(minOf(items.size, 10).times(28).dp),
+        Row {
+            Surface(
+                modifier = Modifier.requiredWidth(360.dp),
+                color = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shadowElevation = 6.dp,
+                tonalElevation = 4.dp,
             ) {
-                itemsIndexed(items) { idx, item ->
-                    val selected = idx == selectedIndex
-                    val rowBg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                    else Color.Transparent
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(rowBg)
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = item.kindHint,
-                            style = textStyle.copy(
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                            ),
-                            maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier.requiredWidth(20.dp),
-                        )
-                        Text(
-                            text = item.label,
-                            style = textStyle.copy(
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .requiredHeight(minOf(items.size, 10).times(28).dp),
+                ) {
+                    itemsIndexed(items) { idx, item ->
+                        val selected = idx == selectedIndex
+                        val rowBg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                        else Color.Transparent
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 6.dp),
-                        )
-                        if (!item.detail.isNullOrBlank()) {
+                                .fillMaxWidth()
+                                .background(rowBg)
+                                .clickable { onItemClick?.invoke(idx) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
-                                text = item.detail,
+                                text = item.kindHint,
                                 style = textStyle.copy(
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = item.kindColor ?: MaterialTheme.colorScheme.primary,
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.requiredWidth(20.dp),
+                            )
+                            Text(
+                                text = item.label,
+                                style = textStyle.copy(
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 ),
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                 modifier = Modifier
-                                    .padding(start = 12.dp)
-                                    .widthIn(max = 140.dp),
+                                    .weight(1f)
+                                    .padding(start = 6.dp),
                             )
+                            if (!item.detail.isNullOrBlank()) {
+                                Text(
+                                    text = item.detail,
+                                    style = textStyle.copy(
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    ),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .padding(start = 12.dp)
+                                        .widthIn(max = 140.dp),
+                                )
+                            }
                         }
+                    }
+                }
+            }
+            if (selectedDoc != null) {
+                Spacer(Modifier.width(4.dp))
+                Surface(
+                    modifier = Modifier
+                        .widthIn(min = 200.dp, max = 360.dp)
+                        .heightIn(max = minOf(items.size, 10).times(28).dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shadowElevation = 6.dp,
+                    tonalElevation = 4.dp,
+                    shape = RoundedCornerShape(6.dp),
+                ) {
+                    Box(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = selectedDoc,
+                            style = textStyle.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }

@@ -82,6 +82,8 @@ class LspController(
     private var workspace: LspWorkspace? = null
     private val pendingChanges = ConcurrentHashMap<String, Job>()
     private var startAttempted = false
+    private var activeBackend: LanguageBackend? = null
+    val backendId: String? get() = activeBackend?.id
 
     private data class PendingOpen(val path: Path, val languageId: String, val text: String)
     private val pendingOpens = ConcurrentHashMap<String, PendingOpen>()
@@ -127,19 +129,11 @@ class LspController(
 
     @Volatile private var clientGeneration: Long = 0L
 
-    fun ensureStarted() {
+    fun ensureStarted(backend: LanguageBackend) {
         if (startAttempted) return
         startAttempted = true
+        activeBackend = backend
         startActivityJanitor()
-        val backend = LspBackends.forExtension("kt")
-        if (backend == null) {
-            markMissing(
-                backendId = "kotlin",
-                attempted = emptyList(),
-                detail = "no LanguageBackend registered for .kt",
-            )
-            return
-        }
         println("[lsp] resolving ${backend.displayName} (workspace=$workspaceRoot)")
         val resolution = backend.resolveExecutable()
         if (resolution !is LanguageBackend.Resolution.Found) {
@@ -181,7 +175,7 @@ class LspController(
                     prepareRenameSupported = detectPrepareRenameSupport(result.capabilities)
                     println("[lsp] prepareRename support = $prepareRenameSupported")
                     flushPendingOpens()
-                    openWorkspaceKotlinFiles()
+                    openWorkspaceFiles()
                 }
             }
             client = c
@@ -227,7 +221,8 @@ class LspController(
         status.value = Status.IDLE
         statusDetail.value = ""
         _installGuideOpen.value = false
-        ensureStarted()
+        val backend = activeBackend ?: return
+        ensureStarted(backend)
     }
 
     private fun applyActivityEvent(event: KlsActivity?) {
@@ -418,8 +413,7 @@ class LspController(
             }
         }
 
-        val fileName = path.fileName?.toString().orEmpty()
-        val isKotlin = fileName.endsWith(".kt") || fileName.endsWith(".kts")
+        val isKotlin = activeBackend?.id == "kotlin"
         val canAugmentKeywords = isKotlin && prefix.isNotEmpty() && triggerCharacter == null
         val canAugmentImports = isKotlin && prefix.length >= 2 && triggerCharacter == null
         return ws.completion(uri, line, character, triggerCharacter, prefix)
@@ -1400,7 +1394,7 @@ class LspController(
                 return false
             }
             val text = java.nio.file.Files.readString(targetPath)
-            ws.didOpen(targetUri, "kotlin", text)
+            ws.didOpen(targetUri, activeBackend?.id ?: "kotlin", text)
             println("  auto-opened $targetUri (${text.length} chars) for rename")
             true
         } catch (t: Throwable) {
@@ -1455,8 +1449,9 @@ class LspController(
         return lineText to marker
     }
 
-    private fun openWorkspaceKotlinFiles() {
+    private fun openWorkspaceFiles() {
         val root = workspaceRoot ?: return
+        val backend = activeBackend ?: return
         scope.launch(Dispatchers.IO) {
             val ws = workspace ?: return@launch
             var opened = 0
@@ -1464,7 +1459,12 @@ class LspController(
                 java.nio.file.Files.walk(root).use { stream ->
                     stream
                         .filter { java.nio.file.Files.isRegularFile(it) }
-                        .filter { it.fileName.toString().endsWith(".kt") }
+                        .filter { p ->
+                            val name = p.fileName?.toString() ?: return@filter false
+                            val dot = name.lastIndexOf('.')
+                            val ext = if (dot >= 0 && dot < name.length - 1) name.substring(dot + 1) else null
+                            backend.supports(ext)
+                        }
                         .filter { p ->
                             val rel = root.relativize(p)
                             rel.iterator().asSequence().none { it.toString() in WORKSPACE_AUTO_OPEN_EXCLUDES }
@@ -1475,14 +1475,14 @@ class LspController(
                                 val uri = p.toUri().toString()
                                 if (ws.isOpen(uri)) return@forEach
                                 val text = java.nio.file.Files.readString(p)
-                                ws.didOpen(uri, "kotlin", text)
+                                ws.didOpen(uri, backend.id, text)
                                 opened++
                             } catch (t: Throwable) {
                                 println("[lsp] workspace auto-open failed for $p: ${t.message}")
                             }
                         }
                 }
-                println("[lsp] workspace auto-open done — $opened .kt file(s) under $root")
+                println("[lsp] workspace auto-open done — $opened ${backend.id} file(s) under $root")
             } catch (t: Throwable) {
                 println("[lsp] workspace walk failed: ${t.message}")
             }
@@ -1547,8 +1547,9 @@ class LspController(
             }
         }
         runCatching { ws.didChangeWatchedFiles(events) }
+        val langId = activeBackend?.id ?: "kotlin"
         for ((uri, text) in toOpen) {
-            runCatching { ws.didOpen(uri, "kotlin", text) }
+            runCatching { ws.didOpen(uri, langId, text) }
         }
     }
 
@@ -1564,7 +1565,7 @@ class LspController(
             for (uri in ws.openUris()) {
                 val text = ws.textOf(uri) ?: continue
                 val path = runCatching { java.nio.file.Paths.get(java.net.URI(uri)) }.getOrNull() ?: continue
-                openSnapshot.add(Triple(path, "kotlin", text))
+                openSnapshot.add(Triple(path, activeBackend?.id ?: "kotlin", text))
             }
         }
         pendingChanges.values.forEach { it.cancel() }
@@ -1591,7 +1592,8 @@ class LspController(
             val uri = path.toUri().toString()
             pendingOpens[uri] = PendingOpen(path, lang, text)
         }
-        ensureStarted()
+        val backend = activeBackend ?: return
+        ensureStarted(backend)
     }
 
     fun shutdown() {
