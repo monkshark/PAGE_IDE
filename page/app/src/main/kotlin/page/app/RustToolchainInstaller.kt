@@ -240,7 +240,7 @@ class RustToolchainInstaller(
 
     companion object {
         const val DEFAULT_ASSETS_REPO = "monkshark/page-ide-assets"
-        const val DEFAULT_RELEASE_TAG = "rust-bundle"
+        const val DEFAULT_RELEASE_TAG = "rust-toolchain-bundle"
         const val DEFAULT_RUST_VERSION = "1.95.0"
 
         internal val VERSION_DESC: Comparator<String> = Comparator { a, b ->

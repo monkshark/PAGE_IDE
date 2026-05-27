@@ -158,7 +158,7 @@ class RustAnalyzerInstaller(
 
     companion object {
         const val DEFAULT_ASSETS_REPO = "monkshark/page-ide-assets"
-        const val DEFAULT_RELEASE_TAG = "rust-bundle"
+        const val DEFAULT_RELEASE_TAG = "rust-analyzer-bundle"
         const val DEFAULT_VERSION = "2025-05-26"
     }
 }
