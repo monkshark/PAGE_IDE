@@ -139,7 +139,8 @@ class DartSdkInstaller(
 
     fun currentInstalledVersion(): String? {
         val pointer = installBase().resolve("CURRENT")
-        return runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull()
+        val v = runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull() ?: return null
+        return if (Files.exists(lspWrapper(v))) v else null
     }
 
     private fun writePointer(version: String) {

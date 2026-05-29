@@ -22,5 +22,6 @@ object KotlinLanguageBackend : LanguageBackend {
         executable: Path,
         workspaceRoot: Path?,
         onStderrLine: ((String) -> Unit)?,
-    ): LspClient = KotlinLsp.spawn(executable, workspaceRoot, onStderrLine)
+        env: Map<String, String>,
+    ): LspClient = KotlinLsp.spawn(executable, workspaceRoot, onStderrLine, env)
 }

@@ -255,19 +255,61 @@ object CompletionEnhancer {
     fun filterByPrefix(items: List<CompletionItem>, prefix: String): List<CompletionItem> {
         if (prefix.isEmpty()) return items
         return items.filter { item ->
-            item.label.startsWith(prefix, ignoreCase = true) ||
-                item.insertText.startsWith(prefix, ignoreCase = true) ||
-                item.filterText.startsWith(prefix, ignoreCase = true)
+            fuzzyMatches(item.label, prefix) ||
+                fuzzyMatches(item.insertText, prefix) ||
+                fuzzyMatches(item.filterText, prefix)
         }
     }
 
+    fun fuzzyMatches(candidate: String, pattern: String): Boolean {
+        if (pattern.isEmpty()) return true
+        if (candidate.isEmpty()) return false
+        if (candidate.startsWith(pattern, ignoreCase = true)) return true
+        if (camelCaseMatches(candidate, pattern)) return true
+        return subsequenceMatches(candidate, pattern)
+    }
+
+    fun fuzzyScore(candidate: String, pattern: String): Int {
+        if (pattern.isEmpty()) return 0
+        if (candidate.startsWith(pattern)) return 0
+        if (candidate.startsWith(pattern, ignoreCase = true)) return 1
+        if (camelCaseMatches(candidate, pattern)) return 2
+        if (subsequenceMatches(candidate, pattern)) return 3
+        return 99
+    }
+
+    private fun camelCaseMatches(candidate: String, pattern: String): Boolean {
+        val humps = buildList {
+            add(0)
+            for (i in 1 until candidate.length) {
+                if (candidate[i].isUpperCase() && !candidate[i - 1].isUpperCase()) add(i)
+                else if (candidate[i] == '_' && i + 1 < candidate.length) add(i + 1)
+            }
+        }
+        var pi = 0
+        for (humpIdx in humps) {
+            if (pi >= pattern.length) break
+            if (candidate[humpIdx].equals(pattern[pi], ignoreCase = true)) pi++
+        }
+        return pi == pattern.length
+    }
+
+    private fun subsequenceMatches(candidate: String, pattern: String): Boolean {
+        var ci = 0
+        var pi = 0
+        while (ci < candidate.length && pi < pattern.length) {
+            if (candidate[ci].equals(pattern[pi], ignoreCase = true)) pi++
+            ci++
+        }
+        return pi == pattern.length
+    }
+
     private fun sortByPrefix(items: List<CompletionItem>, prefix: String): List<CompletionItem> {
-        val lower = prefix.lowercase()
         val prefixUppercase = prefix.firstOrNull()?.isUpperCase() == true
         return items.withIndex()
             .sortedWith(
                 compareBy(
-                    { prefixRank(it.value, prefix, lower, prefixUppercase) },
+                    { prefixRank(it.value, prefix, prefixUppercase) },
                     { if (prefixUppercase) caseAffinityRank(it.value) else 0 },
                     { it.index },
                 )
@@ -275,14 +317,14 @@ object CompletionEnhancer {
             .map { it.value }
     }
 
-    private fun prefixRank(item: CompletionItem, prefix: String, lowerPrefix: String, prefixUppercase: Boolean): Int {
-        val label = item.label
-        val base = when {
-            label.startsWith(prefix) -> 0
-            label.lowercase().startsWith(lowerPrefix) -> 1
-            else -> 2
+    private fun prefixRank(item: CompletionItem, prefix: String, prefixUppercase: Boolean): Int {
+        val base = minOf(fuzzyScore(item.label, prefix), fuzzyScore(item.filterText, prefix))
+        val collapsed = when (base) {
+            0 -> 0
+            99 -> 99
+            else -> 1
         }
-        return if (prefixUppercase && item.kind == CompletionItemKind.KEYWORD) base + 1 else base
+        return if (prefixUppercase && item.kind == CompletionItemKind.KEYWORD) collapsed + 1 else collapsed
     }
 
     private val typeKinds = setOf(

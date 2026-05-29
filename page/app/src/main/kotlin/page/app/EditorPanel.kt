@@ -3,6 +3,13 @@ package page.app
 import page.runtime.*
 import page.workspace.*
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -152,6 +159,7 @@ fun EditorPanel(
     jdkVersion: String? = null,
     jdkVersionTooltip: String? = null,
     onJdkVersionClick: (() -> Unit)? = null,
+    pageSettings: PageSettings = PageSettings(),
     modifier: Modifier = Modifier,
 ) {
     val isMarkdown = remember(activePath) {
@@ -233,8 +241,10 @@ fun EditorPanel(
     val hintColor = MaterialTheme.colorScheme.tertiary
     val tabstopActiveColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
     val tabstopPendingColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
-    val diagnosticDecorations = remember(value.text, diagnostics) {
-        diagnostics.mapNotNull { d ->
+    val showInlineDiagnostics = pageSettings.lsp.showInlineDiagnostics
+    val diagnosticDecorations = remember(value.text, diagnostics, showInlineDiagnostics) {
+        if (!showInlineDiagnostics) emptyList()
+        else diagnostics.mapNotNull { d ->
             val startOff = lineColToOffset(value.text, d.start.line, d.start.character)
             val endOff = lineColToOffset(value.text, d.end.line, d.end.character)
             if (startOff < 0 || endOff < 0 || endOff <= startOff) return@mapNotNull null
@@ -288,7 +298,7 @@ fun EditorPanel(
         val safeOff = off.coerceIn(0, text.length)
         if (isInStringOrComment(tokens, text, safeOff)) return@LaunchedEffect
         val pos = TextBuffer(text).lineColOf(safeOff)
-        delay(350)
+        delay(pageSettings.lsp.hoverDelayMs.toLong().coerceAtLeast(0L))
         if (token != lspHoverRequestToken) return@LaunchedEffect
         cb(pos.line, pos.col).whenComplete { info, _ ->
             if (token != lspHoverRequestToken || info == null) return@whenComplete
@@ -370,9 +380,9 @@ fun EditorPanel(
     }
 
     var inlayHints by remember(activePath) { mutableStateOf<List<InlayHintItem>>(emptyList()) }
-    LaunchedEffect(activePath, value.text, onRequestInlayHints) {
+    LaunchedEffect(activePath, value.text, onRequestInlayHints, pageSettings.lsp.showInlayHints) {
         val cb = onRequestInlayHints
-        if (cb == null) {
+        if (cb == null || !pageSettings.lsp.showInlayHints) {
             inlayHints = emptyList()
             return@LaunchedEffect
         }
@@ -439,11 +449,13 @@ fun EditorPanel(
         }
     }
 
+    val editorFontSize = pageSettings.editor.fontSize.sp
+    val editorLineHeight = (pageSettings.editor.fontSize * 1.43f).sp
     val textStyle = TextStyle(
         color = MaterialTheme.colorScheme.onBackground,
         fontFamily = EditorFontFamily,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = editorFontSize,
+        lineHeight = editorLineHeight,
         lineHeightStyle = LineHeightStyle(
             alignment = LineHeightStyle.Alignment.Center,
             trim = LineHeightStyle.Trim.None,
@@ -515,7 +527,10 @@ fun EditorPanel(
         if (completionPrefix.isEmpty()) completionItems
         else completionItems.filter { item ->
             val key = item.filterText.takeIf { it.isNotBlank() } ?: item.label
-            key.startsWith(completionPrefix, ignoreCase = true)
+            fuzzyMatch(completionPrefix, key)
+        }.sortedByDescending { item ->
+            val key = item.filterText.takeIf { it.isNotBlank() } ?: item.label
+            fuzzyScore(completionPrefix, key)
         }
     }
     LaunchedEffect(filteredItems.size) {
@@ -632,6 +647,7 @@ fun EditorPanel(
             closeCompletion()
             return@lambda
         }
+        page.lsp.CompletionFrecency.recordSelection(item.label, item.kind)
         val text = value.text
         val caret = value.selection.end.coerceIn(0, text.length)
         val edit = item.edit
@@ -651,9 +667,15 @@ fun EditorPanel(
             replaceStart = completionTriggerOffset.coerceIn(0, caret)
             replaceEnd = caret
         }
-        val rawInsert = if (commentKeywordMode && commentKeywordNeedsSpace) " " + item.insertText
+        val baseInsert = if (commentKeywordMode && commentKeywordNeedsSpace) " " + item.insertText
         else item.insertText
-        val expanded = if (item.isSnippet) SnippetExpander.expand(rawInsert)
+        val needsParens = !item.isSnippet &&
+            !baseInsert.contains("(") &&
+            (item.kind == page.lsp.CompletionItemKind.METHOD ||
+             item.kind == page.lsp.CompletionItemKind.FUNCTION ||
+             item.kind == page.lsp.CompletionItemKind.CONSTRUCTOR)
+        val rawInsert = if (needsParens) "$baseInsert($1)" else baseInsert
+        val expanded = if (item.isSnippet || needsParens) SnippetExpander.expand(rawInsert)
         else page.lsp.ExpandedSnippet(rawInsert, rawInsert.length)
         val addEdits = item.additionalEdits
             .map { ed ->
@@ -745,14 +767,24 @@ fun EditorPanel(
         if (isInsertOne && !didTrigger) {
             val inserted = newText[newCaret - 1]
             val isWordChar = inserted.isLetter() || inserted == '_'
-            val prevIsBoundary = newCaret < 2 ||
-                !(newText[newCaret - 2].isLetterOrDigit() || newText[newCaret - 2] == '_')
             val insideString = isInsideStringLiteral(newText, newCaret - 1)
             when {
                 inserted == '.' && !insideString -> { triggerCompletion(newCaret, newCaret, "."); didTrigger = true }
                 inserted == ':' && !insideString -> { triggerCompletion(newCaret, newCaret, null); didTrigger = true }
-                isWordChar && !insideString && completionTriggerOffset < 0 && prevIsBoundary -> {
-                    triggerCompletion(newCaret - 1, newCaret, null); didTrigger = true
+                isWordChar && !insideString && completionTriggerOffset < 0 -> {
+                    val midWordEnabled = pageSettings.lsp.triggerCompletionMidWord
+                    val prevIsBoundary = newCaret < 2 ||
+                        !(newText[newCaret - 2].isLetterOrDigit() || newText[newCaret - 2] == '_')
+                    if (midWordEnabled || prevIsBoundary) {
+                        var wordStart = newCaret - 1
+                        while (wordStart > 0) {
+                            val c = newText[wordStart - 1]
+                            if (!(c.isLetterOrDigit() || c == '_')) break
+                            wordStart--
+                        }
+                        triggerCompletion(wordStart, newCaret, null)
+                        didTrigger = true
+                    }
                 }
             }
         }
@@ -764,7 +796,7 @@ fun EditorPanel(
                 val hasNonWord = typed.any { !it.isLetterOrDigit() && it != '_' }
                 if (hasNonWord) {
                     closeCompletion()
-                } else if (isInsertOne) {
+                } else {
                     refreshCompletion()
                 }
             }
@@ -807,6 +839,8 @@ fun EditorPanel(
                     label = displayLabel,
                     kindHint = kindHint(item.kind),
                     detail = item.detail?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotEmpty() },
+                    documentation = item.documentation,
+                    kindColor = kindColor(item.kind),
                 )
             }
         }
@@ -887,7 +921,8 @@ fun EditorPanel(
                 }
                 .verticalScroll(scrollState)
                 .drawBehind {
-                    val lineH = 20.sp.toPx()
+                    if (!pageSettings.editor.highlightCurrentLine) return@drawBehind
+                    val lineH = editorLineHeight.toPx()
                     val topPad = 16.dp.toPx()
                     val y = topPad + caret.line * lineH
                     drawRect(
@@ -897,17 +932,19 @@ fun EditorPanel(
                     )
                 },
         ) {
-            LineNumberGutter(
-                lines = gutterLines,
-                currentOriginalLine = caret.line,
-                onToggleFold = { line ->
-                    val region = foldStartByLine[line] ?: return@LineNumberGutter
-                    foldedRegions = if (region in foldedRegions) foldedRegions - region
-                    else foldedRegions + region
-                },
-                onPickKeyword = onPickKeyword,
-                textStyle = textStyle,
-            )
+            if (pageSettings.editor.showLineNumbers) {
+                LineNumberGutter(
+                    lines = gutterLines,
+                    currentOriginalLine = caret.line,
+                    onToggleFold = { line ->
+                        val region = foldStartByLine[line] ?: return@LineNumberGutter
+                        foldedRegions = if (region in foldedRegions) foldedRegions - region
+                        else foldedRegions + region
+                    },
+                    onPickKeyword = onPickKeyword,
+                    textStyle = textStyle,
+                )
+            }
             CodeEditor(
                 value = value,
                 onValueChange = onValueChange,
@@ -1174,9 +1211,22 @@ fun EditorPanel(
                         message = d.message,
                     )
                 },
+                languageMode = remember(activePath) {
+                    val ext = activePath?.fileName?.toString()?.substringAfterLast('.', "")?.lowercase()
+                    if (ext == "html" || ext == "htm" || ext == "xhtml") "html" else null
+                },
+                autoPairs = pageSettings.autoInput.pairs,
+                autoHtmlTags = pageSettings.autoInput.htmlTags,
+                backspaceDeletesPair = pageSettings.autoInput.backspaceDeletesPair,
+                tabSize = pageSettings.editor.tabSize,
+                useSpacesForTab = pageSettings.editor.useSpacesForTab,
                 completionItems = completionDisplay,
                 completionSelectedIndex = completionSelectedIndex,
                 completionAnchorOffset = completionTriggerOffset.takeIf { it >= 0 },
+                onCompletionItemClick = { idx ->
+                    completionSelectedIndex = idx
+                    applySelected()
+                },
                 signatureHelp = lspSignatureInfo?.let { info ->
                     val sig = info.active ?: return@let null
                     val activeIdx = lspSignatureActiveParam.coerceAtLeast(0)
@@ -1272,6 +1322,20 @@ private fun kindHint(kind: LspCompletionItemKind): String = when (kind) {
     LspCompletionItemKind.STRUCT -> "S"
     LspCompletionItemKind.TYPE_PARAMETER -> "T"
     else -> "•"
+}
+
+private fun kindColor(kind: LspCompletionItemKind): Color = when (kind) {
+    LspCompletionItemKind.METHOD, LspCompletionItemKind.FUNCTION -> Color(0xFF3B82F6)
+    LspCompletionItemKind.CONSTRUCTOR -> Color(0xFF8B5CF6)
+    LspCompletionItemKind.CLASS, LspCompletionItemKind.INTERFACE, LspCompletionItemKind.STRUCT -> Color(0xFFF59E0B)
+    LspCompletionItemKind.VARIABLE, LspCompletionItemKind.FIELD, LspCompletionItemKind.PROPERTY -> Color(0xFF6366F1)
+    LspCompletionItemKind.KEYWORD -> Color(0xFFEF4444)
+    LspCompletionItemKind.SNIPPET -> Color(0xFF10B981)
+    LspCompletionItemKind.ENUM, LspCompletionItemKind.ENUM_MEMBER -> Color(0xFFEC4899)
+    LspCompletionItemKind.MODULE -> Color(0xFF14B8A6)
+    LspCompletionItemKind.CONSTANT -> Color(0xFFF97316)
+    LspCompletionItemKind.TYPE_PARAMETER -> Color(0xFF0EA5E9)
+    else -> Color(0xFF9CA3AF)
 }
 
 private fun sanitizeLabel(s: String?): String? {
@@ -1701,15 +1765,16 @@ private fun EditorStatusBar(
                 color = MaterialTheme.colorScheme.secondary,
                 onClick = onTodoToggle,
             )
-            val showLifecycle = !lspStatusText.isNullOrBlank()
             val showActivities = lspActivities.isNotEmpty()
+            val showLifecycle = !lspStatusText.isNullOrBlank()
             val showJdk = !jdkVersion.isNullOrBlank()
-            if (showLifecycle || showActivities || showJdk) {
+            if (showActivities || showLifecycle || showJdk) {
                 Box(modifier = Modifier.weight(1f))
+                if (showActivities) {
+                    LspActivitiesItem(activities = lspActivities)
+                }
                 if (showLifecycle) {
                     LspLifecycleItem(text = lspStatusText!!, onClick = onLspStatusClick)
-                } else if (showActivities) {
-                    LspActivitiesItem(activities = lspActivities)
                 }
                 if (showJdk) {
                     RuntimeVersionItem(label = jdkVersion!!, tooltip = jdkVersionTooltip, onClick = onJdkVersionClick)
@@ -1724,12 +1789,13 @@ private fun LspLifecycleItem(text: String, onClick: (() -> Unit)? = null) {
     val baseColor = MaterialTheme.colorScheme.onSurfaceVariant
     val color = if (onClick != null) MaterialTheme.colorScheme.primary else baseColor
     val mod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
-    Text(
-        text = text,
-        modifier = mod,
-        style = MaterialTheme.typography.labelSmall,
-        color = color,
-    )
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = mod) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+        )
+    }
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -1904,4 +1970,42 @@ private fun StatusItem(text: String) {
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+private fun fuzzyMatch(query: String, target: String): Boolean {
+    if (query.isEmpty()) return true
+    val q = query.lowercase()
+    val t = target.lowercase()
+    if (t.startsWith(q)) return true
+    var qi = 0
+    for (ch in t) {
+        if (qi < q.length && ch == q[qi]) qi++
+        if (qi == q.length) return true
+    }
+    return false
+}
+
+private fun fuzzyScore(query: String, target: String): Int {
+    if (query.isEmpty()) return 0
+    val q = query.lowercase()
+    val t = target.lowercase()
+    if (t.startsWith(q)) return 1000 + (100 - t.length)
+    var score = 0
+    var qi = 0
+    var prevMatch = false
+    var consecutiveBonus = 0
+    for ((i, ch) in t.withIndex()) {
+        if (qi < q.length && ch == q[qi]) {
+            score += 10
+            if (i == 0 || t[i - 1] == '.' || t[i - 1] == '-' || t[i - 1] == '_') score += 20
+            if (prevMatch) { consecutiveBonus += 5; score += consecutiveBonus } else consecutiveBonus = 0
+            prevMatch = true
+            qi++
+        } else {
+            prevMatch = false
+            consecutiveBonus = 0
+        }
+    }
+    if (qi < q.length) return -1
+    return score
 }

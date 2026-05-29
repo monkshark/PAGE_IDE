@@ -144,16 +144,36 @@ internal fun InstallGuideDialog(
         cancelled.set(false)
         installProgress = LspInstaller.Progress.Downloading(0, -1)
         outputLines = emptyList()
+        InstallProgressRegistry.start(active.languageId, active.displayName)
         installJob = scope.launch {
             withContext(Dispatchers.IO) {
                 active.install(selectedVersion) { p ->
                     if (cancelled.get()) return@install
                     installProgress = p
+                    InstallProgressRegistry.update(active.languageId, p)
                     if (p is LspInstaller.Progress.CommandOutput) {
                         outputLines = (outputLines + p.line).takeLast(2000)
                     }
                 }
+                // Auto-install Windows libc headers when installing clangd (c/cpp LSP)
+                if (!cancelled.get() && LspInstaller.isWindows() && active.languageId == "clangd") {
+                    val mingw = MingwInstaller()
+                    if (!mingw.isInstalled()) {
+                        outputLines = outputLines + "" + "> Installing MinGW-w64 (UCRT64) for libc headers (stdio.h etc.)..."
+                        InstallProgressRegistry.start("mingw-toolchain", "MinGW-w64 (UCRT64)")
+                        mingw.install(null) { p ->
+                            if (cancelled.get()) return@install
+                            installProgress = p
+                            InstallProgressRegistry.update("mingw-toolchain", p)
+                            if (p is LspInstaller.Progress.CommandOutput) {
+                                outputLines = (outputLines + p.line).takeLast(2000)
+                            }
+                        }
+                        InstallProgressRegistry.finish("mingw-toolchain")
+                    }
+                }
             }
+            InstallProgressRegistry.finish(active.languageId)
         }
     }
 

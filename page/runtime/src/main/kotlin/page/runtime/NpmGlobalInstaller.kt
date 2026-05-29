@@ -48,14 +48,14 @@ class NpmGlobalInstaller(
             val target = installRoot(resolvedVersion)
             Files.createDirectories(target)
             val spec = if (resolvedVersion == "latest") descriptor.packageName else "${descriptor.packageName}@$resolvedVersion"
+            val packages = listOf(spec) + descriptor.peerPackages
             val cmd = listOf(
                 npm.toString(), "install",
                 "--prefix", target.toString(),
                 "--global",
                 "--no-audit",
                 "--no-fund",
-                spec,
-            )
+            ) + packages
             val exit = processRunner.runStreaming(cmd) { line ->
                 onProgress(LspInstaller.Progress.CommandOutput(line))
             }
@@ -73,9 +73,33 @@ class NpmGlobalInstaller(
     fun installRoot(version: String = currentInstalledVersion() ?: descriptor.defaultVersion ?: "latest"): Path =
         LspInstaller.lspHome().resolve(descriptor.installKey).resolve(sanitize(version))
 
+    override fun installedVersions(): List<String> {
+        val base = LspInstaller.lspHome().resolve(descriptor.installKey)
+        if (!Files.isDirectory(base)) return emptyList()
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream
+                    .filter { Files.isDirectory(it) && it.fileName.toString() != "CURRENT" }
+                    .filter { Files.exists(it.resolve(binaryRelative(descriptor.binaryName))) }
+                    .map { it.fileName.toString() }
+                    .toList()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun activeVersion(): String? = currentInstalledVersion()
+
+    override fun applyVersion(version: String): Boolean {
+        val target = installRoot(version)
+        if (!Files.exists(target.resolve(binaryRelative(descriptor.binaryName)))) return false
+        writePointer(version)
+        return true
+    }
+
     private fun currentInstalledVersion(): String? {
         val pointer = LspInstaller.lspHome().resolve(descriptor.installKey).resolve("CURRENT")
-        return runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull()
+        val v = runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull() ?: return null
+        return if (Files.exists(installRoot(v).resolve(binaryRelative(descriptor.binaryName)))) v else null
     }
 
     private fun writePointer(version: String) {
@@ -125,6 +149,7 @@ data class NpmPackageDescriptor(
     val binaryName: String,
     val defaultVersion: String? = null,
     val installKey: String = defaultInstallKey(packageName),
+    val peerPackages: List<String> = emptyList(),
 ) {
     companion object {
         fun defaultInstallKey(packageName: String): String =

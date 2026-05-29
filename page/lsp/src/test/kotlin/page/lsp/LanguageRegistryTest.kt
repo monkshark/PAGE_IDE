@@ -8,9 +8,9 @@ import kotlin.test.assertTrue
 
 class LanguageRegistryTest {
     @Test
-    fun bundledRegistryHasThirtyFourLanguages() {
+    fun bundledRegistryHasTwentyFourLanguages() {
         val all = LanguageRegistry.all()
-        assertEquals(34, all.size, "expected 34 bundled language definitions, got ${all.size}")
+        assertEquals(24, all.size, "expected 24 bundled language definitions, got ${all.size}")
     }
 
     @Test
@@ -22,6 +22,12 @@ class LanguageRegistryTest {
         assertEquals("svelte", LanguageRegistry.byExtension("svelte")?.id)
         assertEquals("vue", LanguageRegistry.byExtension("vue")?.id)
         assertEquals("dockerfile", LanguageRegistry.byExtension("dockerfile")?.id)
+    }
+
+    @Test
+    fun dartExtensionResolvesToDartNotFlutter() {
+        assertNotNull(LanguageRegistry.byId("flutter"), "flutter must remain bundled for install options")
+        assertEquals("dart", LanguageRegistry.byExtension("dart")?.id, ".dart must route to dart, not the flutter alias")
     }
 
     @Test

@@ -9,6 +9,7 @@ data class LanguageDefinition(
     val installGuideUrl: String,
     val install: Map<String, String>,
     val runCommand: String?,
+    val launchArgs: List<String> = listOf("--stdio"),
 ) {
     fun supports(extension: String?): Boolean {
         if (extension == null) return false

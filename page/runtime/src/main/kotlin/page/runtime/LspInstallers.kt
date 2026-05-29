@@ -7,11 +7,7 @@ object LspInstallers {
         "rust" to { RustAnalyzerInstaller() },
         "c" to ::clangdInstaller,
         "cpp" to ::clangdInstaller,
-        "lua" to ::luaLanguageServerInstaller,
         "markdown" to ::marksmanInstaller,
-        "zig" to ::zlsInstaller,
-        "elixir" to ::elixirLsInstaller,
-        "clojure" to ::clojureLspInstaller,
         "java" to ::jdtlsInstaller,
         "typescript" to ::typescriptLanguageServerInstaller,
         "javascript" to ::typescriptLanguageServerInstaller,
@@ -27,20 +23,15 @@ object LspInstallers {
         "php" to ::intelephenseInstaller,
         "sql" to ::sqlLanguageServerInstaller,
         "ruby" to ::rubyInstaller,
-        "ocaml" to ::ocamlInstaller,
-        "fsharp" to ::fsharpInstaller,
-        "perl" to ::perlInstaller,
-        "r" to ::rInstaller,
-        "haskell" to ::haskellInstaller,
         "go" to ::goInstaller,
-        "scala" to ::scalaInstaller,
+        "swift" to ::swiftInstaller,
         "dart" to ::dartInstaller,
         "flutter" to ::flutterInstaller,
-        "swift" to ::swiftInstaller,
         "jdk" to { JdkInstaller() },
         "node" to { NodeInstaller() },
         "python-runtime" to { PythonInstaller() },
         "cpp-toolchain" to { CppToolchainInstaller() },
+        "mingw-toolchain" to { MingwInstaller() },
         "go-sdk" to { GoSdkInstaller() },
         "rust-runtime" to { RustToolchainInstaller() },
         "dotnet-runtime" to { DotnetSdkInstaller() },
@@ -79,32 +70,6 @@ object LspInstallers {
         ),
     )
 
-    private fun luaLanguageServerInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "lua",
-            displayName = "lua-language-server",
-            owner = "LuaLS",
-            repo = "lua-language-server",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/LuaLS/lua-language-server/releases/download/{tag}/lua-language-server-{versionNoV}-darwin-arm64.tar.gz",
-                    executableRelative = "bin/lua-language-server",
-                    archiveType = ArchiveType.TAR_GZ,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/LuaLS/lua-language-server/releases/download/{tag}/lua-language-server-{versionNoV}-linux-x64.tar.gz",
-                    executableRelative = "bin/lua-language-server",
-                    archiveType = ArchiveType.TAR_GZ,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/LuaLS/lua-language-server/releases/download/{tag}/lua-language-server-{versionNoV}-win32-x64.zip",
-                    executableRelative = "bin/lua-language-server.exe",
-                    archiveType = ArchiveType.ZIP,
-                ),
-            ),
-        ),
-    )
-
     private fun marksmanInstaller(): LspInstaller = GitHubReleaseInstaller(
         GitHubReleaseDescriptor(
             languageId = "markdown",
@@ -131,84 +96,6 @@ object LspInstallers {
         ),
     )
 
-    private fun zlsInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "zig",
-            displayName = "zls",
-            owner = "zigtools",
-            repo = "zls",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/zigtools/zls/releases/download/{tag}/zls-aarch64-macos.tar.xz",
-                    executableRelative = "zls",
-                    archiveType = ArchiveType.RAW_BINARY,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/zigtools/zls/releases/download/{tag}/zls-x86_64-linux.tar.xz",
-                    executableRelative = "zls",
-                    archiveType = ArchiveType.RAW_BINARY,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/zigtools/zls/releases/download/{tag}/zls-x86_64-windows.zip",
-                    executableRelative = "zls.exe",
-                    archiveType = ArchiveType.ZIP,
-                ),
-            ),
-        ),
-    )
-
-    private fun elixirLsInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "elixir",
-            displayName = "elixir-ls",
-            owner = "elixir-lsp",
-            repo = "elixir-ls",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/elixir-lsp/elixir-ls/releases/download/{tag}/elixir-ls-{tag}.zip",
-                    executableRelative = "language_server.sh",
-                    archiveType = ArchiveType.ZIP,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/elixir-lsp/elixir-ls/releases/download/{tag}/elixir-ls-{tag}.zip",
-                    executableRelative = "language_server.sh",
-                    archiveType = ArchiveType.ZIP,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/elixir-lsp/elixir-ls/releases/download/{tag}/elixir-ls-{tag}.zip",
-                    executableRelative = "language_server.bat",
-                    archiveType = ArchiveType.ZIP,
-                ),
-            ),
-        ),
-    )
-
-    private fun clojureLspInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "clojure",
-            displayName = "clojure-lsp",
-            owner = "clojure-lsp",
-            repo = "clojure-lsp",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/{tag}/clojure-lsp-native-macos-amd64.zip",
-                    executableRelative = "clojure-lsp",
-                    archiveType = ArchiveType.ZIP,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/{tag}/clojure-lsp-native-linux-amd64.zip",
-                    executableRelative = "clojure-lsp",
-                    archiveType = ArchiveType.ZIP,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/clojure-lsp/clojure-lsp/releases/download/{tag}/clojure-lsp-native-windows-amd64.zip",
-                    executableRelative = "clojure-lsp.exe",
-                    archiveType = ArchiveType.ZIP,
-                ),
-            ),
-        ),
-    )
-
     private fun jdtlsInstaller(): LspInstaller = JdtlsInstaller()
 
     private fun typescriptLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
@@ -217,6 +104,7 @@ object LspInstallers {
             displayName = "typescript-language-server",
             packageName = "typescript-language-server",
             binaryName = "typescript-language-server",
+            peerPackages = listOf("typescript"),
         ),
     )
 
@@ -341,70 +229,11 @@ object LspInstallers {
         ),
     )
 
-    private fun ocamlInstaller(): LspInstaller = ShellPackageInstaller(
-        ShellPackageDescriptor(
-            languageId = "ocaml",
-            displayName = "ocaml-lsp-server",
-            managerName = "opam",
-            managerInstallUrl = "https://opam.ocaml.org/doc/Install.html",
-            binaryName = "ocamllsp",
-            packageName = "ocaml-lsp-server",
-            heavyInstall = LspInstaller.HeavyInstallEstimate(
-                sizeEstimate = "~120 MB",
-                durationEstimate = "~2 to 30 min",
-                notes = "opam builds ocaml-lsp-server and its dependencies. The first run may also fetch the compiler, which can take a while.",
-            ),
-            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "install", "-y", pkg) },
-        ),
-    )
-
-    private fun fsharpInstaller(): LspInstaller = FsAutocompleteInstaller()
-
-    private fun perlInstaller(): LspInstaller = ShellPackageInstaller(
-        ShellPackageDescriptor(
-            languageId = "perl",
-            displayName = "Perl::LanguageServer",
-            managerName = "cpan",
-            managerInstallUrl = "https://www.perl.org/get.html",
-            binaryName = "perl",
-            packageName = "Perl::LanguageServer",
-            heavyInstall = LspInstaller.HeavyInstallEstimate(
-                sizeEstimate = "~50 MB",
-                durationEstimate = "~5 to 15 min",
-                notes = "cpan builds Perl::LanguageServer and its XS dependencies. The first build can be slow.",
-            ),
-            buildInstallCommand = { mgr, pkg, _ -> listOf(mgr, "-T", pkg) },
-        ),
-    )
-
-    private fun rInstaller(): LspInstaller = ShellPackageInstaller(
-        ShellPackageDescriptor(
-            languageId = "r",
-            displayName = "languageserver (R)",
-            managerName = "Rscript",
-            managerInstallUrl = "https://www.r-project.org/",
-            binaryName = "Rscript",
-            packageName = "languageserver",
-            buildInstallCommand = { mgr, _, _ ->
-                listOf(mgr, "-e", "install.packages('languageserver', repos='https://cloud.r-project.org')")
-            },
-        ),
-    )
-
-    private fun haskellInstaller(): LspInstaller = HaskellHlsInstaller()
-
     private fun goInstaller(): LspInstaller = GoplsInstaller()
-
-    private fun scalaInstaller(): LspInstaller = MetalsInstaller()
 
     private fun dartInstaller(): LspInstaller = DartSdkInstaller()
 
     private fun flutterInstaller(): LspInstaller = FlutterSdkInstaller()
 
-    private fun swiftInstaller(): LspInstaller = ToolchainDetectInstaller(
-        languageId = "swift",
-        displayName = "sourcekit-lsp (Swift toolchain)",
-        managerName = "sourcekit-lsp",
-        managerInstallUrl = "https://www.swift.org/install/",
-    )
+    private fun swiftInstaller(): LspInstaller = SwiftToolchainInstaller()
 }

@@ -54,6 +54,7 @@ object LanguageRegistry {
                 installGuideUrl = obj.get("installGuideUrl").asString,
                 install = obj.getAsJsonObject("install").entrySet().associate { (k, v) -> k to v.asString },
                 runCommand = obj.get("runCommand").takeIf { !it.isJsonNull }?.asString,
+                launchArgs = obj.getAsJsonArray("launchArgs")?.map { it.asString } ?: listOf("--stdio"),
             )
         }
         return out

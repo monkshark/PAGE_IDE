@@ -70,6 +70,7 @@ internal fun InstallManagerPanel(
     onClose: () -> Unit,
     onInstallRequested: (String) -> Unit,
     onVersionChanged: () -> Unit = {},
+    onBeforeDelete: suspend (lspId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val entries = remember { buildManagerEntries() }
@@ -104,6 +105,7 @@ internal fun InstallManagerPanel(
                 entry = entry,
                 onInstallRequested = onInstallRequested,
                 onVersionChanged = onVersionChanged,
+                onBeforeDelete = onBeforeDelete,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             )
         } else {
@@ -190,6 +192,7 @@ private fun ManagerDetailPane(
     entry: ManagerEntry,
     onInstallRequested: (String) -> Unit,
     onVersionChanged: () -> Unit = {},
+    onBeforeDelete: suspend (lspId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val installer = remember(entry.id) { LspInstallers.forId(entry.id) }
@@ -217,6 +220,8 @@ private fun ManagerDetailPane(
         val dir = inst.installDir(version)
         val wasActive = activeVersion == version
         scope.launch(Dispatchers.IO) {
+            // Shut down any running LSP that may hold open file handles inside the install dir
+            runCatching { onBeforeDelete(entry.id) }
             if (wasActive) {
                 val pointer = dir.parent?.resolve("CURRENT")
                 if (pointer != null) runCatching { java.nio.file.Files.deleteIfExists(pointer) }
@@ -355,13 +360,14 @@ private fun ManagerDetailPane(
     }
 }
 
-private val RUNTIME_IDS = listOf("jdk", "node", "python-runtime", "go-sdk", "cpp-toolchain", "rust-runtime", "dotnet-runtime")
+private val RUNTIME_IDS = listOf("jdk", "node", "python-runtime", "go-sdk", "cpp-toolchain", "mingw-toolchain", "rust-runtime", "dotnet-runtime")
 private val RUNTIME_NAMES = mapOf(
     "jdk" to "Eclipse Temurin JDK",
     "node" to "Node.js",
     "python-runtime" to "Python",
     "go-sdk" to "Go SDK",
     "cpp-toolchain" to "LLVM/Clang",
+    "mingw-toolchain" to "MinGW-w64 (UCRT64)",
     "rust-runtime" to "Rust Toolchain",
     "dotnet-runtime" to ".NET SDK",
 )

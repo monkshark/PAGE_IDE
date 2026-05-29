@@ -14,7 +14,7 @@ object AssetListCache {
         val assets: List<String>,
     )
 
-    const val DEFAULT_TTL_MS: Long = 60 * 60 * 1000L
+    const val DEFAULT_TTL_MS: Long = 5 * 60 * 1000L
 
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
 

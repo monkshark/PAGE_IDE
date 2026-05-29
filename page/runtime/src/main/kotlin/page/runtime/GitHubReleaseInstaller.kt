@@ -72,9 +72,36 @@ class GitHubReleaseInstaller(
     fun installRoot(version: String = currentInstalledVersion() ?: descriptor.defaultVersion ?: "latest"): Path =
         LspInstaller.lspHome().resolve(descriptor.languageId).resolve(version)
 
+    override fun installedVersions(): List<String> {
+        val base = LspInstaller.lspHome().resolve(descriptor.languageId)
+        if (!Files.isDirectory(base)) return emptyList()
+        val os = descriptor.perOs[LspInstaller.osKey()] ?: return emptyList()
+        return runCatching {
+            Files.list(base).use { stream ->
+                stream
+                    .filter { Files.isDirectory(it) && it.fileName.toString() != "CURRENT" }
+                    .filter { Files.exists(it.resolve(os.executableRelative)) }
+                    .map { it.fileName.toString() }
+                    .toList()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    override fun activeVersion(): String? = currentInstalledVersion()
+
+    override fun applyVersion(version: String): Boolean {
+        val os = descriptor.perOs[LspInstaller.osKey()] ?: return false
+        val exe = installRoot(version).resolve(os.executableRelative)
+        if (!Files.exists(exe)) return false
+        writePointer(version)
+        return true
+    }
+
     private fun currentInstalledVersion(): String? {
         val pointer = LspInstaller.lspHome().resolve(descriptor.languageId).resolve("CURRENT")
-        return runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull()
+        val v = runCatching { Files.readString(pointer).trim().takeIf { it.isNotEmpty() } }.getOrNull() ?: return null
+        val os = descriptor.perOs[LspInstaller.osKey()] ?: return null
+        return if (Files.exists(installRoot(v).resolve(os.executableRelative))) v else null
     }
 
     private fun writePointer(version: String) {
