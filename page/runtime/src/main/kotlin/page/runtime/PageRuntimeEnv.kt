@@ -1,6 +1,7 @@
 package page.runtime
 
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 
 object PageRuntimeEnv {
@@ -35,6 +36,17 @@ object PageRuntimeEnv {
         runCatching { CppToolchainInstaller().llvmHome() }.getOrNull()?.let { home ->
             entries += RuntimeEntry(binDir = home.resolve("bin"))
         }
+        runCatching { MingwInstaller().includeRoot() }.getOrNull()?.let { include ->
+            val root = include.parent ?: return@let
+            val sep = System.getProperty("path.separator") ?: ";"
+            entries += RuntimeEntry(
+                binDir = root.resolve("bin"),
+                envVars = mapOf(
+                    "C_INCLUDE_PATH" to include.toAbsolutePath().toString(),
+                    "CPLUS_INCLUDE_PATH" to (include.toAbsolutePath().toString() + sep + include.resolve("c++").toAbsolutePath().toString()),
+                ),
+            )
+        }
         runCatching { RustToolchainInstaller().rustHome() }.getOrNull()?.let { home ->
             entries += RuntimeEntry(binDir = home.resolve("bin"))
         }
@@ -58,5 +70,37 @@ object PageRuntimeEnv {
         val prependBins = runtimes.map { it.binDir.toAbsolutePath().toString() }
         val current = env[pathKey].orEmpty()
         env[pathKey] = (prependBins + current).joinToString(sep)
+        runCatching { ensureClangdConfigForMingw() }
+    }
+
+    private const val PAGE_MANAGED_MARKER = "# PAGE-managed clangd config (auto-generated)"
+
+    fun ensureClangdConfigForMingw() {
+        if (!LspInstaller.isWindows()) return
+        val mingw = MingwInstaller()
+        val ver = mingw.currentInstalledVersion() ?: return
+        val gcc = mingw.gccBinary(ver)
+        if (!Files.exists(gcc)) return
+
+        val localAppData = System.getenv("LOCALAPPDATA") ?: return
+        val configDir = File(localAppData, "clangd")
+        val configFile = File(configDir, "config.yaml")
+
+        val gccYaml = gcc.toAbsolutePath().toString().replace("\\", "/")
+        val desired = """
+            $PAGE_MANAGED_MARKER
+            CompileFlags:
+              Compiler: $gccYaml
+        """.trimIndent() + "\n"
+
+        if (configFile.exists()) {
+            val existing = runCatching { configFile.readText() }.getOrNull() ?: return
+            if (!existing.trimStart().startsWith(PAGE_MANAGED_MARKER)) return
+            if (existing == desired) return
+        }
+        runCatching {
+            if (!configDir.exists()) configDir.mkdirs()
+            configFile.writeText(desired)
+        }
     }
 }

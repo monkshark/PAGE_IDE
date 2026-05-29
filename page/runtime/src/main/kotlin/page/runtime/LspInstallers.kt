@@ -7,9 +7,7 @@ object LspInstallers {
         "rust" to { RustAnalyzerInstaller() },
         "c" to ::clangdInstaller,
         "cpp" to ::clangdInstaller,
-        "lua" to ::luaLanguageServerInstaller,
         "markdown" to ::marksmanInstaller,
-        "zig" to ::zlsInstaller,
         "java" to ::jdtlsInstaller,
         "typescript" to ::typescriptLanguageServerInstaller,
         "javascript" to ::typescriptLanguageServerInstaller,
@@ -25,16 +23,15 @@ object LspInstallers {
         "php" to ::intelephenseInstaller,
         "sql" to ::sqlLanguageServerInstaller,
         "ruby" to ::rubyInstaller,
-        "fsharp" to ::fsharpInstaller,
         "go" to ::goInstaller,
         "swift" to ::swiftInstaller,
-        "scala" to ::scalaInstaller,
         "dart" to ::dartInstaller,
         "flutter" to ::flutterInstaller,
         "jdk" to { JdkInstaller() },
         "node" to { NodeInstaller() },
         "python-runtime" to { PythonInstaller() },
         "cpp-toolchain" to { CppToolchainInstaller() },
+        "mingw-toolchain" to { MingwInstaller() },
         "go-sdk" to { GoSdkInstaller() },
         "rust-runtime" to { RustToolchainInstaller() },
         "dotnet-runtime" to { DotnetSdkInstaller() },
@@ -73,32 +70,6 @@ object LspInstallers {
         ),
     )
 
-    private fun luaLanguageServerInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "lua",
-            displayName = "lua-language-server",
-            owner = "LuaLS",
-            repo = "lua-language-server",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/LuaLS/lua-language-server/releases/download/{tag}/lua-language-server-{versionNoV}-darwin-arm64.tar.gz",
-                    executableRelative = "bin/lua-language-server",
-                    archiveType = ArchiveType.TAR_GZ,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/LuaLS/lua-language-server/releases/download/{tag}/lua-language-server-{versionNoV}-linux-x64.tar.gz",
-                    executableRelative = "bin/lua-language-server",
-                    archiveType = ArchiveType.TAR_GZ,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/LuaLS/lua-language-server/releases/download/{tag}/lua-language-server-{versionNoV}-win32-x64.zip",
-                    executableRelative = "bin/lua-language-server.exe",
-                    archiveType = ArchiveType.ZIP,
-                ),
-            ),
-        ),
-    )
-
     private fun marksmanInstaller(): LspInstaller = GitHubReleaseInstaller(
         GitHubReleaseDescriptor(
             languageId = "markdown",
@@ -125,32 +96,6 @@ object LspInstallers {
         ),
     )
 
-    private fun zlsInstaller(): LspInstaller = GitHubReleaseInstaller(
-        GitHubReleaseDescriptor(
-            languageId = "zig",
-            displayName = "zls",
-            owner = "zigtools",
-            repo = "zls",
-            perOs = mapOf(
-                "macos" to OsAsset(
-                    url = "https://github.com/zigtools/zls/releases/download/{tag}/zls-aarch64-macos.tar.xz",
-                    executableRelative = "zls",
-                    archiveType = ArchiveType.RAW_BINARY,
-                ),
-                "linux" to OsAsset(
-                    url = "https://github.com/zigtools/zls/releases/download/{tag}/zls-x86_64-linux.tar.xz",
-                    executableRelative = "zls",
-                    archiveType = ArchiveType.RAW_BINARY,
-                ),
-                "windows" to OsAsset(
-                    url = "https://github.com/zigtools/zls/releases/download/{tag}/zls-x86_64-windows.zip",
-                    executableRelative = "zls.exe",
-                    archiveType = ArchiveType.ZIP,
-                ),
-            ),
-        ),
-    )
-
     private fun jdtlsInstaller(): LspInstaller = JdtlsInstaller()
 
     private fun typescriptLanguageServerInstaller(): LspInstaller = NpmGlobalInstaller(
@@ -159,6 +104,7 @@ object LspInstallers {
             displayName = "typescript-language-server",
             packageName = "typescript-language-server",
             binaryName = "typescript-language-server",
+            peerPackages = listOf("typescript"),
         ),
     )
 
@@ -283,20 +229,11 @@ object LspInstallers {
         ),
     )
 
-    private fun fsharpInstaller(): LspInstaller = FsAutocompleteInstaller()
-
     private fun goInstaller(): LspInstaller = GoplsInstaller()
-
-    private fun scalaInstaller(): LspInstaller = MetalsInstaller()
 
     private fun dartInstaller(): LspInstaller = DartSdkInstaller()
 
     private fun flutterInstaller(): LspInstaller = FlutterSdkInstaller()
 
-    private fun swiftInstaller(): LspInstaller = ToolchainDetectInstaller(
-        languageId = "swift",
-        displayName = "sourcekit-lsp (Swift toolchain)",
-        managerName = "sourcekit-lsp",
-        managerInstallUrl = "https://www.swift.org/install/",
-    )
+    private fun swiftInstaller(): LspInstaller = SwiftToolchainInstaller()
 }

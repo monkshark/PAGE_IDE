@@ -10,7 +10,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun supportsAllStep1Languages() {
-        for (id in listOf("kotlin", "rust", "c", "cpp", "lua", "markdown", "zig", "java")) {
+        for (id in listOf("kotlin", "rust", "c", "cpp", "markdown", "java")) {
             assertTrue(LspInstallers.supports(id), "expected support for $id")
             assertNotNull(LspInstallers.forId(id), "expected installer for $id")
         }
@@ -39,7 +39,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun gitHubReleaseInstallersHaveAllThreeOsBlocks() {
-        val ids = listOf("c", "cpp", "lua", "markdown", "zig")
+        val ids = listOf("c", "cpp", "markdown")
         for (id in ids) {
             val installer = LspInstallers.forId(id)
             assertTrue(installer is GitHubReleaseInstaller, "$id should be GitHubReleaseInstaller")
@@ -52,7 +52,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun gitHubReleaseInstallersOwnerRepoNonEmpty() {
-        val ids = listOf("c", "cpp", "lua", "markdown", "zig")
+        val ids = listOf("c", "cpp", "markdown")
         for (id in ids) {
             val installer = LspInstallers.forId(id) as GitHubReleaseInstaller
             assertTrue(installer.descriptor.owner.isNotBlank(), "$id missing owner")
@@ -168,7 +168,7 @@ class LspInstallersRegistryTest {
 
     @Test
     fun heavyInstallNullForLightInstallers() {
-        for (id in listOf("typescript", "rust", "go", "scala", "dart")) {
+        for (id in listOf("typescript", "rust", "go", "dart")) {
             val installer = LspInstallers.forId(id)
             assertNotNull(installer, "expected installer for $id")
             assertNull(installer.heavyInstall, "$id should not flag heavy install")
@@ -184,29 +184,12 @@ class LspInstallersRegistryTest {
         assertEquals("gopls", installer.displayName)
     }
 
-    @Test
-    fun scalaUsesMetalsInstallerNotShellPackage() {
-        assertTrue(LspInstallers.supports("scala"))
-        val installer = LspInstallers.forId("scala")
-        assertNotNull(installer)
-        assertTrue(installer is MetalsInstaller, "scala should be MetalsInstaller, got ${installer::class}")
-        assertEquals("metals", installer.displayName)
-    }
 
     @Test
-    fun fsharpUsesFsAutocompleteInstallerNotShellPackage() {
-        assertTrue(LspInstallers.supports("fsharp"))
-        val installer = LspInstallers.forId("fsharp")
-        assertNotNull(installer)
-        assertTrue(installer is FsAutocompleteInstaller, "fsharp should be FsAutocompleteInstaller, got ${installer::class}")
-        assertEquals("fsautocomplete", installer.displayName)
-    }
-
-    @Test
-    fun supportsToolchainDetectorLanguages() {
+    fun swiftUsesSwiftToolchainInstaller() {
         val installer = LspInstallers.forId("swift")
         assertNotNull(installer, "expected installer for swift")
-        assertTrue(installer is ToolchainDetectInstaller, "swift should be ToolchainDetectInstaller, got ${installer::class}")
+        assertTrue(installer is SwiftToolchainInstaller, "swift should be SwiftToolchainInstaller, got ${installer::class}")
     }
 
     @Test
@@ -218,11 +201,11 @@ class LspInstallersRegistryTest {
     }
 
     @Test
-    fun registryCoversAllThirtyJsonLanguages() {
+    fun registryCoversAllSupportedLanguages() {
         val expected = listOf(
             "kotlin", "java", "python", "javascript", "typescript", "go", "rust", "c", "cpp", "dart",
-            "bash", "ruby", "php", "swift", "scala", "lua", "json", "yaml", "html",
-            "css", "markdown", "sql", "fsharp", "zig",
+            "bash", "ruby", "php", "swift", "json", "yaml", "html",
+            "css", "markdown", "sql", "dockerfile",
         )
         for (id in expected) {
             assertTrue(LspInstallers.supports(id), "registry missing language id: $id")
