@@ -1716,12 +1716,11 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                             }
                         },
                     )
-                } else Shell(
-                    primary = primaryPane,
-                    secondary = secondaryPane,
-                    focusedPane = focusedPane,
+                } else IdeMainLayout(
+                    workspace = workspaceState,
+                    editor = editorWorkspace,
+                    ui = layoutUiState,
                     lspRouter = currentLspRouter,
-                    onPaneFocus = { side -> focusedPane = side },
                     onEditorChange = { side, v ->
                         mutatePane(side) {
                             val priorText = it.editorValue.text
@@ -1757,15 +1756,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                         mutatePane(side) { it.copy(book = it.book.move(from, to)) }
                     },
                     onMoveTabAcross = moveTabAcross,
-                    rootDir = rootDir,
-                    expanded = expanded,
-                    treeSelection = treeSelection,
-                    onTreeSelectionChange = { treeSelection = it },
-                    treeRevision = treeRevision,
-                    sidebarWidth = sidebarWidth,
-                    onSidebarResize = { delta ->
-                        sidebarWidth = (sidebarWidth + delta).coerceIn(160.dp, 600.dp)
-                    },
                     onToggle = toggleExpanded,
                     onOpenFile = openInTab,
                     onCreateFileIn = onCreateFileIn,
@@ -1798,65 +1788,22 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     onReplaceAll = onReplaceAll,
                     onSearchClose = closeSearch,
                     onWindowShortcut = handleShortcut,
-                    splitEnabled = splitEnabled,
-                    splitOrientation = splitOrientation,
-                    splitState = splitState,
-                    onSplitStateChange = { splitState = it },
-                    problemsOpen = problemsOpen,
-                    onProblemsToggle = { problemsOpen = !problemsOpen },
-                    onProblemsClose = { problemsOpen = false },
                     onJumpToProblem = jumpToProblem,
                     onApplyRename = applyRename,
-                    problemsHeight = problemsHeight,
-                    onProblemsResizeDelta = { delta ->
-                        problemsHeight = (problemsHeight + delta).coerceIn(80.dp, 600.dp)
-                    },
-                    problemsCollapsed = problemsCollapsed,
-                    onProblemsCollapsedChange = { problemsCollapsed = it },
-                    problemsFileOrder = problemsFileOrder,
-                    onProblemsFileOrderChange = { problemsFileOrder = it },
-                    todoOpen = todoOpen,
                     todoItems = todoItems,
-                    onTodoToggle = { todoOpen = !todoOpen },
-                    onTodoClose = { todoOpen = false },
-                    todoHeight = todoHeight,
-                    onTodoResizeDelta = { delta ->
-                        todoHeight = (todoHeight + delta).coerceIn(80.dp, 600.dp)
-                    },
-                    todoCollapsed = todoCollapsed,
-                    onTodoCollapsedChange = { todoCollapsed = it },
-                    todoFileOrder = todoFileOrder,
-                    onTodoFileOrderChange = { todoFileOrder = it },
-                    terminalOpen = terminalOpen,
                     terminalManager = terminalManager,
                     onTerminalToggle = toggleTerminal,
-                    onTerminalClose = { terminalOpen = false },
-                    terminalHeight = terminalHeight,
-                    onTerminalResizeDelta = { delta ->
-                        terminalHeight = (terminalHeight + delta).coerceIn(120.dp, 600.dp)
-                    },
                     runState = runState,
                     onSelectRunConfig = { id -> runState = runState.select(id) },
                     onStartRun = startActiveRun,
                     onStopRun = stopActiveRun,
                     onOpenRunDialog = openRunDialog,
                     runIsRunning = outputState.running,
-                    outputOpen = outputOpen,
                     outputState = outputState,
-                    onOutputToggle = { outputOpen = !outputOpen },
-                    onOutputClose = { outputOpen = false },
                     onOutputClear = { outputState.clear() },
-                    outputHeight = outputHeight,
-                    onOutputResizeDelta = { delta ->
-                        outputHeight = (outputHeight + delta).coerceIn(120.dp, 1200.dp)
-                    },
                     referencesState = referencesState,
                     onRequestReferences = requestReferences,
                     onReferencesClose = { referencesState = null },
-                    referencesHeight = referencesHeight,
-                    onReferencesResizeDelta = { delta ->
-                        referencesHeight = (referencesHeight + delta).coerceIn(80.dp, 600.dp)
-                    },
                     linePreviewFor = { uri, line -> currentLspRouter.controllerForUri(uri)?.linePreviewFor(uri, line) },
                     foldedLinesFor = foldedLinesFor,
                     onFoldChange = onFoldChange,
@@ -2539,24 +2486,16 @@ private fun lspStatusLineText(lspRouter: LspRouter, activePath: Path?): String? 
 }
 
 @Composable
-private fun Shell(
-    primary: EditorPaneState,
-    secondary: EditorPaneState,
-    focusedPane: PaneSide,
+private fun IdeMainLayout(
+    workspace: WorkspaceState,
+    editor: EditorWorkspaceState,
+    ui: LayoutUiState,
     lspRouter: LspRouter,
-    onPaneFocus: (PaneSide) -> Unit,
     onEditorChange: (PaneSide, TextFieldValue) -> Unit,
     onActivateTab: (PaneSide, Int) -> Unit,
     onCloseTab: (PaneSide, Int) -> Unit,
     onMoveTab: (PaneSide, Int, Int) -> Unit,
     onMoveTabAcross: ((PaneSide, Int) -> Unit)?,
-    rootDir: Path?,
-    expanded: Set<Path>,
-    treeSelection: Set<Path>,
-    onTreeSelectionChange: (Set<Path>) -> Unit,
-    treeRevision: Int,
-    sidebarWidth: Dp,
-    onSidebarResize: (Dp) -> Unit,
     onToggle: (Path, Boolean) -> Unit,
     onOpenFile: (Path) -> Unit,
     onCreateFileIn: (Path) -> Unit,
@@ -2584,55 +2523,22 @@ private fun Shell(
     onReplaceAll: (PaneSide) -> Unit,
     onSearchClose: (PaneSide) -> Unit,
     onWindowShortcut: (KeyEvent) -> Boolean,
-    splitEnabled: Boolean,
-    splitOrientation: SplitOrientation,
-    splitState: SplitPaneState,
-    onSplitStateChange: (SplitPaneState) -> Unit,
-    problemsOpen: Boolean,
-    onProblemsToggle: () -> Unit,
-    onProblemsClose: () -> Unit,
     onJumpToProblem: (Path, Int, Int) -> Unit,
     onApplyRename: (RenameWorkspaceEdit) -> Unit,
-    problemsHeight: Dp,
-    onProblemsResizeDelta: (Dp) -> Unit,
-    problemsCollapsed: Set<String>,
-    onProblemsCollapsedChange: (Set<String>) -> Unit,
-    problemsFileOrder: List<String>,
-    onProblemsFileOrderChange: (List<String>) -> Unit,
-    todoOpen: Boolean,
     todoItems: List<page.editor.TodoItem>,
-    onTodoToggle: () -> Unit,
-    onTodoClose: () -> Unit,
-    todoHeight: Dp,
-    onTodoResizeDelta: (Dp) -> Unit,
-    todoCollapsed: Set<String>,
-    onTodoCollapsedChange: (Set<String>) -> Unit,
-    todoFileOrder: List<String>,
-    onTodoFileOrderChange: (List<String>) -> Unit,
-    terminalOpen: Boolean,
     terminalManager: TerminalManager,
     onTerminalToggle: () -> Unit,
-    onTerminalClose: () -> Unit,
-    terminalHeight: Dp,
-    onTerminalResizeDelta: (Dp) -> Unit,
     runState: RunConfigsState,
     onSelectRunConfig: (String) -> Unit,
     onStartRun: () -> Unit,
     onStopRun: () -> Unit,
     onOpenRunDialog: () -> Unit,
     runIsRunning: Boolean,
-    outputOpen: Boolean,
     outputState: OutputPanelState,
-    onOutputToggle: () -> Unit,
-    onOutputClose: () -> Unit,
     onOutputClear: () -> Unit,
-    outputHeight: Dp,
-    onOutputResizeDelta: (Dp) -> Unit,
     referencesState: ReferencesQueryState?,
     onRequestReferences: (Path, Int, Int, String) -> Unit,
     onReferencesClose: () -> Unit,
-    referencesHeight: Dp,
-    onReferencesResizeDelta: (Dp) -> Unit,
     linePreviewFor: (String, Int) -> String?,
     foldedLinesFor: (Path?) -> Set<Int> = { emptySet() },
     onFoldChange: (Path, Set<Int>) -> Unit = { _, _ -> },
@@ -2654,7 +2560,7 @@ private fun Shell(
     onSettingsPanelClose: () -> Unit = {},
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
-    val shellActivePath = paneFor(focusedPane, primary, secondary).book.active?.path
+    val shellActivePath = editor.focused().book.active?.path
     val shellCtrl = shellActivePath?.let { lspRouter.controllerFor(it) }
     val installGuideOpen by (shellCtrl?.installGuideOpen ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsState()
     var runtimeDialogOpen by remember { mutableStateOf<String?>(null) }
@@ -2665,7 +2571,7 @@ private fun Shell(
     val runtimeScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(rootDir)
+            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
             runtimeVersions.value = vers
             runtimeSources.value = srcs
             runtimeBuildFileVersions.value = bvs
@@ -2674,26 +2580,26 @@ private fun Shell(
     Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize()) {
         TitleBar(
-            path = paneFor(focusedPane, primary, secondary).book.active?.path,
-            terminalOpen = terminalOpen,
+            path = editor.focused().book.active?.path,
+            terminalOpen = ui.terminalOpen,
             onTerminalToggle = onTerminalToggle,
             runState = runState,
-            activeFilePath = paneFor(focusedPane, primary, secondary).book.active?.path,
+            activeFilePath = editor.focused().book.active?.path,
             onSelectRunConfig = onSelectRunConfig,
             runIsRunning = runIsRunning,
             onStartRun = onStartRun,
             onStopRun = onStopRun,
             onOpenRunDialog = onOpenRunDialog,
-            outputOpen = outputOpen,
-            onOutputToggle = onOutputToggle,
+            outputOpen = ui.outputOpen,
+            onOutputToggle = { ui.outputOpen = !ui.outputOpen },
         )
         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
             FileTreePanel(
-                root = rootDir,
-                expanded = expanded,
-                selection = treeSelection,
+                root = workspace.rootDir,
+                expanded = workspace.expanded,
+                selection = workspace.treeSelection,
                 onToggle = onToggle,
-                onSelectionChange = onTreeSelectionChange,
+                onSelectionChange = { workspace.treeSelection = it },
                 onOpenFile = onOpenFile,
                 onCreateFile = onCreateFileIn,
                 onCreateFolder = onCreateFolderIn,
@@ -2711,10 +2617,10 @@ private fun Shell(
                 onDropRejected = onDropRejected,
                 onPanelFocusChanged = onTreeFocusChanged,
                 pendingFocusTick = pendingTreeFocusTick,
-                revision = treeRevision,
-                modifier = Modifier.width(sidebarWidth).fillMaxHeight(),
+                revision = workspace.treeRevision,
+                modifier = Modifier.width(ui.sidebarWidth).fillMaxHeight(),
             )
-            ResizeHandle(onSidebarResize)
+            ResizeHandle(onDeltaDp = { ui.sidebarWidth = (ui.sidebarWidth + it).coerceIn(160.dp, 600.dp) })
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 if (installManagerOpen != null) {
                     InstallManagerPanel(
@@ -2727,7 +2633,7 @@ private fun Shell(
                         onVersionChanged = {
                             runtimeScope.launch {
                                 withContext(Dispatchers.IO) {
-                                    val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(rootDir)
+                                    val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
                                     runtimeVersions.value = vers
                                     runtimeSources.value = srcs
                                     runtimeBuildFileVersions.value = bvs
@@ -2748,21 +2654,21 @@ private fun Shell(
                         onClose = onSettingsPanelClose,
                         modifier = Modifier.fillMaxSize(),
                     )
-                } else if (splitEnabled) {
+                } else if (editor.splitEnabled) {
                     SplitPane(
-                        state = splitState,
-                        onStateChange = onSplitStateChange,
-                        orientation = splitOrientation,
+                        state = editor.splitState,
+                        onStateChange = { editor.splitState = it },
+                        orientation = editor.splitOrientation,
                         modifier = Modifier.fillMaxSize(),
                         firstZIndex = if (dragSourcePane == PaneSide.PRIMARY) 1f else 0f,
                         secondZIndex = if (dragSourcePane == PaneSide.SECONDARY) 1f else 0f,
                         first = {
                             PaneRegion(
-                                pane = primary,
+                                pane = editor.primaryPane,
                                 side = PaneSide.PRIMARY,
                                 lspRouter = lspRouter,
-                                isFocused = focusedPane == PaneSide.PRIMARY,
-                                onPaneFocus = onPaneFocus,
+                                isFocused = editor.focusedPane == PaneSide.PRIMARY,
+                                onPaneFocus = { editor.focusedPane = it },
                                 onEditorChange = onEditorChange,
                                 onActivateTab = onActivateTab,
                                 onCloseTab = onCloseTab,
@@ -2779,15 +2685,15 @@ private fun Shell(
                                 onWindowShortcut = onWindowShortcut,
                                 onTabDragStart = { dragSourcePane = PaneSide.PRIMARY },
                                 onTabDragEnd = { dragSourcePane = null },
-                                onProblemsToggle = onProblemsToggle,
+                                onProblemsToggle = { ui.problemsOpen = !ui.problemsOpen },
                                 onJumpToProblem = onJumpToProblem,
                                 onApplyRename = onApplyRename,
                                 onRequestReferences = onRequestReferences,
                                 todoCount = todoItems.size,
-                                onTodoToggle = onTodoToggle,
-                                workspaceRoot = rootDir,
-                                editorFocusVersion = if (focusedPane == PaneSide.PRIMARY) editorFocusVersion else 0,
-                                initialFoldedStartLines = foldedLinesFor(primary.book.active?.path),
+                                onTodoToggle = { ui.todoOpen = !ui.todoOpen },
+                                workspaceRoot = workspace.rootDir,
+                                editorFocusVersion = if (editor.focusedPane == PaneSide.PRIMARY) editorFocusVersion else 0,
+                                initialFoldedStartLines = foldedLinesFor(editor.primaryPane.book.active?.path),
                                 onFoldStartLinesChange = onFoldChange,
                                 editorScrollFor = editorScrollFor,
                                 onEditorScrollChange = onEditorScrollChange,
@@ -2802,11 +2708,11 @@ private fun Shell(
                         },
                         second = {
                             PaneRegion(
-                                pane = secondary,
+                                pane = editor.secondaryPane,
                                 side = PaneSide.SECONDARY,
                                 lspRouter = lspRouter,
-                                isFocused = focusedPane == PaneSide.SECONDARY,
-                                onPaneFocus = onPaneFocus,
+                                isFocused = editor.focusedPane == PaneSide.SECONDARY,
+                                onPaneFocus = { editor.focusedPane = it },
                                 onEditorChange = onEditorChange,
                                 onActivateTab = onActivateTab,
                                 onCloseTab = onCloseTab,
@@ -2823,15 +2729,15 @@ private fun Shell(
                                 onWindowShortcut = onWindowShortcut,
                                 onTabDragStart = { dragSourcePane = PaneSide.SECONDARY },
                                 onTabDragEnd = { dragSourcePane = null },
-                                onProblemsToggle = onProblemsToggle,
+                                onProblemsToggle = { ui.problemsOpen = !ui.problemsOpen },
                                 onJumpToProblem = onJumpToProblem,
                                 onApplyRename = onApplyRename,
                                 onRequestReferences = onRequestReferences,
                                 todoCount = todoItems.size,
-                                onTodoToggle = onTodoToggle,
-                                workspaceRoot = rootDir,
-                                editorFocusVersion = if (focusedPane == PaneSide.SECONDARY) editorFocusVersion else 0,
-                                initialFoldedStartLines = foldedLinesFor(secondary.book.active?.path),
+                                onTodoToggle = { ui.todoOpen = !ui.todoOpen },
+                                workspaceRoot = workspace.rootDir,
+                                editorFocusVersion = if (editor.focusedPane == PaneSide.SECONDARY) editorFocusVersion else 0,
+                                initialFoldedStartLines = foldedLinesFor(editor.secondaryPane.book.active?.path),
                                 onFoldStartLinesChange = onFoldChange,
                                 editorScrollFor = editorScrollFor,
                                 onEditorScrollChange = onEditorScrollChange,
@@ -2847,11 +2753,11 @@ private fun Shell(
                     )
                 } else {
                     PaneRegion(
-                        pane = primary,
+                        pane = editor.primaryPane,
                         side = PaneSide.PRIMARY,
                         lspRouter = lspRouter,
                         isFocused = true,
-                        onPaneFocus = onPaneFocus,
+                        onPaneFocus = { editor.focusedPane = it },
                         onEditorChange = onEditorChange,
                         onActivateTab = onActivateTab,
                         onCloseTab = onCloseTab,
@@ -2866,15 +2772,15 @@ private fun Shell(
                         onReplaceAll = onReplaceAll,
                         onSearchClose = onSearchClose,
                         onWindowShortcut = onWindowShortcut,
-                        onProblemsToggle = onProblemsToggle,
+                        onProblemsToggle = { ui.problemsOpen = !ui.problemsOpen },
                         onJumpToProblem = onJumpToProblem,
                         onApplyRename = onApplyRename,
                         onRequestReferences = onRequestReferences,
                         todoCount = todoItems.size,
-                        onTodoToggle = onTodoToggle,
-                        workspaceRoot = rootDir,
+                        onTodoToggle = { ui.todoOpen = !ui.todoOpen },
+                        workspaceRoot = workspace.rootDir,
                         editorFocusVersion = editorFocusVersion,
-                        initialFoldedStartLines = foldedLinesFor(primary.book.active?.path),
+                        initialFoldedStartLines = foldedLinesFor(editor.primaryPane.book.active?.path),
                         onFoldStartLinesChange = onFoldChange,
                         editorScrollFor = editorScrollFor,
                         onEditorScrollChange = onEditorScrollChange,
@@ -2901,30 +2807,30 @@ private fun Shell(
                 )
             }
         }
-        if (problemsOpen) {
+        if (ui.problemsOpen) {
             ProblemsPanel(
                 diagnostics = lspRouter.allDiagnosticsByUri,
                 onJump = onJumpToProblem,
-                onClose = onProblemsClose,
-                height = problemsHeight,
-                onResizeDelta = onProblemsResizeDelta,
-                collapsedKeys = problemsCollapsed,
-                onCollapsedKeysChange = onProblemsCollapsedChange,
-                fileOrder = problemsFileOrder,
-                onFileOrderChange = onProblemsFileOrderChange,
+                onClose = { ui.problemsOpen = false },
+                height = ui.problemsHeight,
+                onResizeDelta = { ui.problemsHeight = (ui.problemsHeight + it).coerceIn(80.dp, 600.dp) },
+                collapsedKeys = ui.problemsCollapsed,
+                onCollapsedKeysChange = { ui.problemsCollapsed = it },
+                fileOrder = ui.problemsFileOrder,
+                onFileOrderChange = { ui.problemsFileOrder = it },
             )
         }
-        if (todoOpen) {
+        if (ui.todoOpen) {
             TodoPanel(
                 items = todoItems,
                 onJump = onJumpToProblem,
-                onClose = onTodoClose,
-                height = todoHeight,
-                onResizeDelta = onTodoResizeDelta,
-                collapsedKeys = todoCollapsed,
-                onCollapsedKeysChange = onTodoCollapsedChange,
-                fileOrder = todoFileOrder,
-                onFileOrderChange = onTodoFileOrderChange,
+                onClose = { ui.todoOpen = false },
+                height = ui.todoHeight,
+                onResizeDelta = { ui.todoHeight = (ui.todoHeight + it).coerceIn(80.dp, 600.dp) },
+                collapsedKeys = ui.todoCollapsed,
+                onCollapsedKeysChange = { ui.todoCollapsed = it },
+                fileOrder = ui.todoFileOrder,
+                onFileOrderChange = { ui.todoFileOrder = it },
             )
         }
         if (referencesState != null) {
@@ -2932,27 +2838,27 @@ private fun Shell(
                 state = referencesState,
                 onJump = onJumpToProblem,
                 onClose = onReferencesClose,
-                height = referencesHeight,
-                onResizeDelta = onReferencesResizeDelta,
+                height = ui.referencesHeight,
+                onResizeDelta = { ui.referencesHeight = (ui.referencesHeight + it).coerceIn(80.dp, 600.dp) },
                 linePreviewFor = linePreviewFor,
             )
         }
-        if (terminalOpen) {
+        if (ui.terminalOpen) {
             TerminalPanel(
                 manager = terminalManager,
-                onPanelClose = onTerminalClose,
-                height = terminalHeight,
-                onResizeDelta = onTerminalResizeDelta,
+                onPanelClose = { ui.terminalOpen = false },
+                height = ui.terminalHeight,
+                onResizeDelta = { ui.terminalHeight = (ui.terminalHeight + it).coerceIn(120.dp, 600.dp) },
             )
         }
-        if (outputOpen) {
+        if (ui.outputOpen) {
             OutputPanel(
                 state = outputState,
-                onClose = onOutputClose,
+                onClose = { ui.outputOpen = false },
                 onClear = onOutputClear,
                 onStop = onStopRun,
-                height = outputHeight,
-                onResizeDelta = onOutputResizeDelta,
+                height = ui.outputHeight,
+                onResizeDelta = { ui.outputHeight = (ui.outputHeight + it).coerceIn(120.dp, 1200.dp) },
             )
         }
     }
@@ -3003,7 +2909,7 @@ private fun Shell(
                 onInstalled = {
                     runtimeScope.launch {
                         withContext(Dispatchers.IO) {
-                            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(rootDir)
+                            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
                             runtimeVersions.value = vers
                             runtimeSources.value = srcs
                             runtimeBuildFileVersions.value = bvs
@@ -3113,9 +3019,6 @@ private fun captureVersion(cmd: String, vararg args: String): String? {
     p.waitFor()
     return out?.trim()?.takeIf { it.isNotBlank() }
 }
-
-private fun paneFor(side: PaneSide, primary: EditorPaneState, secondary: EditorPaneState) =
-    if (side == PaneSide.PRIMARY) primary else secondary
 
 @Composable
 private fun PaneRegion(
