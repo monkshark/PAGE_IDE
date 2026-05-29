@@ -1,6 +1,10 @@
 package page.lsp
 
 import org.eclipse.lsp4j.ClientCapabilities
+import org.eclipse.lsp4j.CodeActionCapabilities
+import org.eclipse.lsp4j.CodeActionKindCapabilities
+import org.eclipse.lsp4j.CodeActionLiteralSupportCapabilities
+import org.eclipse.lsp4j.CodeActionResolveSupportCapabilities
 import org.eclipse.lsp4j.CompletionCapabilities
 import org.eclipse.lsp4j.CompletionItemCapabilities
 import org.eclipse.lsp4j.DidChangeConfigurationParams
@@ -123,6 +127,25 @@ class LspClient(
                     completionItem = CompletionItemCapabilities().apply {
                         snippetSupport = true
                     }
+                }
+                codeAction = CodeActionCapabilities().apply {
+                    codeActionLiteralSupport = CodeActionLiteralSupportCapabilities().apply {
+                        codeActionKind = CodeActionKindCapabilities(
+                            listOf(
+                                "",
+                                "quickfix",
+                                "refactor",
+                                "refactor.extract",
+                                "refactor.inline",
+                                "refactor.rewrite",
+                                "source",
+                                "source.organizeImports",
+                            )
+                        )
+                    }
+                    isPreferredSupport = true
+                    dataSupport = true
+                    resolveSupport = CodeActionResolveSupportCapabilities(listOf("edit"))
                 }
             }
         }

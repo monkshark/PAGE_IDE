@@ -319,7 +319,12 @@ object CompletionEnhancer {
 
     private fun prefixRank(item: CompletionItem, prefix: String, prefixUppercase: Boolean): Int {
         val base = minOf(fuzzyScore(item.label, prefix), fuzzyScore(item.filterText, prefix))
-        return if (prefixUppercase && item.kind == CompletionItemKind.KEYWORD) base + 1 else base
+        val collapsed = when (base) {
+            0 -> 0
+            99 -> 99
+            else -> 1
+        }
+        return if (prefixUppercase && item.kind == CompletionItemKind.KEYWORD) collapsed + 1 else collapsed
     }
 
     private val typeKinds = setOf(

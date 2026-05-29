@@ -101,11 +101,14 @@ object KotlinLsp {
         executable: Path,
         workspaceRoot: Path? = null,
         onStderrLine: ((String) -> Unit)? = null,
+        env: Map<String, String> = System.getenv(),
     ): LspClient {
         val builder = ProcessBuilder(executable.toAbsolutePath().toString())
         if (workspaceRoot != null && Files.isDirectory(workspaceRoot)) {
             builder.directory(workspaceRoot.toFile())
         }
+        // Apply PAGE-managed env (runtimes, include paths, etc.)
+        builder.environment().putAll(env)
         // KLS 1.3.x 의 번들 코틀린 컴파일러가 JDK 25+ 의 java.version 포맷을 파싱하지 못해 크래시함.
         // PAGE 가 도는 JVM (toolchain 으로 JDK 21 보장) 을 KLS 에 재사용해 회피.
         val javaHome = System.getProperty("java.home")

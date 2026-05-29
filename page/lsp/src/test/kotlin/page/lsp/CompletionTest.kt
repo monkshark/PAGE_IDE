@@ -594,4 +594,85 @@ class CompletionTest {
         assertEquals("substring(start, ".length, r.tabstops[1].start)
         assertEquals("substring(start, end".length, r.tabstops[1].end)
     }
+
+    @Test
+    fun `C dot trigger keeps struct fields and methods, drops keywords`() {
+        val items = listOf(
+            CompletionItem(label = "size", kind = CompletionItemKind.FIELD, insertText = "size", isSnippet = false),
+            CompletionItem(label = "name", kind = CompletionItemKind.FIELD, insertText = "name", isSnippet = false),
+            CompletionItem(label = "init", kind = CompletionItemKind.METHOD, insertText = "init", isSnippet = false),
+            CompletionItem(label = "struct", kind = CompletionItemKind.KEYWORD, insertText = "struct", isSnippet = false),
+            CompletionItem(label = "static", kind = CompletionItemKind.KEYWORD, insertText = "static", isSnippet = false),
+        )
+        val out = CompletionEnhancer.enhance(items, triggerCharacter = ".")
+        val labels = out.map { it.label }
+        assertTrue("size" in labels)
+        assertTrue("name" in labels)
+        assertTrue("init" in labels)
+        assertFalse("struct" in labels)
+        assertFalse("static" in labels)
+    }
+
+    @Test
+    fun `C invoke trigger keeps keywords alongside functions`() {
+        val items = listOf(
+            CompletionItem(label = "strcmp", kind = CompletionItemKind.FUNCTION, detail = "int (const char *, const char *)", insertText = "strcmp", isSnippet = false),
+            CompletionItem(label = "struct", kind = CompletionItemKind.KEYWORD, insertText = "struct", isSnippet = false),
+        )
+        val out = CompletionEnhancer.enhance(items, triggerCharacter = null)
+        val labels = out.map { it.label }
+        assertTrue("struct" in labels, "keyword 'struct' must remain when not dot-triggered")
+        assertTrue(labels.any { it.startsWith("strcmp(") }, "strcmp should be present (possibly enhanced with params)")
+    }
+
+    @Test
+    fun `C dot trigger with empty prefix preserves clangd member ordering`() {
+        val list = org.eclipse.lsp4j.CompletionList(
+            false,
+            listOf(
+                org.eclipse.lsp4j.CompletionItem("len").apply { kind = org.eclipse.lsp4j.CompletionItemKind.Field },
+                org.eclipse.lsp4j.CompletionItem("data").apply { kind = org.eclipse.lsp4j.CompletionItemKind.Field },
+                org.eclipse.lsp4j.CompletionItem("clone").apply { kind = org.eclipse.lsp4j.CompletionItemKind.Method },
+                org.eclipse.lsp4j.CompletionItem("if").apply { kind = org.eclipse.lsp4j.CompletionItemKind.Keyword },
+            ),
+        )
+        val mapped = CompletionList.fromLsp(list, triggerCharacter = ".", prefix = "")
+        val labels = mapped.items.map { it.label }
+        assertTrue("len" in labels)
+        assertTrue("data" in labels)
+        assertTrue("clone" in labels)
+        assertFalse("if" in labels)
+    }
+
+    @Test
+    fun `C completion prefix middle-of-word matches struct field names`() {
+        val items = listOf(
+            CompletionItem(label = "buffer", kind = CompletionItemKind.FIELD, insertText = "buffer", isSnippet = false),
+            CompletionItem(label = "buf_size", kind = CompletionItemKind.FIELD, insertText = "buf_size", isSnippet = false),
+            CompletionItem(label = "count", kind = CompletionItemKind.FIELD, insertText = "count", isSnippet = false),
+        )
+        val filtered = CompletionEnhancer.filterByPrefix(items, "buf")
+        val labels = filtered.map { it.label }
+        assertTrue("buffer" in labels)
+        assertTrue("buf_size" in labels)
+        assertFalse("count" in labels)
+    }
+
+    @Test
+    fun `C completion textEdit range from clangd member completion is preserved`() {
+        val src = org.eclipse.lsp4j.CompletionItem("length").apply {
+            kind = org.eclipse.lsp4j.CompletionItemKind.Field
+            textEdit = Either.forLeft(
+                TextEdit(Range(Position(11, 6), Position(11, 6)), "length"),
+            )
+        }
+        val mapped = CompletionItem.fromLsp(src)
+        assertEquals("length", mapped.label)
+        assertEquals(CompletionItemKind.FIELD, mapped.kind)
+        assertNotNull(mapped.edit)
+        assertEquals(11, mapped.edit!!.startLine)
+        assertEquals(6, mapped.edit!!.startCharacter)
+        assertEquals(11, mapped.edit!!.endLine)
+        assertEquals(6, mapped.edit!!.endCharacter)
+    }
 }

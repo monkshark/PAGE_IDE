@@ -38,6 +38,11 @@ class LspRouter(
     @Synchronized
     fun controllerById(id: String): LspController? = controllers[id]
 
+    @Synchronized
+    fun shutdownLanguage(id: String) {
+        controllers.remove(id)?.shutdown()
+    }
+
     val allDiagnosticsByUri: Map<String, List<Diagnostic>>
         @Synchronized get() = controllers.values
             .flatMap { it.diagnosticsByUri.entries }
@@ -48,6 +53,17 @@ class LspRouter(
         val path = runCatching { java.nio.file.Paths.get(java.net.URI(uri)) }.getOrNull() ?: return null
         return controllerFor(path)
     }
+
+    val startingActivities: List<LspController.Activity>
+        @Synchronized get() = controllers.entries
+            .filter { it.value.status.value == LspController.Status.STARTING }
+            .map { (id, ctrl) ->
+                LspController.Activity(
+                    kind = "startup",
+                    label = id,
+                    startedAtMs = ctrl.startedAtMs,
+                )
+            }
 
     fun applyExternalChange(uri: String, newText: String) {
         controllerForUri(uri)?.applyExternalChange(uri, newText)

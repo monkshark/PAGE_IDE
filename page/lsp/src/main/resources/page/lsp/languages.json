@@ -190,7 +190,7 @@
                                       },
                           "runCommand":  null,
                           "launchArgs":  [
-
+                                              "--query-driver=**"
                                          ]
                       },
                       {
@@ -218,7 +218,7 @@
                                       },
                           "runCommand":  null,
                           "launchArgs":  [
-
+                                              "--query-driver=**"
                                          ]
                       },
                       {
@@ -357,53 +357,6 @@
                                           "windows":  "Install Swift toolchain from https://swift.org/download/"
                                       },
                           "runCommand":  "swift",
-                          "launchArgs":  [
-
-                                         ]
-                      },
-                      {
-                          "id":  "scala",
-                          "displayName":  "Scala",
-                          "extensions":  [
-                                             "scala",
-                                             "sc"
-                                         ],
-                          "lspBinaries":  [
-                                              "metals"
-                                          ],
-                          "lspWindowsBinaries":  [
-                                                     "metals.bat"
-                                                 ],
-                          "installGuideUrl":  "https://scalameta.org/metals/",
-                          "install":  {
-                                          "macos":  "brew install coursier/formulas/coursier \u0026\u0026 cs install metals",
-                                          "linux":  "Install coursier then `cs install metals`",
-                                          "windows":  "Install coursier then `cs install metals`"
-                                      },
-                          "runCommand":  "scala",
-                          "launchArgs":  [
-
-                                         ]
-                      },
-                      {
-                          "id":  "lua",
-                          "displayName":  "Lua",
-                          "extensions":  [
-                                             "lua"
-                                         ],
-                          "lspBinaries":  [
-                                              "lua-language-server"
-                                          ],
-                          "lspWindowsBinaries":  [
-                                                     "lua-language-server.exe"
-                                                 ],
-                          "installGuideUrl":  "https://luals.github.io/",
-                          "install":  {
-                                          "macos":  "brew install lua-language-server",
-                                          "linux":  "Download from https://github.com/LuaLS/lua-language-server/releases",
-                                          "windows":  "Download from https://github.com/LuaLS/lua-language-server/releases"
-                                      },
-                          "runCommand":  "lua",
                           "launchArgs":  [
 
                                          ]
@@ -552,54 +505,6 @@
                                              "up",
                                              "--method",
                                              "stdio"
-                                         ]
-                      },
-                      {
-                          "id":  "fsharp",
-                          "displayName":  "F#",
-                          "extensions":  [
-                                             "fs",
-                                             "fsx",
-                                             "fsi"
-                                         ],
-                          "lspBinaries":  [
-                                              "fsautocomplete"
-                                          ],
-                          "lspWindowsBinaries":  [
-                                                     "fsautocomplete.exe"
-                                                 ],
-                          "installGuideUrl":  "https://github.com/fsharp/FsAutoComplete",
-                          "install":  {
-                                          "macos":  "dotnet tool install -g fsautocomplete",
-                                          "linux":  "dotnet tool install -g fsautocomplete",
-                                          "windows":  "dotnet tool install -g fsautocomplete"
-                                      },
-                          "runCommand":  "dotnet fsi",
-                          "launchArgs":  [
-                                             "--adaptive-lsp-server-enabled"
-                                         ]
-                      },
-                      {
-                          "id":  "zig",
-                          "displayName":  "Zig",
-                          "extensions":  [
-                                             "zig"
-                                         ],
-                          "lspBinaries":  [
-                                              "zls"
-                                          ],
-                          "lspWindowsBinaries":  [
-                                                     "zls.exe"
-                                                 ],
-                          "installGuideUrl":  "https://github.com/zigtools/zls",
-                          "install":  {
-                                          "macos":  "Download from https://github.com/zigtools/zls/releases",
-                                          "linux":  "Download from https://github.com/zigtools/zls/releases",
-                                          "windows":  "Download from https://github.com/zigtools/zls/releases"
-                                      },
-                          "runCommand":  "zig run",
-                          "launchArgs":  [
-
                                          ]
                       },
                       {

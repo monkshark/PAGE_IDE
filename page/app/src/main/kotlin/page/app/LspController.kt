@@ -68,6 +68,8 @@ class LspController(
     data class Activity(val kind: String, val label: String, val startedAtMs: Long)
 
     val status: MutableState<Status> = mutableStateOf(Status.IDLE)
+    var startedAtMs: Long = System.currentTimeMillis()
+        private set
     val statusDetail: MutableState<String> = mutableStateOf("")
     val missingDefinition: MutableState<LanguageDefinition?> = mutableStateOf(null)
     val missingAttempted: MutableState<List<String>> = mutableStateOf(emptyList())
@@ -150,12 +152,13 @@ class LspController(
             return
         }
         status.value = Status.STARTING
+        startedAtMs = System.currentTimeMillis()
         statusDetail.value = "starting (${resolution.origin}: ${resolution.executable})"
         startActivity(STARTUP_KIND, "Starting…")
         println("[lsp] STARTING — ${resolution.origin}: ${resolution.executable}")
         val myGeneration = ++clientGeneration
         try {
-            val c = backend.spawn(resolution.executable, workspaceRoot, onStderrLine = ::onLspStderr)
+            val c = backend.spawn(resolution.executable, workspaceRoot, onStderrLine = ::onLspStderr, env = env)
             c.onDiagnostics { params -> if (myGeneration == clientGeneration) onDiagnostics(params) }
             c.onLogMessage { mp ->
                 val rendered = if (mp.type == org.eclipse.lsp4j.MessageType.Error) condenseStackTrace(mp.message ?: "") else mp.message
@@ -163,7 +166,19 @@ class LspController(
                 applyActivityEvent(parseKlsActivity(mp.message))
             }
             c.onShowMessage { mp -> println("[lsp:show/${mp.type}] ${mp.message}") }
-            c.start().whenComplete { result, throwable ->
+            val startFuture = c.start()
+            scope.launch {
+                kotlinx.coroutines.delay(60_000)
+                if (myGeneration == clientGeneration && status.value == Status.STARTING) {
+                    println("[lsp] STARTING timeout (60s) — marking FAILED")
+                    startFuture.cancel(true)
+                    endActivity(STARTUP_KIND)
+                    clearActivities("initialize timeout")
+                    status.value = Status.FAILED
+                    statusDetail.value = "initialize did not respond within 60s"
+                }
+            }
+            startFuture.whenComplete { result, throwable ->
                 endActivity(STARTUP_KIND)
                 if (throwable != null) {
                     clearActivities("initialize failed")
@@ -1650,13 +1665,25 @@ class LspController(
 
     private fun onDiagnostics(params: PublishDiagnosticsParams) {
         val uri = params.uri ?: return
+        if (isNoiseUri(uri)) return
         val mapped = params.diagnostics.orEmpty().map(Diagnostic::fromLsp)
         diagnosticsByUri[uri] = mapped
-        println("[lsp] publishDiagnostics $uri — ${mapped.size} diagnostic(s)")
-        mapped.take(5).forEach { d ->
-            val msgPreview = d.message.take(60).replace('\n', ' ')
-            println("    · L${d.start.line}:${d.start.character} sev=${d.severity} code='${d.code ?: ""}' msg='$msgPreview'")
+        if (mapped.isNotEmpty()) {
+            println("[lsp] publishDiagnostics $uri — ${mapped.size} diagnostic(s)")
+            mapped.take(5).forEach { d ->
+                val msgPreview = d.message.take(60).replace('\n', ' ')
+                println("    · L${d.start.line}:${d.start.character} sev=${d.severity} code='${d.code ?: ""}' msg='$msgPreview'")
+            }
         }
+    }
+
+    private fun isNoiseUri(uri: String): Boolean {
+        return uri.contains("/.clj-kondo/.cache/") ||
+            uri.contains("/.lsp/.cache/") ||
+            uri.contains("/.gradle/") ||
+            uri.contains("/node_modules/") ||
+            uri.contains("/.scala-build/") ||
+            uri.endsWith(".transit.json")
     }
 }
 

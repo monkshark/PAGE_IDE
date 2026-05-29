@@ -14,6 +14,7 @@ interface LanguageBackend {
         executable: Path,
         workspaceRoot: Path? = null,
         onStderrLine: ((String) -> Unit)? = null,
+        env: Map<String, String> = System.getenv(),
     ): LspClient
 
     sealed class Resolution {

@@ -50,6 +50,7 @@ class GenericLanguageBackend(
         executable: Path,
         workspaceRoot: Path?,
         onStderrLine: ((String) -> Unit)?,
+        env: Map<String, String>,
     ): LspClient {
         val command = mutableListOf(executable.toAbsolutePath().toString())
         command += definition.launchArgs
@@ -58,6 +59,8 @@ class GenericLanguageBackend(
             builder.directory(workspaceRoot.toFile())
         }
         builder.redirectErrorStream(false)
+        // Apply PAGE-managed env (runtimes, include paths, etc.)
+        builder.environment().putAll(env)
         envSetup?.invoke(builder.environment())
         val process = builder.start()
         val transport = if (onStderrLine != null) ProcessTransport(process, onStderrLine)

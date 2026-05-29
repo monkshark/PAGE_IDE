@@ -188,8 +188,25 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     var fileTreeFocused by remember { mutableStateOf(false) }
     var fileOpConfirm: FileOpConfirmState? by remember { mutableStateOf(null) }
     var pendingTreeFocusTick by remember { mutableStateOf(0) }
-    var palette: GlassPalette by remember { mutableStateOf(AppSettings.loadPalette()) }
+    var pageSettings: PageSettings by remember {
+        mutableStateOf(
+            PageSettings(
+                autoSave = AppSettings.loadAutoSave(),
+                editor = AppSettings.loadEditor(),
+                lsp = AppSettings.loadLsp(),
+                autoInput = AppSettings.loadAutoInput(),
+                ui = AppSettings.loadUi(),
+                run = AppSettings.loadRun(),
+            )
+        )
+    }
+    var palette: GlassPalette by remember { mutableStateOf(pageSettings.ui.palette) }
+    LaunchedEffect(pageSettings.ui.sidebarWidth) {
+        sidebarWidth = pageSettings.ui.sidebarWidth.dp
+    }
     var paletteToastUntil: Long by remember { mutableStateOf(0L) }
+    val autoSaveOptions: AutoSaveOptions = pageSettings.autoSave
+    var settingsDialogOpen by remember { mutableStateOf(false) }
     var dropResultToast: DropResultToastState? by remember { mutableStateOf(null) }
     var documentSymbolOpen by remember { mutableStateOf(false) }
     var documentSymbolList by remember { mutableStateOf<List<DocumentSymbolEntry>>(emptyList()) }
@@ -751,6 +768,40 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 mutateFocused { it.copy(book = it.book.openOrFocus(target, pane.editorValue.text)) }
             }
         }
+    }
+    val saveAllDirty: () -> Int = {
+        val pendingByPath = LinkedHashMap<Path, String>()
+        for (side in listOf(PaneSide.PRIMARY, PaneSide.SECONDARY)) {
+            val pane = paneOf(side)
+            val activeIdx = pane.book.activeIndex
+            pane.book.tabs.forEachIndexed { idx, tab ->
+                if (!FileKinds.classify(tab.path).isEditableAsText) return@forEachIndexed
+                val liveText = if (idx == activeIdx) pane.editorValue.text else tab.text
+                if (liveText != tab.savedText) {
+                    pendingByPath[tab.path] = liveText
+                }
+            }
+        }
+        var saved = 0
+        for ((path, text) in pendingByPath) {
+            try {
+                FileDocument.save(path, text)
+                saved += 1
+            } catch (_: java.io.IOException) { }
+        }
+        if (saved > 0) {
+            mutatePane(PaneSide.PRIMARY) { state ->
+                var book = state.book
+                for ((path, text) in pendingByPath) book = book.markPathSaved(path, text)
+                state.copy(book = book)
+            }
+            mutatePane(PaneSide.SECONDARY) { state ->
+                var book = state.book
+                for ((path, text) in pendingByPath) book = book.markPathSaved(path, text)
+                state.copy(book = book)
+            }
+        }
+        saved
     }
     val openFolder: (java.awt.Frame) -> Unit = { parent ->
         FileDialogs.openDirectory(parent)?.let { picked ->
@@ -1634,6 +1685,9 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                 event.key == Key.O -> {
                     if (frame != null) openFile(frame); true
                 }
+                event.key == Key.S && event.isAltPressed -> {
+                    settingsDialogOpen = true; true
+                }
                 event.key == Key.S -> {
                     if (frame != null) saveFile(frame); true
                 }
@@ -1774,6 +1828,12 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             } else {
                 runState.active ?: return@run
             }
+            if (autoSaveOptions.beforeRun) saveAllDirty()
+            if (pageSettings.run.clearOutputOnRun) runCatching { outputState.clear() }
+            if (pageSettings.run.openTerminalOnRun) {
+                terminalOpen = true
+                if (terminalManager.tabs.isEmpty()) terminalManager.newTab()
+            }
             outputOpen = true
             runController.start(cfg)
         }
@@ -1784,6 +1844,31 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         val startActiveRunRef = rememberUpdatedState(startActiveRun)
         val stopActiveRunRef = rememberUpdatedState(stopActiveRun)
         val openRunDialogRef = rememberUpdatedState(openRunDialog)
+        val saveAllDirtyRef = rememberUpdatedState(saveAllDirty)
+        val autoSaveOptionsRef = rememberUpdatedState(autoSaveOptions)
+        val openSettings: () -> Unit = { settingsDialogOpen = true }
+        val openSettingsRef = rememberUpdatedState(openSettings)
+        DisposableEffect(window) {
+            val frame = window
+            val focusListener = object : java.awt.event.WindowFocusListener {
+                override fun windowGainedFocus(e: java.awt.event.WindowEvent?) {}
+                override fun windowLostFocus(e: java.awt.event.WindowEvent?) {
+                    if (autoSaveOptionsRef.value.onFocusLost) saveAllDirtyRef.value()
+                }
+            }
+            frame.addWindowFocusListener(focusListener)
+            onDispose { frame.removeWindowFocusListener(focusListener) }
+        }
+        LaunchedEffect(
+            primaryPane.editorValue.text,
+            secondaryPane.editorValue.text,
+            autoSaveOptions.idleSeconds,
+        ) {
+            val sec = autoSaveOptions.idleSeconds
+            if (sec <= 0) return@LaunchedEffect
+            kotlinx.coroutines.delay(sec * 1000L)
+            saveAllDirty()
+        }
         DisposableEffect(window) {
             val frame = window
             val dispatcher = java.awt.KeyEventDispatcher { e ->
@@ -1828,6 +1913,10 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     }
                 }
                 when {
+                    ctrl && alt && !shift && e.keyCode == java.awt.event.KeyEvent.VK_S -> {
+                        openSettingsRef.value()
+                        true
+                    }
                     ctrl && !alt && shift && e.keyCode == java.awt.event.KeyEvent.VK_T -> {
                         toggleTerminalRef.value()
                         true
@@ -2066,6 +2155,19 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                         editorScrollByPath = EditorScrollMemory.put(editorScrollByPath, p, snap)
                     },
                     tabContextActionsFor = { side -> tabContextActionsFor(side) },
+                    settingsPanelOpen = settingsDialogOpen,
+                    pageSettings = pageSettings,
+                    onSettingsApply = { updated ->
+                        pageSettings = updated
+                        AppSettings.saveAutoSave(updated.autoSave)
+                        AppSettings.saveEditor(updated.editor)
+                        AppSettings.saveLsp(updated.lsp)
+                        AppSettings.saveAutoInput(updated.autoInput)
+                        AppSettings.saveUi(updated.ui)
+                        AppSettings.saveRun(updated.run)
+                        palette = updated.ui.palette
+                    },
+                    onSettingsPanelClose = { settingsDialogOpen = false },
                 )
                 if (findInFiles) {
                     FindInFilesDialog(
@@ -2133,6 +2235,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             onDismiss = { runDialogOpen = false },
         )
     }
+
 
     val activeCreateDialog = createDialog
     if (activeCreateDialog != null) {
@@ -3108,6 +3211,10 @@ private fun Shell(
     editorScrollFor: (Path) -> EditorScrollSnapshot? = { null },
     onEditorScrollChange: (Path, EditorScrollSnapshot) -> Unit = { _, _ -> },
     tabContextActionsFor: (PaneSide) -> TabContextActions? = { null },
+    settingsPanelOpen: Boolean = false,
+    pageSettings: PageSettings = PageSettings(),
+    onSettingsApply: (PageSettings) -> Unit = {},
+    onSettingsPanelClose: () -> Unit = {},
 ) {
     var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
     val shellActivePath = paneFor(focusedPane, primary, secondary).book.active?.path
@@ -3190,6 +3297,18 @@ private fun Shell(
                                 }
                             }
                         },
+                        onBeforeDelete = { id ->
+                            // Stop running LSP so its process releases file handles on the install dir
+                            lspRouter.shutdownLanguage(id)
+                            kotlinx.coroutines.delay(500)
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (settingsPanelOpen) {
+                    SettingsPanel(
+                        settings = pageSettings,
+                        onApply = onSettingsApply,
+                        onClose = onSettingsPanelClose,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else if (splitEnabled) {
@@ -3240,6 +3359,7 @@ private fun Shell(
                                 runtimeSources = runtimeSources.value,
                                 runtimeBuildFileVersions = runtimeBuildFileVersions.value,
                                 onRuntimeClick = { id -> runtimeDialogOpen = id },
+                                pageSettings = pageSettings,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -3283,6 +3403,7 @@ private fun Shell(
                                 runtimeSources = runtimeSources.value,
                                 runtimeBuildFileVersions = runtimeBuildFileVersions.value,
                                 onRuntimeClick = { id -> runtimeDialogOpen = id },
+                                pageSettings = pageSettings,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -3325,6 +3446,7 @@ private fun Shell(
                         runtimeSources = runtimeSources.value,
                         runtimeBuildFileVersions = runtimeBuildFileVersions.value,
                         onRuntimeClick = { id -> runtimeDialogOpen = id },
+                        pageSettings = pageSettings,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -3598,6 +3720,7 @@ private fun PaneRegion(
     runtimeSources: Map<String, String> = emptyMap(),
     runtimeBuildFileVersions: Map<String, String> = emptyMap(),
     onRuntimeClick: ((String) -> Unit)? = null,
+    pageSettings: PageSettings = PageSettings(),
     modifier: Modifier = Modifier,
 ) {
     val active = pane.book.active
@@ -3658,6 +3781,7 @@ private fun PaneRegion(
             onDragStart = onTabDragStart,
             onDragEnd = onTabDragEnd,
             contextActions = tabContextActions,
+            showCloseButton = pageSettings.ui.showTabCloseButton,
         )
         FocusIndicator(visible = isFocused)
         when (kind) {
@@ -3688,9 +3812,20 @@ private fun PaneRegion(
                 val activeCtrl = lspRouter.controllerFor(active.path)
                 val activeDiagnostics = activeCtrl?.diagnosticsFor(active.path).orEmpty()
                 val lspStatusText = lspStatusLineText(lspRouter, active?.path)
-                val lspActivities = activeCtrl?.activities?.values
+                val ctrlActivities = activeCtrl?.activities?.values
                     ?.sortedBy { it.startedAtMs }
                     ?.toList().orEmpty()
+                val globalStarting = lspRouter.startingActivities
+                val installActivities = InstallProgressRegistry.entries.values.map { e ->
+                    page.app.LspController.Activity(
+                        kind = "install",
+                        label = "${e.displayName} (installing)",
+                        startedAtMs = e.startedAtMs,
+                    )
+                }
+                val lspActivities = (globalStarting + ctrlActivities + installActivities)
+                    .distinctBy { it.kind + it.label }
+                    .sortedBy { it.startedAtMs }
                 EditorPanel(
                     value = pane.editorValue,
                     onValueChange = { v -> onEditorChange(side, v) },
@@ -3760,6 +3895,7 @@ private fun PaneRegion(
                     jdkVersion = runtimeInfo?.first,
                     jdkVersionTooltip = runtimeInfo?.third?.let { "from $it" },
                     onJdkVersionClick = runtimeInfo?.let { (_, id, _) -> { onRuntimeClick?.invoke(id) } },
+                    pageSettings = pageSettings,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }

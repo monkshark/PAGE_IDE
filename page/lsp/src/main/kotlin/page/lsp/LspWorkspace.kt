@@ -302,15 +302,45 @@ class LspWorkspace(private val client: LspClient) {
         val range = Range(Position(startLine, startCharacter), Position(endLine, endCharacter))
         val context = CodeActionContext(diagnostics)
         val params = CodeActionParams(TextDocumentIdentifier(uri), range, context)
-        return client.server().textDocumentService.codeAction(params).thenApply { list ->
-            list.orEmpty().mapNotNull { either ->
+        val svc = client.server().textDocumentService
+        return svc.codeAction(params).thenCompose { list ->
+            val items = list.orEmpty()
+            val entries = items.map { either ->
                 when {
-                    either == null -> null
-                    either.isLeft -> CodeActionEntry.fromLspCommand(either.left)
-                    either.isRight -> CodeActionEntry.fromLspCodeAction(either.right)
-                    else -> null
+                    either == null -> CompletableFuture.completedFuture<CodeActionEntry?>(null)
+                    either.isLeft -> CompletableFuture.completedFuture(CodeActionEntry.fromLspCommand(either.left))
+                    either.isRight -> resolveIfNeeded(svc, either.right)
+                    else -> CompletableFuture.completedFuture<CodeActionEntry?>(null)
                 }
             }
+            CompletableFuture.allOf(*entries.toTypedArray()).thenApply {
+                entries.mapNotNull { it.join() }
+            }
         }
+    }
+
+    private fun resolveIfNeeded(
+        svc: org.eclipse.lsp4j.services.TextDocumentService,
+        action: org.eclipse.lsp4j.CodeAction,
+    ): CompletableFuture<CodeActionEntry?> {
+        val initial = CodeActionEntry.fromLspCodeAction(action)
+            ?: return CompletableFuture.completedFuture(null)
+        if (initial.hasEdit) {
+            return CompletableFuture.completedFuture(initial)
+        }
+        println("[lsp] codeAction resolve → \"${action.title}\" (empty edit — requesting resolve)")
+        return runCatching { svc.resolveCodeAction(action) }
+            .getOrNull()
+            ?.handle<CodeActionEntry?> { resolved, err ->
+                if (err != null) {
+                    println("[lsp] codeAction resolve ✗ \"${action.title}\": ${err.message}")
+                    initial
+                } else {
+                    val out = CodeActionEntry.fromLspCodeAction(resolved) ?: initial
+                    println("[lsp] codeAction resolve ✓ \"${action.title}\" — hasEdit=${out.hasEdit}")
+                    out
+                }
+            }
+            ?: CompletableFuture.completedFuture(initial)
     }
 }
