@@ -25,6 +25,12 @@ class LanguageRegistryTest {
     }
 
     @Test
+    fun dartExtensionResolvesToDartNotFlutter() {
+        assertNotNull(LanguageRegistry.byId("flutter"), "flutter must remain bundled for install options")
+        assertEquals("dart", LanguageRegistry.byExtension("dart")?.id, ".dart must route to dart, not the flutter alias")
+    }
+
+    @Test
     fun bundledRegistryHasUniqueIds() {
         val all = LanguageRegistry.all()
         val ids = all.map { it.id }

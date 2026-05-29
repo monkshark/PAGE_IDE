@@ -3053,10 +3053,13 @@ private fun isKotlinSource(path: Path): Boolean {
 
 private var backendsRegistered = false
 
+private val nonRoutingBackendIds = setOf("flutter")
+
 private fun registerAllBackends() {
     if (backendsRegistered) return
     backendsRegistered = true
     for (def in LanguageRegistry.all()) {
+        if (def.id in nonRoutingBackendIds) continue
         if (LspBackends.byId(def.id) != null) continue
         LspBackends.register(GenericLanguageBackend(
             definition = def,
