@@ -2287,55 +2287,39 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         val verb = if (activePasteDialog.mode == FileTreeClipboard.Mode.Cut) "Move" else "Copy"
         val total = activePasteDialog.remaining.size
         val countSuffix = if (total > 1) "  ($total remaining)" else ""
+        val finalizePasteHistory: (PasteEntryDialogState) -> Unit = { cur ->
+            val pushedMoves = cur.movesSoFar
+            val pushedCopies = cur.createdSoFar
+            if (pushedMoves.isNotEmpty()) {
+                fileOpHistory.push(FileOpHistory.PasteCutOp(pushedMoves))
+                fileOpHistoryVersion++
+                FileTreeClipboard.clearCutMarking()
+                showDropResultToast(
+                    dropResultMessage("Moved", pushedMoves.size, dropDestLabel(rootDir, cur.destParent)),
+                    DropResultToastTone.Info,
+                ) { onUndoFileOp() }
+            } else if (pushedCopies.isNotEmpty()) {
+                fileOpHistory.push(FileOpHistory.PasteCopyOp(pushedCopies))
+                fileOpHistoryVersion++
+                showDropResultToast(
+                    dropResultMessage("Copied", pushedCopies.size, dropDestLabel(rootDir, cur.destParent)),
+                    DropResultToastTone.Info,
+                ) { onUndoFileOp() }
+            }
+        }
         val skipOne: (() -> Unit)? = if (total > 1) {
             {
                 val cur = activePasteDialog
                 val rest = cur.remaining.drop(1)
                 pasteDialog = if (rest.isEmpty()) null else cur.copy(remaining = rest, error = null)
-                if (rest.isEmpty()) {
-                    val pushedMoves = cur.movesSoFar
-                    val pushedCopies = cur.createdSoFar
-                    if (pushedMoves.isNotEmpty()) {
-                        fileOpHistory.push(FileOpHistory.PasteCutOp(pushedMoves))
-                        fileOpHistoryVersion++
-                        FileTreeClipboard.clearCutMarking()
-                        showDropResultToast(
-                            dropResultMessage("Moved", pushedMoves.size, dropDestLabel(rootDir, cur.destParent)),
-                            DropResultToastTone.Info,
-                        ) { onUndoFileOp() }
-                    } else if (pushedCopies.isNotEmpty()) {
-                        fileOpHistory.push(FileOpHistory.PasteCopyOp(pushedCopies))
-                        fileOpHistoryVersion++
-                        showDropResultToast(
-                            dropResultMessage("Copied", pushedCopies.size, dropDestLabel(rootDir, cur.destParent)),
-                            DropResultToastTone.Info,
-                        ) { onUndoFileOp() }
-                    }
-                }
+                if (rest.isEmpty()) finalizePasteHistory(cur)
             }
         } else null
         val skipAll: (() -> Unit)? = if (total > 1) {
             {
                 val cur = activePasteDialog
                 pasteDialog = null
-                val pushedMoves = cur.movesSoFar
-                val pushedCopies = cur.createdSoFar
-                if (pushedMoves.isNotEmpty()) {
-                    fileOpHistory.push(FileOpHistory.PasteCutOp(pushedMoves))
-                    fileOpHistoryVersion++
-                    FileTreeClipboard.clearCutMarking()
-                    showDropResultToast(
-                        dropResultMessage("Moved", pushedMoves.size, dropDestLabel(rootDir, cur.destParent)),
-                        DropResultToastTone.Info,
-                    ) { onUndoFileOp() }
-                } else if (pushedCopies.isNotEmpty()) {
-                    fileOpHistory.push(FileOpHistory.PasteCopyOp(pushedCopies))
-                    fileOpHistoryVersion++
-                    showDropResultToast(
-                        dropResultMessage("Copied", pushedCopies.size, dropDestLabel(rootDir, cur.destParent)),
-                        DropResultToastTone.Info,
-                    ) { onUndoFileOp() }
-                }
+                finalizePasteHistory(cur)
             }
         } else null
         val performPaste: (String, Boolean) -> Unit = performPaste@ { newName, overwriteOnce ->
