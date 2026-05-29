@@ -2,6 +2,11 @@ package page.app
 
 import page.runtime.*
 import page.workspace.*
+import page.workspace.sync.PackageSyncEngine
+import page.app.utils.applyReplaceToBook
+import page.app.utils.isKotlinSource
+import page.app.utils.offsetToLineChar
+import page.app.utils.windowTitle
 import page.lsp.GenericLanguageBackend
 import page.lsp.LanguageRegistry
 import page.lsp.LspBackends
@@ -1042,84 +1047,14 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         }
     }
     val applyFolderPackageSync: (Path, Path, Map<String, String>) -> List<FileOpHistory.RewriteEntry> = { _, newFolder, packageMap ->
-        val newFolderAbs = newFolder.toAbsolutePath().normalize()
-        val isKtFile: (Path) -> Boolean = { p ->
-            val name = p.fileName?.toString().orEmpty()
-            name.endsWith(".kt") || name.endsWith(".kts")
-        }
-        val rewriteList = mutableListOf<FileOpHistory.RewriteEntry>()
-        if (packageMap.isNotEmpty()) {
-            val rewrites = LinkedHashMap<Path, Pair<String, String>>()
-            runCatching {
-                java.nio.file.Files.walk(newFolder).use { stream ->
-                    stream.filter { java.nio.file.Files.isRegularFile(it) && isKtFile(it) }
-                        .forEach { p ->
-                            val abs = p.toAbsolutePath().normalize()
-                            val text = readFileTextWithTabs(abs) ?: return@forEach
-                            val rewritten = FolderPackageRename.rewriteFileInRenamedFolder(text, packageMap) ?: return@forEach
-                            rewrites[abs] = text to rewritten
-                        }
-                }
-            }
-            rootDir?.let { root ->
-                runCatching {
-                    java.nio.file.Files.walk(root).use { stream ->
-                        stream.filter { java.nio.file.Files.isRegularFile(it) && isKtFile(it) }
-                            .forEach { p ->
-                                val abs = p.toAbsolutePath().normalize()
-                                if (abs.startsWith(newFolderAbs)) return@forEach
-                                if (abs in rewrites) return@forEach
-                                val text = readFileTextWithTabs(abs) ?: return@forEach
-                                val rewritten = FolderPackageRename.rewriteImports(text, packageMap) ?: return@forEach
-                                rewrites[abs] = text to rewritten
-                            }
-                    }
-                }
-            }
-            for ((path, pair) in rewrites) {
-                val (original, rewritten) = pair
-                applyTextReplace(path, rewritten)
-                rewriteList.add(FileOpHistory.RewriteEntry(path, original, rewritten))
-            }
-        }
-        rewriteList
+        val entries = PackageSyncEngine.folderRewrites(newFolder, packageMap, rootDir, readFileTextWithTabs)
+        entries.forEach { applyTextReplace(it.path, it.rewritten) }
+        entries
     }
     val applySingleFileMoveSync: (Path, FolderPackageRename.SingleFileMovePlan) -> List<FileOpHistory.RewriteEntry> = { newPath, plan ->
-        val isKtFile: (Path) -> Boolean = { p ->
-            val name = p.fileName?.toString().orEmpty()
-            name.endsWith(".kt") || name.endsWith(".kts")
-        }
-        val rewrites = LinkedHashMap<Path, Pair<String, String>>()
-        if (plan.newSelfText != null) {
-            val abs = newPath.toAbsolutePath().normalize()
-            val current = readFileTextWithTabs(abs)
-            val newText = plan.newSelfText
-            if (current != null && newText != null) rewrites[abs] = current to newText
-        }
-        rootDir?.let { root ->
-            val newPathAbs = newPath.toAbsolutePath().normalize()
-            runCatching {
-                java.nio.file.Files.walk(root).use { stream ->
-                    stream.filter { java.nio.file.Files.isRegularFile(it) && isKtFile(it) }
-                        .forEach { p ->
-                            val abs = p.toAbsolutePath().normalize()
-                            if (abs == newPathAbs) return@forEach
-                            if (abs in rewrites) return@forEach
-                            val text = readFileTextWithTabs(abs) ?: return@forEach
-                            val rewritten = FolderPackageRename.rewriteImports(text, plan.importRewriteMap)
-                                ?: return@forEach
-                            rewrites[abs] = text to rewritten
-                        }
-                }
-            }
-        }
-        val rewriteList = mutableListOf<FileOpHistory.RewriteEntry>()
-        for ((path, pair) in rewrites) {
-            val (original, rewritten) = pair
-            applyTextReplace(path, rewritten)
-            rewriteList.add(FileOpHistory.RewriteEntry(path, original, rewritten))
-        }
-        rewriteList
+        val entries = PackageSyncEngine.singleFileMoveRewrites(newPath, plan, rootDir, readFileTextWithTabs)
+        entries.forEach { applyTextReplace(it.path, it.rewritten) }
+        entries
     }
     val closeTabsUnderPath: (Path) -> Unit = { path ->
         listOf(PaneSide.PRIMARY, PaneSide.SECONDARY).forEach { side ->
@@ -3020,36 +2955,6 @@ private fun dropDestLabel(rootDir: Path?, dest: Path): String {
 private fun dropResultMessage(verb: String, count: Int, destLabel: String): String =
     if (count == 1) "$verb 1 item into $destLabel"
     else "$verb $count items into $destLabel"
-
-private fun windowTitle(path: Path?): String {
-    val name = path?.fileName?.toString() ?: "untitled"
-    return "$name — ${PageIdentity.NAME}"
-}
-
-private fun applyReplaceToBook(book: TabBook, updates: Map<Path, String>): TabBook {
-    if (book.tabs.none { updates.containsKey(it.path) }) return book
-    val newTabs = book.tabs.map { tab ->
-        val newText = updates[tab.path] ?: return@map tab
-        val caret = tab.caret.coerceAtMost(newText.length)
-        tab.copy(text = newText, savedText = newText, caret = caret)
-    }
-    return book.copy(tabs = newTabs)
-}
-
-private fun offsetToLineChar(text: String, offset: Int): Pair<Int, Int> {
-    val end = offset.coerceIn(0, text.length)
-    var line = 0
-    var col = 0
-    for (i in 0 until end) {
-        if (text[i] == '\n') { line += 1; col = 0 } else col += 1
-    }
-    return line to col
-}
-
-private fun isKotlinSource(path: Path): Boolean {
-    val name = path.fileName?.toString()?.lowercase() ?: return false
-    return name.endsWith(".kt") || name.endsWith(".kts")
-}
 
 private var backendsRegistered = false
 
