@@ -35,6 +35,24 @@ class EditorUtilsTest {
     }
 
     @Test
+    fun `lineCharToOffset is the inverse of offsetToLineChar`() {
+        val text = "ab\ncde\nf"
+        assertEquals(0, lineCharToOffset(text, 0, 0))
+        assertEquals(2, lineCharToOffset(text, 0, 2))
+        assertEquals(3, lineCharToOffset(text, 1, 0))
+        assertEquals(5, lineCharToOffset(text, 1, 2))
+        assertEquals(8, lineCharToOffset(text, 2, 1))
+    }
+
+    @Test
+    fun `lineCharToOffset clamps past end of text`() {
+        val text = "abc"
+        assertEquals(0, lineCharToOffset(text, 0, -3))
+        assertEquals(3, lineCharToOffset(text, 0, 99))
+        assertEquals(3, lineCharToOffset(text, 9, 0))
+    }
+
+    @Test
     fun `windowTitle falls back to untitled for null path`() {
         assertTrue(windowTitle(null).startsWith("untitled — "))
         assertTrue(windowTitle(Paths.get("dir/Hello.kt")).startsWith("Hello.kt — "))

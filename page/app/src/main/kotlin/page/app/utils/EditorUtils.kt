@@ -29,6 +29,16 @@ internal fun offsetToLineChar(text: String, offset: Int): Pair<Int, Int> {
     return line to col
 }
 
+internal fun lineCharToOffset(text: String, line: Int, character: Int): Int {
+    var lineIdx = 0
+    var i = 0
+    while (i < text.length && lineIdx < line) {
+        if (text[i] == '\n') lineIdx += 1
+        i += 1
+    }
+    return (i + character.coerceAtLeast(0)).coerceAtMost(text.length)
+}
+
 internal fun isKotlinSource(path: Path): Boolean {
     val name = path.fileName?.toString()?.lowercase() ?: return false
     return name.endsWith(".kt") || name.endsWith(".kts")
