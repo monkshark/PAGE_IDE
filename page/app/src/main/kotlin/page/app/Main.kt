@@ -3,6 +3,8 @@ package page.app
 import page.runtime.*
 import page.workspace.*
 import page.workspace.sync.PackageSyncEngine
+import page.app.input.ShortcutAction
+import page.app.input.ShortcutResolver
 import page.app.lsp.LspEditorInterconnector
 import page.app.ui.editor.EditorTabController
 import page.app.utils.applyReplaceToBook
@@ -1438,111 +1440,64 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         if (event.type != KeyEventType.KeyDown) return@handler false
         val frame = frameRef.value
         val focusedSearch = focused().search
-        if (event.isCtrlPressed && event.isAltPressed && event.key == Key.T) {
-            cyclePalette()
-            return@handler true
-        }
-        if (event.isCtrlPressed) {
-            when {
-                event.key == Key.O && event.isShiftPressed -> {
-                    if (frame != null) openFolder(frame); true
-                }
-                event.key == Key.O -> {
-                    if (frame != null) openFile(frame); true
-                }
-                event.key == Key.S && event.isAltPressed -> {
-                    settingsDialogOpen = true; true
-                }
-                event.key == Key.S -> {
-                    if (frame != null) saveFile(frame); true
-                }
-                event.key == Key.W -> { closeActiveTab(); true }
-                event.key == Key.M && event.isShiftPressed -> {
-                    problemsOpen = !problemsOpen
-                    true
-                }
-                event.key == Key.Six && event.isShiftPressed -> {
-                    todoOpen = !todoOpen
-                    true
-                }
-                event.key == Key.F && event.isShiftPressed -> {
-                    if (findInFiles) findInFiles = false else openFindInFiles()
-                    true
-                }
-                event.key == Key.F -> { openSearch(); true }
-                event.key == Key.R -> { openReplace(); true }
-                event.key == Key.P -> { openQuickOpen(); true }
-                event.key == Key.T -> { openWorkspaceSymbol(); true }
-                event.key == Key.F12 -> { openDocumentSymbol(); true }
-                event.key == Key.Backslash && event.isShiftPressed -> {
-                    splitOrientation = if (splitOrientation == SplitOrientation.HORIZONTAL)
-                        SplitOrientation.VERTICAL else SplitOrientation.HORIZONTAL
-                    true
-                }
-                event.key == Key.Backslash -> {
-                    splitEnabled = !splitEnabled
-                    true
-                }
-                event.key == Key.Z && event.isShiftPressed -> {
-                    if (focusedSearch != null) false
-                    else {
-                        val redoOp = fileOpHistory.peekRedo()
-                        if (fileTreeFocused && redoOp != null) {
-                            fileOpConfirm = FileOpConfirmState(isRedo = true, op = redoOp)
-                        } else {
-                            doRedo()
-                        }
-                        true
-                    }
-                }
-                event.key == Key.Z -> {
-                    if (focusedSearch != null) false
-                    else {
-                        val undoOp = fileOpHistory.peek()
-                        if (fileTreeFocused && undoOp != null) {
-                            fileOpConfirm = FileOpConfirmState(isRedo = false, op = undoOp)
-                        } else {
-                            doUndo()
-                        }
-                        true
-                    }
-                }
-                event.key == Key.Y -> {
-                    if (focusedSearch != null) false
-                    else {
-                        val redoOp = fileOpHistory.peekRedo()
-                        if (fileTreeFocused && redoOp != null) {
-                            fileOpConfirm = FileOpConfirmState(isRedo = true, op = redoOp)
-                        } else {
-                            doRedo()
-                        }
-                        true
-                    }
-                }
-                else -> false
+        when (ShortcutResolver.resolve(
+            key = event.key,
+            ctrl = event.isCtrlPressed,
+            alt = event.isAltPressed,
+            shift = event.isShiftPressed,
+            hasSearch = focusedSearch != null,
+        )) {
+            ShortcutAction.CYCLE_PALETTE -> { cyclePalette(); true }
+            ShortcutAction.OPEN_FOLDER -> { if (frame != null) openFolder(frame); true }
+            ShortcutAction.OPEN_FILE -> { if (frame != null) openFile(frame); true }
+            ShortcutAction.OPEN_SETTINGS -> { settingsDialogOpen = true; true }
+            ShortcutAction.SAVE -> { if (frame != null) saveFile(frame); true }
+            ShortcutAction.CLOSE_TAB -> { closeActiveTab(); true }
+            ShortcutAction.TOGGLE_PROBLEMS -> { problemsOpen = !problemsOpen; true }
+            ShortcutAction.TOGGLE_TODO -> { todoOpen = !todoOpen; true }
+            ShortcutAction.TOGGLE_FIND_IN_FILES -> {
+                if (findInFiles) findInFiles = false else openFindInFiles()
+                true
             }
-        } else if (event.isAltPressed && event.isShiftPressed && !event.isCtrlPressed
-            && (event.key == Key.Enter || event.key == Key.NumPadEnter)) {
-            triggerFormat(); true
-        } else if (event.isAltPressed && !event.isShiftPressed && !event.isCtrlPressed
-            && focusedSearch == null
-            && (event.key == Key.Enter || event.key == Key.NumPadEnter)) {
-            triggerCodeAction(); true
-        } else if (event.isAltPressed && !event.isShiftPressed && !event.isCtrlPressed
-            && focusedSearch == null && event.key == Key.DirectionLeft) {
-            activateAdjacentTab(-1); true
-        } else if (event.isAltPressed && !event.isShiftPressed && !event.isCtrlPressed
-            && focusedSearch == null && event.key == Key.DirectionRight) {
-            activateAdjacentTab(1); true
-        } else if (event.key == Key.F8) {
-            jumpProblemRelative(!event.isShiftPressed)
-            true
-        } else if (event.key == Key.F5) {
-            treeRevision++
-            true
-        } else if (event.key == Key.Escape && focusedSearch != null) {
-            closeSearch(focusedPane); true
-        } else false
+            ShortcutAction.OPEN_SEARCH -> { openSearch(); true }
+            ShortcutAction.OPEN_REPLACE -> { openReplace(); true }
+            ShortcutAction.OPEN_QUICK_OPEN -> { openQuickOpen(); true }
+            ShortcutAction.OPEN_WORKSPACE_SYMBOL -> { openWorkspaceSymbol(); true }
+            ShortcutAction.OPEN_DOCUMENT_SYMBOL -> { openDocumentSymbol(); true }
+            ShortcutAction.TOGGLE_SPLIT_ORIENTATION -> {
+                splitOrientation = if (splitOrientation == SplitOrientation.HORIZONTAL)
+                    SplitOrientation.VERTICAL else SplitOrientation.HORIZONTAL
+                true
+            }
+            ShortcutAction.TOGGLE_SPLIT -> { splitEnabled = !splitEnabled; true }
+            ShortcutAction.UNDO -> {
+                val undoOp = fileOpHistory.peek()
+                if (fileTreeFocused && undoOp != null) {
+                    fileOpConfirm = FileOpConfirmState(isRedo = false, op = undoOp)
+                } else {
+                    doUndo()
+                }
+                true
+            }
+            ShortcutAction.REDO -> {
+                val redoOp = fileOpHistory.peekRedo()
+                if (fileTreeFocused && redoOp != null) {
+                    fileOpConfirm = FileOpConfirmState(isRedo = true, op = redoOp)
+                } else {
+                    doRedo()
+                }
+                true
+            }
+            ShortcutAction.FORMAT -> { triggerFormat(); true }
+            ShortcutAction.CODE_ACTION -> { triggerCodeAction(); true }
+            ShortcutAction.PREV_TAB -> { activateAdjacentTab(-1); true }
+            ShortcutAction.NEXT_TAB -> { activateAdjacentTab(1); true }
+            ShortcutAction.JUMP_PROBLEM_NEXT -> { jumpProblemRelative(true); true }
+            ShortcutAction.JUMP_PROBLEM_PREV -> { jumpProblemRelative(false); true }
+            ShortcutAction.REFRESH_TREE -> { treeRevision++; true }
+            ShortcutAction.CLOSE_SEARCH -> { closeSearch(focusedPane); true }
+            ShortcutAction.NONE -> false
+        }
     }
     Window(
         onCloseRequest = requestExit,
