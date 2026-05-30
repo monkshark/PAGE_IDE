@@ -15,8 +15,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -123,7 +129,22 @@ internal fun IdeMainLayout(
             runtimeBuildFileVersions.value = bvs
         }
     }
-    Box(modifier = Modifier.fillMaxSize()) {
+    LaunchedEffect(Unit) {
+        snapshotFlow { InstallProgressRegistry.completed.firstOrNull() }
+            .collect { id ->
+                if (id == null) return@collect
+                InstallProgressRegistry.consumeCompleted(id)
+                if (!installGuideOpen && runtimeDialogOpen == null) {
+                    runtimeDialogOpen = id
+                }
+            }
+    }
+    Box(modifier = Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+        if (event.type == KeyEventType.KeyDown && event.key == Key.Escape && installManagerOpen != null) {
+            installManagerOpen = null
+            true
+        } else false
+    }) {
     Column(modifier = Modifier.fillMaxSize()) {
         TitleBar(
             path = editor.focused().book.active?.path,
@@ -415,6 +436,8 @@ internal fun IdeMainLayout(
                     shellCtrl.closeInstallGuide()
                     installManagerOpen = id
                 },
+                installScope = runtimeScope,
+                onMinimize = { shellCtrl.closeInstallGuide() },
             )
         } else {
             shellCtrl.closeInstallGuide()
@@ -430,8 +453,10 @@ internal fun IdeMainLayout(
             "cpp-toolchain" to page.lsp.LanguageDefinition("cpp-toolchain", "LLVM/Clang Toolchain", listOf("c", "cpp"), emptyList(), emptyList(), "https://llvm.org/", emptyMap(), null),
             "rust-runtime" to page.lsp.LanguageDefinition("rust-runtime", "Rust Toolchain", listOf("rs"), emptyList(), emptyList(), "https://rustup.rs/", emptyMap(), null),
             "dotnet-runtime" to page.lsp.LanguageDefinition("dotnet-runtime", ".NET SDK", listOf("cs"), emptyList(), emptyList(), "https://dotnet.microsoft.com/download", emptyMap(), null),
+            "windows-sdk" to page.lsp.LanguageDefinition("windows-sdk", "Windows SDK (MSVC, xwin)", listOf("swift"), emptyList(), emptyList(), "https://github.com/Jake-Shadle/xwin", emptyMap(), null),
+            "mingw-toolchain" to page.lsp.LanguageDefinition("mingw-toolchain", "MinGW-w64 (UCRT64)", listOf("c", "cpp"), emptyList(), emptyList(), "https://www.mingw-w64.org/", emptyMap(), null),
         )
-        val def = runtimeDefs[runtimeDialogId]
+        val def = runtimeDefs[runtimeDialogId] ?: page.lsp.LanguageRegistry.byId(runtimeDialogId)
         val buildFileKey = when (runtimeDialogId) {
             "jdk" -> "java"; "node" -> "js"; "python-runtime" -> "py"
             "go-sdk" -> "go"; "rust-runtime" -> "rs"; "dotnet-runtime" -> "cs"
@@ -444,6 +469,7 @@ internal fun IdeMainLayout(
                 attempted = emptyList(),
                 onDismiss = { runtimeDialogOpen = null },
                 onInstalled = {
+                    lspRouter.shutdownLanguage(runtimeDialogId)
                     runtimeScope.launch {
                         withContext(Dispatchers.IO) {
                             val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
@@ -460,6 +486,8 @@ internal fun IdeMainLayout(
                     runtimeDialogOpen = null
                     installManagerOpen = id
                 },
+                installScope = runtimeScope,
+                onMinimize = { runtimeDialogOpen = null },
             )
         } else {
             runtimeDialogOpen = null

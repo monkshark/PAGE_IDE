@@ -65,7 +65,13 @@ class LspController(
 
     enum class Status { IDLE, STARTING, READY, MISSING, FAILED }
 
-    data class Activity(val kind: String, val label: String, val startedAtMs: Long)
+    data class Activity(
+        val kind: String,
+        val label: String,
+        val startedAtMs: Long,
+        val progress: Float? = null,
+        val installerId: String? = null,
+    )
 
     val status: MutableState<Status> = mutableStateOf(Status.IDLE)
     var startedAtMs: Long = System.currentTimeMillis()

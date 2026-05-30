@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -81,6 +82,8 @@ internal fun InstallGuideDialog(
     installer: LspInstaller? = null,
     suggestedVersion: String? = null,
     onOpenManager: (() -> Unit)? = null,
+    installScope: CoroutineScope? = null,
+    onMinimize: (() -> Unit)? = null,
 ) {
     @Suppress("NAME_SHADOWING")
     val installer = installer ?: remember(definition.id) { LspInstallers.forId(definition.id) }
@@ -111,9 +114,27 @@ internal fun InstallGuideDialog(
         }
     }
     val scope = rememberCoroutineScope()
+    val launchScope = installScope ?: scope
     val canInAppInstall = installer != null
     val precheck = installer?.precheck
-    val installing = installProgress.let { it != null && it !is LspInstaller.Progress.Done && it !is LspInstaller.Progress.Failed }
+    val registryEntry = installer?.let { InstallProgressRegistry.entries[it.languageId] }
+    LaunchedEffect(registryEntry?.progress, registryEntry != null) {
+        if (installJob != null) return@LaunchedEffect
+        val re = registryEntry
+        if (re != null) {
+            installProgress = re.progress ?: LspInstaller.Progress.Downloading(0, -1)
+            if (re.progress is LspInstaller.Progress.CommandOutput) {
+                outputLines = (outputLines + re.progress.line).takeLast(2000)
+            }
+        } else if (installProgress != null &&
+            installProgress !is LspInstaller.Progress.Done &&
+            installProgress !is LspInstaller.Progress.Failed
+        ) {
+            installProgress = null
+        }
+    }
+    val installing = installProgress.let { it != null && it !is LspInstaller.Progress.Done && it !is LspInstaller.Progress.Failed } ||
+        registryEntry != null
     val focusRequester = remember { FocusRequester() }
     val scrimInteraction = remember { MutableInteractionSource() }
     val cardInteraction = remember { MutableInteractionSource() }
@@ -141,11 +162,12 @@ internal fun InstallGuideDialog(
     fun startInstallInternal() {
         val active = installer ?: return
         if (installing) return
+        if (InstallProgressRegistry.get(active.languageId) != null) return
         cancelled.set(false)
         installProgress = LspInstaller.Progress.Downloading(0, -1)
         outputLines = emptyList()
-        InstallProgressRegistry.start(active.languageId, active.displayName)
-        installJob = scope.launch {
+        InstallProgressRegistry.start(active.languageId, active.displayName, cancelled = cancelled)
+        installJob = launchScope.launch {
             withContext(Dispatchers.IO) {
                 active.install(selectedVersion) { p ->
                     if (cancelled.get()) return@install
@@ -172,15 +194,43 @@ internal fun InstallGuideDialog(
                         InstallProgressRegistry.finish("mingw-toolchain")
                     }
                 }
+                // Auto-install Windows SDK (xwin) when installing the Swift toolchain — Swift needs
+                // MSVC CRT + Windows SDK headers/import-libs to build & link on Windows.
+                if (!cancelled.get() && LspInstaller.isWindows() && active.languageId == "swift") {
+                    val sdk = WindowsSdkInstaller()
+                    if (!sdk.isInstalled()) {
+                        outputLines = outputLines + "" + "> Installing Windows SDK (MSVC CRT + headers via xwin) for Swift..."
+                        InstallProgressRegistry.start("windows-sdk", "Windows SDK (MSVC, xwin)")
+                        sdk.install(null) { p ->
+                            if (cancelled.get()) return@install
+                            installProgress = p
+                            InstallProgressRegistry.update("windows-sdk", p)
+                            if (p is LspInstaller.Progress.CommandOutput) {
+                                outputLines = (outputLines + p.line).takeLast(2000)
+                            }
+                        }
+                        InstallProgressRegistry.finish("windows-sdk")
+                    }
+                }
             }
-            InstallProgressRegistry.finish(active.languageId)
+            val succeeded = !cancelled.get() && withContext(Dispatchers.IO) { active.isInstalled() }
+            if (succeeded) {
+                InstallProgressRegistry.complete(active.languageId)
+            } else {
+                InstallProgressRegistry.finish(active.languageId)
+            }
         }
+        installJob?.let { InstallProgressRegistry.attachJob(active.languageId, it) }
     }
 
     fun confirmCancelInstall() {
+        val reg = installer?.let { InstallProgressRegistry.get(it.languageId) }
+        reg?.cancelled?.set(true)
+        reg?.job?.cancel()
         cancelled.set(true)
         installJob?.cancel()
         installJob = null
+        installer?.let { InstallProgressRegistry.finish(it.languageId) }
         installProgress = null
         outputLines = emptyList()
         showCancelConfirm = false
@@ -233,7 +283,7 @@ internal fun InstallGuideDialog(
                             if (showHeavyConfirm) { showHeavyConfirm = false; true }
                             else if (showCancelConfirm) { showCancelConfirm = false; true }
                             else if (!installing) { onDismiss(); true }
-                            else true
+                            else { onMinimize?.invoke(); true }
                         }
                         Key.Enter, Key.NumPadEnter -> {
                             if (showHeavyConfirm) {
@@ -251,7 +301,7 @@ internal fun InstallGuideDialog(
                 .clickable(
                     interactionSource = scrimInteraction,
                     indication = null,
-                ) { if (!installing) onDismiss() },
+                ) { if (!installing) onDismiss() else onMinimize?.invoke() },
             contentAlignment = Alignment.Center,
         ) {
             Surface(
@@ -551,8 +601,17 @@ internal fun InstallGuideDialog(
                                 onApply = ::applySelected,
                             )
                             val enableInstall = !installing && !versionsLoading &&
-                                selectedVersion != null && mode != InstallButtonMode.AlreadyActive
+                                selectedVersion != null
                             if (installing) {
+                                if (onMinimize != null) {
+                                    InstallGuideButton(
+                                        label = "Minimize",
+                                        primary = false,
+                                        enabled = true,
+                                        onClick = onMinimize,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
                                 InstallGuideButton(
                                     label = "Cancel",
                                     primary = false,
@@ -721,7 +780,7 @@ internal fun installButtonMode(
     return InstallButtonMode.Install
 }
 
-private fun installActionLabel(
+internal fun installActionLabel(
     progress: LspInstaller.Progress?,
     mode: InstallButtonMode,
     onInstalled: () -> Unit,
@@ -730,7 +789,7 @@ private fun installActionLabel(
     onApply: () -> Unit,
 ): Pair<String, () -> Unit> = when (progress) {
     null -> when (mode) {
-        InstallButtonMode.AlreadyActive -> "Already installed" to {}
+        InstallButtonMode.AlreadyActive -> "Restart LSP" to { onInstalled(); onDismiss() }
         InstallButtonMode.Apply -> "Apply & restart LSP" to onApply
         InstallButtonMode.Install -> "Install" to onStart
     }

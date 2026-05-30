@@ -62,4 +62,22 @@ class InstallButtonModeTest {
         )
         assertEquals(InstallButtonMode.Install, mode)
     }
+
+    @Test
+    fun alreadyActiveOffersRestartLspAction() {
+        var installedCalled = false
+        var dismissCalled = false
+        val (label, action) = installActionLabel(
+            progress = null,
+            mode = InstallButtonMode.AlreadyActive,
+            onInstalled = { installedCalled = true },
+            onDismiss = { dismissCalled = true },
+            onStart = {},
+            onApply = {},
+        )
+        assertEquals("Restart LSP", label)
+        action()
+        assertEquals(true, installedCalled)
+        assertEquals(true, dismissCalled)
+    }
 }

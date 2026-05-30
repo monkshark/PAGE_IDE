@@ -1023,7 +1023,14 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         primaryPane.book.tabs.any(isUnsavedText) || secondaryPane.book.tabs.any(isUnsavedText)
     }
     val requestExit: () -> Unit = {
-        if (anyDirty()) pendingClose = PendingClose.App else exitApplication()
+        when {
+            !anyDirty() -> exitApplication()
+            pageSettings.autoSave.onClose -> {
+                saveAllDirty()
+                exitApplication()
+            }
+            else -> pendingClose = PendingClose.App
+        }
     }
     val moveCaretToActiveMatch: (PaneSide, SearchState) -> Unit = { side, s ->
         val range = s.active
@@ -2649,10 +2656,15 @@ internal fun PaneRegion(
                     ?.toList().orEmpty()
                 val globalStarting = lspRouter.startingActivities
                 val installActivities = InstallProgressRegistry.entries.values.map { e ->
+                    val frac = (e.progress as? page.runtime.LspInstaller.Progress.Downloading)
+                        ?.takeIf { it.total > 0 }
+                        ?.let { (it.bytesRead.toFloat() / it.total.toFloat()).coerceIn(0f, 1f) }
                     page.app.LspController.Activity(
                         kind = "install",
                         label = "${e.displayName} (installing)",
                         startedAtMs = e.startedAtMs,
+                        progress = frac,
+                        installerId = e.installerId,
                     )
                 }
                 val lspActivities = (globalStarting + ctrlActivities + installActivities)
@@ -2677,6 +2689,9 @@ internal fun PaneRegion(
                     lspStatusText = lspStatusText,
                     lspActivities = lspActivities,
                     onLspStatusClick = { activeCtrl?.openInstallGuide() },
+                    onActivityClick = { act ->
+                        act.installerId?.let { onRuntimeClick?.invoke(it) }
+                    },
                     onProblemsToggle = onProblemsToggle,
                     todoCount = todoCount,
                     onTodoToggle = onTodoToggle,
