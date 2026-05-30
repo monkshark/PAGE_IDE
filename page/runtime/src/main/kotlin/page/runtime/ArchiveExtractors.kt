@@ -1,12 +1,15 @@
 package page.runtime
 
 import java.io.IOException
+import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.tukaani.xz.XZInputStream
 
 object ArchiveExtractors {
@@ -43,47 +46,38 @@ object ArchiveExtractors {
     }
 
     fun extractTarGz(tarGz: Path, target: Path, flatten: Int = 0) {
-        val staging = stagingFor(target)
-        try {
-            GZIPInputStream(Files.newInputStream(tarGz)).use { gz ->
-                TarReader(gz).forEach { entry, stream ->
-                    val segments = entry.name.split('/', '\\').filter { it.isNotEmpty() }
-                    val flattened = segments.drop(flatten)
-                    if (flattened.isEmpty()) return@forEach
-                    val outPath = flattened.fold(staging) { acc, s -> acc.resolve(s) }
-                    enforceInside(outPath, staging, entry.name)
-                    if (entry.isDirectory) {
-                        Files.createDirectories(outPath)
-                    } else {
-                        Files.createDirectories(outPath.parent)
-                        Files.newOutputStream(outPath).use { out -> stream.copyTo(out) }
-                        if (entry.executable) runCatching { outPath.toFile().setExecutable(true, false) }
-                    }
-                }
-            }
-            commitStaging(staging, target)
-        } catch (t: Throwable) {
-            runCatching { deleteRecursively(staging) }
-            throw t
+        GZIPInputStream(Files.newInputStream(tarGz)).use { gz ->
+            extractTarStream(gz, target, flatten)
         }
     }
 
     fun extractTarXz(tarXz: Path, target: Path, flatten: Int = 0) {
+        XZInputStream(Files.newInputStream(tarXz)).use { xz ->
+            extractTarStream(xz, target, flatten)
+        }
+    }
+
+    private fun extractTarStream(input: InputStream, target: Path, flatten: Int) {
         val staging = stagingFor(target)
         try {
-            XZInputStream(Files.newInputStream(tarXz)).use { xz ->
-                TarReader(xz).forEach { entry, stream ->
+            TarArchiveInputStream(input).use { tar ->
+                while (true) {
+                    val entry = (tar.nextEntry ?: break) as TarArchiveEntry
+                    if (!tar.canReadEntryData(entry)) continue
+                    if (!entry.isDirectory && !entry.isFile) continue
                     val segments = entry.name.split('/', '\\').filter { it.isNotEmpty() }
                     val flattened = segments.drop(flatten)
-                    if (flattened.isEmpty()) return@forEach
+                    if (flattened.isEmpty()) continue
                     val outPath = flattened.fold(staging) { acc, s -> acc.resolve(s) }
                     enforceInside(outPath, staging, entry.name)
                     if (entry.isDirectory) {
                         Files.createDirectories(outPath)
                     } else {
                         Files.createDirectories(outPath.parent)
-                        Files.newOutputStream(outPath).use { out -> stream.copyTo(out) }
-                        if (entry.executable) runCatching { outPath.toFile().setExecutable(true, false) }
+                        Files.newOutputStream(outPath).use { out -> tar.copyTo(out) }
+                        if ((entry.mode and 0b001_001_001) != 0) {
+                            runCatching { outPath.toFile().setExecutable(true, false) }
+                        }
                     }
                 }
             }

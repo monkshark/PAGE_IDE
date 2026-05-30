@@ -163,6 +163,14 @@ class SwiftToolchainInstaller(
     fun swiftcExecutable(): Path? =
         currentInstalledVersion()?.let { swiftcBinary(it) }?.takeIf { Files.exists(it) }
 
+    fun foundationImportLib(): Path? =
+        currentInstalledVersion()?.let { foundationImportLibFor(it) }?.takeIf { Files.exists(it) }
+
+    internal fun foundationImportLibFor(version: String): Path =
+        sdkRootFor(version)
+            .resolve("usr").resolve("lib").resolve("swift").resolve("windows")
+            .resolve(assetArch()).resolve("Foundation.lib")
+
     fun installRoot(version: String): Path = installBase().resolve(sanitize(version))
 
     private fun installBase(): Path = LspInstaller.lspHome().resolve("swift")

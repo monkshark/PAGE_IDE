@@ -1,6 +1,7 @@
 package page.runtime
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PageRuntimeEnvTest {
@@ -34,5 +35,37 @@ class PageRuntimeEnvTest {
     fun collectRuntimesDoesNotThrow() {
         val runtimes = PageRuntimeEnv.collectRuntimes()
         assertTrue(runtimes is List)
+    }
+
+    @Test
+    fun collapseMergesCaseInsensitiveDuplicatePathKeys() {
+        val env = linkedMapOf(
+            "Path" to "C:\\base",
+            "PATH" to "C:\\swift\\bin;C:\\base;C:\\extra",
+            "SDKROOT" to "C:\\sdk",
+        )
+        PageRuntimeEnv.collapseCaseInsensitiveDuplicates(env)
+        val pathKeys = env.keys.filter { it.equals("Path", ignoreCase = true) }
+        assertEquals(1, pathKeys.size, "only one case-insensitive Path key may survive")
+        assertEquals("C:\\swift\\bin;C:\\base;C:\\extra", env[pathKeys.single()], "fullest value wins")
+        assertEquals("C:\\sdk", env["SDKROOT"], "unrelated keys untouched")
+    }
+
+    @Test
+    fun collapseLeavesSingleKeyUntouched() {
+        val env = linkedMapOf("PATH" to "C:\\bin", "JAVA_HOME" to "C:\\jdk")
+        PageRuntimeEnv.collapseCaseInsensitiveDuplicates(env)
+        assertEquals("C:\\bin", env["PATH"])
+        assertEquals("C:\\jdk", env["JAVA_HOME"])
+        assertEquals(2, env.size)
+    }
+
+    @Test
+    fun collapseHandlesThreeWayCollision() {
+        val env = linkedMapOf("path" to "a", "Path" to "aa", "PATH" to "aaa")
+        PageRuntimeEnv.collapseCaseInsensitiveDuplicates(env)
+        assertEquals(1, env.size)
+        assertEquals("aaa", env.values.single())
+        assertTrue(env.keys.single().equals("path", ignoreCase = true))
     }
 }

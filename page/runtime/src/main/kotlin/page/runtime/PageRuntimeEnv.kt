@@ -79,6 +79,22 @@ object PageRuntimeEnv {
         runCatching { ensureClangdConfigForMingw() }
     }
 
+    fun normalizeForLaunch(env: MutableMap<String, String>) {
+        if (!LspInstaller.isWindows()) return
+        collapseCaseInsensitiveDuplicates(env)
+    }
+
+    internal fun collapseCaseInsensitiveDuplicates(env: MutableMap<String, String>) {
+        val byLower = env.keys.groupBy { it.lowercase() }
+        for ((_, keys) in byLower) {
+            if (keys.size <= 1) continue
+            val winner = keys.maxByOrNull { (env[it] ?: "").length } ?: continue
+            val value = env[winner]
+            for (k in keys) if (k != winner) env.remove(k)
+            if (value != null) env[winner] = value
+        }
+    }
+
     private fun applySwiftSdkEnv(env: MutableMap<String, String>) {
         val sdk = runCatching { SwiftToolchainInstaller().sdkRoot() }.getOrNull() ?: return
         env["SDKROOT"] = sdk.toAbsolutePath().toString()

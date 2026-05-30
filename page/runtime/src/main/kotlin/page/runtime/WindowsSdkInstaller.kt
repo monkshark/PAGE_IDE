@@ -82,27 +82,27 @@ class WindowsSdkInstaller(
             if (Files.exists(splat)) ArchiveExtractors.deleteRecursively(splat)
             Files.createDirectories(splat)
 
-            val command = listOf(
-                xwin.toAbsolutePath().toString(),
-                "--accept-license",
-                "--arch", targetArch(),
-                "splat",
-                "--disable-symlinks",
-                "--output", splat.toAbsolutePath().toString(),
-            )
+            val command = splatCommand(xwin, splat)
             onProgress(LspInstaller.Progress.Extracting("Fetching MSVC CRT + Windows SDK from Microsoft via xwin …"))
             onProgress(LspInstaller.Progress.CommandOutput("> " + command.joinToString(" ")))
             val exit = processRunner.runStreaming(command) { line ->
                 onProgress(LspInstaller.Progress.CommandOutput(line))
             }
-            if (exit != 0) throw IOException("xwin splat exited with code $exit")
-
-            if (!splatComplete(splat)) {
+            if (exit != 0) {
+                onProgress(
+                    LspInstaller.Progress.CommandOutput(
+                        "xwin exited with code $exit; checking the splat tree before failing — the trailing " +
+                            "directory-casing symlink needs Developer Mode and is not required for PAGE.",
+                    ),
+                )
+            }
+            if (!splatDirsPresent(splat)) {
                 throw IOException(
-                    "Windows SDK splat incomplete after xwin run: expected ${crtIncludeDir(splat)} and " +
+                    "Windows SDK splat incomplete after xwin run (exit $exit): expected ${crtIncludeDir(splat)} and " +
                         "${sdkIncludeDir(splat, "um")} to exist.",
                 )
             }
+            writeCrtMarker(splat)
             writePointer(resolved)
             onProgress(LspInstaller.Progress.Done(xwinExe(resolved)))
         } catch (t: Throwable) {
@@ -135,6 +135,16 @@ class WindowsSdkInstaller(
         if (!Files.exists(exe)) throw IOException("xwin.exe missing after extraction: $exe")
         return exe
     }
+
+    internal fun splatCommand(xwin: Path, splat: Path): List<String> = listOf(
+        xwin.toAbsolutePath().toString(),
+        "--accept-license",
+        "--arch", targetArch(),
+        "--crt-version", PINNED_CRT_VERSION,
+        "splat",
+        "--disable-symlinks",
+        "--output", splat.toAbsolutePath().toString(),
+    )
 
     internal fun downloadUrl(version: String): String =
         "https://github.com/Jake-Shadle/xwin/releases/download/$version/xwin-$version-${hostTriple()}.tar.gz"
@@ -217,8 +227,20 @@ class WindowsSdkInstaller(
     private fun sdkIncludeDir(splat: Path, group: String): Path =
         splat.resolve("sdk").resolve("include").resolve(group)
 
-    private fun splatComplete(splat: Path): Boolean =
+    private fun splatDirsPresent(splat: Path): Boolean =
         Files.isDirectory(crtIncludeDir(splat)) && Files.isDirectory(sdkIncludeDir(splat, "um"))
+
+    internal fun crtMarkerFile(splat: Path): Path = splat.resolve(CRT_MARKER_FILE)
+
+    internal fun crtMarkerMatches(splat: Path): Boolean =
+        runCatching { Files.readString(crtMarkerFile(splat)).trim() }.getOrNull() == PINNED_CRT_VERSION
+
+    internal fun writeCrtMarker(splat: Path) {
+        runCatching { Files.writeString(crtMarkerFile(splat), PINNED_CRT_VERSION) }
+    }
+
+    internal fun splatComplete(splat: Path): Boolean =
+        splatDirsPresent(splat) && crtMarkerMatches(splat)
 
     fun xwinExe(version: String): Path = toolDir(version).resolve("xwin.exe")
 
@@ -246,6 +268,8 @@ class WindowsSdkInstaller(
 
     companion object {
         const val DEFAULT_XWIN_VERSION = "0.9.0"
+        const val PINNED_CRT_VERSION = "14.36.17.6"
+        const val CRT_MARKER_FILE = ".crt-version"
 
         internal val MISSING_CORECRT_MATH_SUBMODULE =
             Regex("""[ \t]*module[ \t]+math[ \t]*\{\s*header[ \t]+"corecrt_math\.h"\s*export[ \t]+\*\s*\}[ \t]*\r?\n?""")

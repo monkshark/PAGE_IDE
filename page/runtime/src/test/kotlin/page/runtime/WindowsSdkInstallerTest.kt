@@ -62,6 +62,36 @@ class WindowsSdkInstallerTest {
     }
 
     @Test
+    fun splatCommandPinsCrtVersionBeforeSubcommand() {
+        val cmd = windows().splatCommand(Path("C:", "xwin", "xwin.exe"), Path("C:", "splat"))
+        val crtIdx = cmd.indexOf("--crt-version")
+        assertTrue(crtIdx >= 0, cmd.toString())
+        assertEquals(WindowsSdkInstaller.PINNED_CRT_VERSION, cmd[crtIdx + 1], cmd.toString())
+        assertTrue(crtIdx < cmd.indexOf("splat"), "crt-version must precede the splat subcommand: $cmd")
+        assertTrue("--disable-symlinks" in cmd, cmd.toString())
+        assertTrue("--output" in cmd, cmd.toString())
+    }
+
+    @Test
+    fun splatCompleteRequiresPinnedCrtMarker() {
+        val splat = Files.createTempDirectory("page-splat-marker")
+        Files.createDirectories(splat.resolve("crt").resolve("include"))
+        Files.createDirectories(splat.resolve("sdk").resolve("include").resolve("um"))
+        val installer = windows()
+        assertFalse(installer.splatComplete(splat), "dirs without marker must not count as complete")
+        assertFalse(installer.crtMarkerMatches(splat))
+
+        installer.writeCrtMarker(splat)
+        assertTrue(installer.crtMarkerMatches(splat))
+        assertTrue(installer.splatComplete(splat))
+        assertEquals(WindowsSdkInstaller.PINNED_CRT_VERSION, Files.readString(installer.crtMarkerFile(splat)).trim())
+
+        Files.writeString(installer.crtMarkerFile(splat), "14.44.17.14")
+        assertFalse(installer.crtMarkerMatches(splat), "stale CRT marker must force re-splat")
+        assertFalse(installer.splatComplete(splat))
+    }
+
+    @Test
     fun includeDirsCoverCrtAndSdkGroups() {
         val splat = Path("C:", "splat")
         val dirs = windows().includeDirs(splat).map { it.toString().replace('\\', '/') }

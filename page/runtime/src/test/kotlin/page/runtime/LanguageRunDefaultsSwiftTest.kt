@@ -22,6 +22,17 @@ class LanguageRunDefaultsSwiftTest {
     }
 
     @Test
+    fun prelaunchPassesLinkLibsAsPositionalLinkerInputsBeforeOutput() {
+        val lib = "C:\\swift\\sdk\\usr\\lib\\swift\\windows\\x86_64\\Foundation.lib"
+        val cmd = LanguageRunDefaults.swiftWindowsPrelaunch("swiftc.exe", "main.swift", "out.exe", listOf(lib))
+        val xlink = cmd.indexOf("-Xlinker")
+        assertTrue(xlink >= 0, cmd.toString())
+        assertEquals(lib, cmd[xlink + 1], cmd.toString())
+        assertTrue(xlink < cmd.indexOf("-o"), "linker inputs must precede -o: $cmd")
+        assertEquals(listOf("-o", "out.exe"), cmd.subList(cmd.size - 2, cmd.size))
+    }
+
+    @Test
     fun windowsConfigCompilesToExeThenRunsit() {
         val root: Path = Path("C:", "ws")
         val file = root.resolve("hello.swift")

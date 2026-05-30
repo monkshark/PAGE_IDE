@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 
 sealed interface RunEvent {
@@ -43,15 +44,24 @@ class RunController(
         waitJob = scope.launch(Dispatchers.IO) {
             val prelaunch = config.prelaunch?.takeIf { it.isNotEmpty() }
             if (prelaunch != null) {
-                emitOnMain(RunEvent.Stdout("> " + prelaunch.joinToString(" ") + System.lineSeparator()))
-                val buildCode = runProcess(prelaunch, config)
-                if (buildCode == null) {
-                    resetIdle()
-                    return@launch
-                }
-                if (buildCode != 0 || !alive.get()) {
-                    finish(buildCode)
-                    return@launch
+                val nl = System.lineSeparator()
+                val output = config.prelaunchOutput?.let { Path.of(it) }
+                val inputs = config.prelaunchInputs.map { Path.of(it) }
+                val buildKey = prelaunch.joinToString(" ")
+                if (output != null && BuildCache.upToDate(output, inputs, buildKey)) {
+                    emitOnMain(RunEvent.Stdout("> No changes — skipping rebuild$nl$nl$nl"))
+                } else {
+                    emitOnMain(RunEvent.Stdout("> $buildKey$nl$nl$nl"))
+                    val buildCode = runProcess(prelaunch, config)
+                    if (buildCode == null) {
+                        resetIdle()
+                        return@launch
+                    }
+                    if (buildCode != 0 || !alive.get()) {
+                        finish(buildCode)
+                        return@launch
+                    }
+                    if (output != null) BuildCache.record(output, buildKey)
                 }
             }
             val mainCode = runProcess(listOf(config.command) + config.args, config)
@@ -65,6 +75,7 @@ class RunController(
         if (cwd != null && cwd.isDirectory) builder.directory(cwd)
         PageRuntimeEnv.applyTo(builder.environment())
         builder.environment().putAll(config.env)
+        PageRuntimeEnv.normalizeForLaunch(builder.environment())
         val started = try {
             builder.start()
         } catch (e: IOException) {

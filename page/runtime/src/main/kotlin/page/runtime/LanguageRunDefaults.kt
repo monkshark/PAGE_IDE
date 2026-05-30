@@ -174,13 +174,17 @@ object LanguageRunDefaults {
         return env
     }
 
-    internal fun swiftWindowsPrelaunch(swiftc: String, file: String, exe: String): List<String> = listOf(
+    internal fun swiftWindowsPrelaunch(
+        swiftc: String,
+        file: String,
+        exe: String,
+        linkLibs: List<String> = emptyList(),
+    ): List<String> = listOf(
         swiftc,
         file,
         "-use-ld=lld",
         "-Xcc", "-Xclang", "-Xcc", "-fbuiltin-headers-in-system-modules",
-        "-o", exe,
-    )
+    ) + linkLibs.flatMap { listOf("-Xlinker", it) } + listOf("-o", exe)
 
     internal fun buildSwiftWindowsConfig(
         path: Path,
@@ -189,6 +193,7 @@ object LanguageRunDefaults {
         workspaceRoot: Path?,
         swiftc: Path,
         env: Map<String, String> = emptyMap(),
+        linkLibs: List<String> = emptyList(),
     ): RunConfig? {
         val outDir = workspaceRoot ?: path.toAbsolutePath().parent ?: return null
         val exe = outDir.resolve("$baseName.exe").toAbsolutePath().toString()
@@ -199,7 +204,9 @@ object LanguageRunDefaults {
             args = emptyList(),
             workingDir = outDir.toString(),
             env = env,
-            prelaunch = swiftWindowsPrelaunch(swiftc.toAbsolutePath().toString(), path.toString(), exe),
+            prelaunch = swiftWindowsPrelaunch(swiftc.toAbsolutePath().toString(), path.toString(), exe, linkLibs),
+            prelaunchOutput = exe,
+            prelaunchInputs = listOf(path.toAbsolutePath().toString()),
         )
     }
 
@@ -211,7 +218,8 @@ object LanguageRunDefaults {
     ): RunConfig? {
         val swift = runCatching { SwiftToolchainInstaller() }.getOrNull() ?: return null
         val swiftc = swift.swiftcExecutable() ?: return null
-        return buildSwiftWindowsConfig(path, fileName, baseName, workspaceRoot, swiftc, swiftRunEnv(swift))
+        val linkLibs = listOfNotNull(swift.foundationImportLib()?.toAbsolutePath()?.toString())
+        return buildSwiftWindowsConfig(path, fileName, baseName, workspaceRoot, swiftc, swiftRunEnv(swift), linkLibs)
     }
 
     private fun buildFlutterConfig(projectRoot: Path): RunConfig {
