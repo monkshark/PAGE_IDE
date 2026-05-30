@@ -1,12 +1,23 @@
 package page.app.state
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import page.app.PaneSide
 import page.editor.TabBook
+import page.editor.UndoGroupTracker
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class EditorWorkspaceStateTest {
+    private fun newState(): EditorWorkspaceState {
+        val trackers = mapOf(
+            PaneSide.PRIMARY to UndoGroupTracker(),
+            PaneSide.SECONDARY to UndoGroupTracker(),
+        )
+        return EditorWorkspaceState(undoTracker = { trackers.getValue(it) })
+    }
+
     private fun bookWith(count: Int, active: Int): TabBook {
         var book = TabBook()
         for (i in 0 until count) {
@@ -15,7 +26,7 @@ class EditorWorkspaceStateTest {
         return book.activate(active)
     }
 
-    private fun state(book: TabBook, focused: PaneSide = PaneSide.PRIMARY) = EditorWorkspaceState().apply {
+    private fun EditorWorkspaceState.seed(book: TabBook, focused: PaneSide = PaneSide.PRIMARY) = apply {
         focusedPane = focused
         when (focused) {
             PaneSide.PRIMARY -> primaryPane = primaryPane.copy(book = book)
@@ -25,37 +36,78 @@ class EditorWorkspaceStateTest {
 
     @Test
     fun nextTabAdvancesActiveIndex() {
-        val s = state(bookWith(3, active = 0))
+        val s = newState().seed(bookWith(3, active = 0))
         s.activateAdjacentTab(1)
         assertEquals(1, s.primaryPane.book.activeIndex)
     }
 
     @Test
     fun prevTabWrapsToLast() {
-        val s = state(bookWith(3, active = 0))
+        val s = newState().seed(bookWith(3, active = 0))
         s.activateAdjacentTab(-1)
         assertEquals(2, s.primaryPane.book.activeIndex)
     }
 
     @Test
     fun nextTabWrapsToFirst() {
-        val s = state(bookWith(3, active = 2))
+        val s = newState().seed(bookWith(3, active = 2))
         s.activateAdjacentTab(1)
         assertEquals(0, s.primaryPane.book.activeIndex)
     }
 
     @Test
     fun singleTabIsNoOp() {
-        val s = state(bookWith(1, active = 0))
+        val s = newState().seed(bookWith(1, active = 0))
         s.activateAdjacentTab(1)
         assertEquals(0, s.primaryPane.book.activeIndex)
     }
 
     @Test
-    fun actsOnFocusedPaneOnly() {
-        val s = state(bookWith(3, active = 0), focused = PaneSide.SECONDARY)
+    fun activateAdjacentTabActsOnFocusedPaneOnly() {
+        val s = newState().seed(bookWith(3, active = 0), focused = PaneSide.SECONDARY)
         s.activateAdjacentTab(1)
         assertEquals(1, s.secondaryPane.book.activeIndex)
         assertEquals(-1, s.primaryPane.book.activeIndex)
+    }
+
+    @Test
+    fun handleEditorChangeUpdatesActiveTabAndEditorValue() {
+        val s = newState().seed(bookWith(1, active = 0))
+        s.handleEditorChange(PaneSide.PRIMARY, TextFieldValue("hello", TextRange(5)))
+        assertEquals("hello", s.primaryPane.book.active?.text)
+        assertEquals("hello", s.primaryPane.editorValue.text)
+        assertEquals(5, s.primaryPane.editorValue.selection.start)
+    }
+
+    @Test
+    fun activateTabSetsActiveIndex() {
+        val s = newState().seed(bookWith(3, active = 0))
+        s.activateTab(PaneSide.PRIMARY, 2)
+        assertEquals(2, s.primaryPane.book.activeIndex)
+    }
+
+    @Test
+    fun moveTabReordersTabs() {
+        val s = newState().seed(bookWith(3, active = 0))
+        s.moveTab(PaneSide.PRIMARY, 0, 2)
+        assertEquals("f0.txt", s.primaryPane.book.tabs[2].path.fileName.toString())
+    }
+
+    @Test
+    fun moveTabAcrossMovesTabToOtherPaneAndFocuses() {
+        val s = newState().seed(bookWith(2, active = 0))
+        s.splitEnabled = true
+        s.moveTabAcross(PaneSide.PRIMARY, 0)
+        assertEquals(1, s.primaryPane.book.tabs.size)
+        assertEquals(1, s.secondaryPane.book.tabs.size)
+        assertEquals(PaneSide.SECONDARY, s.focusedPane)
+    }
+
+    @Test
+    fun moveTabAcrossIsNoOpWhenNotSplit() {
+        val s = newState().seed(bookWith(2, active = 0))
+        s.moveTabAcross(PaneSide.PRIMARY, 0)
+        assertEquals(2, s.primaryPane.book.tabs.size)
+        assertEquals(0, s.secondaryPane.book.tabs.size)
     }
 }

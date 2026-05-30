@@ -139,7 +139,13 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         width = 1280.dp,
         height = 800.dp,
     )
-    val editorWorkspace = remember { EditorWorkspaceState() }
+    val undoTrackerPrimary = remember { UndoGroupTracker() }
+    val undoTrackerSecondary = remember { UndoGroupTracker() }
+    fun undoTracker(side: PaneSide): UndoGroupTracker = when (side) {
+        PaneSide.PRIMARY -> undoTrackerPrimary
+        PaneSide.SECONDARY -> undoTrackerSecondary
+    }
+    val editorWorkspace = remember { EditorWorkspaceState(undoTracker = ::undoTracker) }
     var primaryPane by editorWorkspace::primaryPane
     var secondaryPane by editorWorkspace::secondaryPane
     var focusedPane by editorWorkspace::focusedPane
@@ -237,12 +243,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     registerAllBackends()
     val todo = rememberTodoController(workspaceRoot = rootDir)
     val todoItems by todo.items
-    val undoTrackerPrimary = remember { UndoGroupTracker() }
-    val undoTrackerSecondary = remember { UndoGroupTracker() }
-    fun undoTracker(side: PaneSide): UndoGroupTracker = when (side) {
-        PaneSide.PRIMARY -> undoTrackerPrimary
-        PaneSide.SECONDARY -> undoTrackerSecondary
-    }
 
     fun paneOf(side: PaneSide): EditorPaneState = editorWorkspace.paneOf(side)
 
@@ -1205,19 +1205,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         }
     }
 
-    val moveTabAcross: ((PaneSide, Int) -> Unit)? = if (splitEnabled) {
-        { source, index ->
-            val sourcePane = paneOf(source)
-            val tab = sourcePane.book.tabs.getOrNull(index)
-            if (tab != null) {
-                val target = if (source == PaneSide.PRIMARY)
-                    PaneSide.SECONDARY else PaneSide.PRIMARY
-                mutatePane(source) { it.copy(book = it.book.close(index)) }
-                mutatePane(target) { it.copy(book = it.book.appendTab(tab)) }
-                focusedPane = target
-            }
-        }
-    } else null
 
     val tabContextActionsFor: (PaneSide) -> TabContextActions = { side ->
         TabContextActions(
@@ -1255,7 +1242,9 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             onCopyRelativePath = { idx -> copyRelativePathOfTab(side, idx) },
             onShowInExplorer = { idx -> showInExplorerOfTab(side, idx) },
             onTogglePin = { idx -> togglePin(side, idx) },
-            onMoveToOtherPane = moveTabAcross?.let { fn -> { idx -> fn(side, idx) } },
+            onMoveToOtherPane = if (editorWorkspace.splitEnabled) {
+                { idx -> editorWorkspace.moveTabAcross(side, idx) }
+            } else null,
             onSplit = { idx -> splitWithTab(side, idx) },
             onRename = { idx -> renameTabFile(side, idx) },
         )
@@ -1692,41 +1681,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     editor = editorWorkspace,
                     ui = layoutUiState,
                     lspRouter = currentLspRouter,
-                    onEditorChange = { side, v ->
-                        mutatePane(side) {
-                            val priorText = it.editorValue.text
-                            val priorSelection = it.editorValue.selection
-                            val textChanged = v.text != priorText
-                            val tracker = undoTracker(side)
-                            val nextBook = if (textChanged) {
-                                val priorCaret = priorSelection.start
-                                val shouldPush = tracker.onTextChange(priorText, v.text)
-                                val withPush = if (shouldPush) {
-                                    it.book.pushHistoryOnActive(EditSnapshot(priorText, priorCaret))
-                                } else it.book
-                                withPush.updateActive(v.text, v.selection.start)
-                            } else {
-                                if (v.selection != priorSelection) tracker.markBreak()
-                                it.book.updateActive(v.text, v.selection.start)
-                            }
-                            val nextSearch = if (textChanged) {
-                                it.search?.retarget(v.text)
-                            } else it.search
-                            it.copy(
-                                editorValue = v,
-                                book = nextBook,
-                                search = nextSearch,
-                            )
-                        }
-                    },
-                    onActivateTab = { side, index ->
-                        mutatePane(side) { it.copy(book = it.book.activate(index)) }
-                    },
                     onCloseTab = { side, index -> requestCloseTab(side, index) },
-                    onMoveTab = { side, from, to ->
-                        mutatePane(side) { it.copy(book = it.book.move(from, to)) }
-                    },
-                    onMoveTabAcross = moveTabAcross,
                     onToggle = toggleExpanded,
                     onOpenFile = openInTab,
                     onCreateFileIn = onCreateFileIn,
@@ -2549,14 +2504,11 @@ private fun captureVersion(cmd: String, vararg args: String): String? {
 internal fun PaneRegion(
     pane: EditorPaneState,
     side: PaneSide,
+    editor: EditorWorkspaceState,
     lspRouter: LspRouter,
     isFocused: Boolean,
     onPaneFocus: (PaneSide) -> Unit,
-    onEditorChange: (PaneSide, TextFieldValue) -> Unit,
-    onActivateTab: (PaneSide, Int) -> Unit,
     onCloseTab: (PaneSide, Int) -> Unit,
-    onMoveTab: (PaneSide, Int, Int) -> Unit,
-    onMoveTabAcross: ((PaneSide, Int) -> Unit)?,
     onQueryChange: (PaneSide, String) -> Unit,
     onReplaceChange: (PaneSide, String) -> Unit,
     onToggleCase: (PaneSide) -> Unit,
@@ -2634,12 +2586,14 @@ internal fun PaneRegion(
             book = pane.book,
             onActivate = { idx ->
                 onPaneFocus(side)
-                onActivateTab(side, idx)
+                editor.activateTab(side, idx)
             },
             onClose = { idx -> onCloseTab(side, idx) },
-            onMove = { from, to -> onMoveTab(side, from, to) },
-            onMoveToOtherPane = onMoveTabAcross?.let { fn -> { idx -> fn(side, idx) } },
-            crossPaneSide = if (onMoveTabAcross == null) null else when (side) {
+            onMove = { from, to -> editor.moveTab(side, from, to) },
+            onMoveToOtherPane = if (editor.splitEnabled) {
+                { idx -> editor.moveTabAcross(side, idx) }
+            } else null,
+            crossPaneSide = if (!editor.splitEnabled) null else when (side) {
                 PaneSide.PRIMARY -> CrossPaneSide.RIGHT
                 PaneSide.SECONDARY -> CrossPaneSide.LEFT
             },
@@ -2658,7 +2612,7 @@ internal fun PaneRegion(
             FileKind.SVG -> SvgEditPanel(
                 path = active.path,
                 value = pane.editorValue,
-                onValueChange = { v -> onEditorChange(side, v) },
+                onValueChange = { v -> editor.handleEditorChange(side, v) },
                 search = pane.search,
                 onQueryChange = { q -> onQueryChange(side, q) },
                 onReplaceChange = { v -> onReplaceChange(side, v) },
@@ -2693,7 +2647,7 @@ internal fun PaneRegion(
                     .sortedBy { it.startedAtMs }
                 EditorPanel(
                     value = pane.editorValue,
-                    onValueChange = { v -> onEditorChange(side, v) },
+                    onValueChange = { v -> editor.handleEditorChange(side, v) },
                     search = pane.search,
                     onQueryChange = { q -> onQueryChange(side, q) },
                     onReplaceChange = { v -> onReplaceChange(side, v) },

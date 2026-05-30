@@ -17,7 +17,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,11 +41,7 @@ internal fun IdeMainLayout(
     editor: EditorWorkspaceState,
     ui: LayoutUiState,
     lspRouter: LspRouter,
-    onEditorChange: (PaneSide, TextFieldValue) -> Unit,
-    onActivateTab: (PaneSide, Int) -> Unit,
     onCloseTab: (PaneSide, Int) -> Unit,
-    onMoveTab: (PaneSide, Int, Int) -> Unit,
-    onMoveTabAcross: ((PaneSide, Int) -> Unit)?,
     onToggle: (Path, Boolean) -> Unit,
     onOpenFile: (Path) -> Unit,
     onCreateFileIn: (Path) -> Unit,
@@ -217,14 +212,11 @@ internal fun IdeMainLayout(
                             PaneRegion(
                                 pane = editor.primaryPane,
                                 side = PaneSide.PRIMARY,
+                                editor = editor,
                                 lspRouter = lspRouter,
                                 isFocused = editor.focusedPane == PaneSide.PRIMARY,
                                 onPaneFocus = { editor.focusedPane = it },
-                                onEditorChange = onEditorChange,
-                                onActivateTab = onActivateTab,
                                 onCloseTab = onCloseTab,
-                                onMoveTab = onMoveTab,
-                                onMoveTabAcross = onMoveTabAcross,
                                 onQueryChange = onQueryChange,
                                 onReplaceChange = onReplaceChange,
                                 onToggleCase = onToggleCase,
@@ -261,14 +253,11 @@ internal fun IdeMainLayout(
                             PaneRegion(
                                 pane = editor.secondaryPane,
                                 side = PaneSide.SECONDARY,
+                                editor = editor,
                                 lspRouter = lspRouter,
                                 isFocused = editor.focusedPane == PaneSide.SECONDARY,
                                 onPaneFocus = { editor.focusedPane = it },
-                                onEditorChange = onEditorChange,
-                                onActivateTab = onActivateTab,
                                 onCloseTab = onCloseTab,
-                                onMoveTab = onMoveTab,
-                                onMoveTabAcross = onMoveTabAcross,
                                 onQueryChange = onQueryChange,
                                 onReplaceChange = onReplaceChange,
                                 onToggleCase = onToggleCase,
@@ -306,14 +295,11 @@ internal fun IdeMainLayout(
                     PaneRegion(
                         pane = editor.primaryPane,
                         side = PaneSide.PRIMARY,
+                        editor = editor,
                         lspRouter = lspRouter,
                         isFocused = true,
                         onPaneFocus = { editor.focusedPane = it },
-                        onEditorChange = onEditorChange,
-                        onActivateTab = onActivateTab,
                         onCloseTab = onCloseTab,
-                        onMoveTab = onMoveTab,
-                        onMoveTabAcross = null,
                         onQueryChange = onQueryChange,
                         onReplaceChange = onReplaceChange,
                         onToggleCase = onToggleCase,
