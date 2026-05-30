@@ -37,7 +37,29 @@ class RunController(
             emit(RunEvent.Failed("Run command is empty"))
             return
         }
-        val command = listOf(config.command) + config.args
+        alive.set(true)
+        startedAt = System.currentTimeMillis()
+        emit(RunEvent.Started(config.command, config.args, config.workingDir))
+        waitJob = scope.launch(Dispatchers.IO) {
+            val prelaunch = config.prelaunch?.takeIf { it.isNotEmpty() }
+            if (prelaunch != null) {
+                emitOnMain(RunEvent.Stdout("> " + prelaunch.joinToString(" ") + System.lineSeparator()))
+                val buildCode = runProcess(prelaunch, config)
+                if (buildCode == null) {
+                    resetIdle()
+                    return@launch
+                }
+                if (buildCode != 0 || !alive.get()) {
+                    finish(buildCode)
+                    return@launch
+                }
+            }
+            val mainCode = runProcess(listOf(config.command) + config.args, config)
+            if (mainCode == null) resetIdle() else finish(mainCode)
+        }
+    }
+
+    private suspend fun runProcess(command: List<String>, config: RunConfig): Int? {
         val builder = ProcessBuilder(command)
         val cwd = config.workingDir?.takeIf { it.isNotBlank() }?.let { File(it) }
         if (cwd != null && cwd.isDirectory) builder.directory(cwd)
@@ -46,34 +68,39 @@ class RunController(
         val started = try {
             builder.start()
         } catch (e: IOException) {
-            emit(RunEvent.Failed(e.message ?: "Failed to start process"))
-            return
+            emitOnMain(RunEvent.Failed(e.message ?: "Failed to start process"))
+            return null
         } catch (e: SecurityException) {
-            emit(RunEvent.Failed(e.message ?: "Permission denied"))
-            return
+            emitOnMain(RunEvent.Failed(e.message ?: "Permission denied"))
+            return null
         }
         process = started
-        alive.set(true)
-        startedAt = System.currentTimeMillis()
-        emit(RunEvent.Started(config.command, config.args, config.workingDir))
         stdoutJob = scope.launch(Dispatchers.IO) {
             streamLoop(started.inputStream) { chunk -> emitOnMain(RunEvent.Stdout(chunk)) }
         }
         stderrJob = scope.launch(Dispatchers.IO) {
             streamLoop(started.errorStream) { chunk -> emitOnMain(RunEvent.Stderr(chunk)) }
         }
-        waitJob = scope.launch(Dispatchers.IO) {
-            val code = runCatching { started.waitFor() }.getOrElse { -1 }
-            stdoutJob?.join()
-            stderrJob?.join()
-            val duration = System.currentTimeMillis() - startedAt
-            alive.set(false)
-            process = null
-            withContext(Dispatchers.Main) { onEvent(RunEvent.Exited(code, duration)) }
-        }
+        val code = runCatching { started.waitFor() }.getOrElse { -1 }
+        stdoutJob?.join()
+        stderrJob?.join()
+        return code
+    }
+
+    private suspend fun finish(code: Int) {
+        val duration = System.currentTimeMillis() - startedAt
+        alive.set(false)
+        process = null
+        withContext(Dispatchers.Main) { onEvent(RunEvent.Exited(code, duration)) }
+    }
+
+    private fun resetIdle() {
+        alive.set(false)
+        process = null
     }
 
     fun stop() {
+        alive.set(false)
         val p = process ?: return
         runCatching { p.descendants().forEach { it.destroyForcibly() } }
         runCatching { p.destroyForcibly() }

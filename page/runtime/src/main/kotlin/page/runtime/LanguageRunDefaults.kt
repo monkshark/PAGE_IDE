@@ -82,6 +82,18 @@ object LanguageRunDefaults {
             command = "bash",
             argTemplate = listOf(FILE_TOKEN),
         ),
+        LanguageRunTemplate(
+            displayName = "Dart",
+            extensions = setOf("dart"),
+            command = "dart",
+            argTemplate = listOf("run", FILE_TOKEN),
+        ),
+        LanguageRunTemplate(
+            displayName = "Swift",
+            extensions = setOf("swift"),
+            command = "swift",
+            argTemplate = listOf(FILE_TOKEN),
+        ),
     )
 
     fun forExtension(ext: String): LanguageRunTemplate? {
@@ -138,7 +150,86 @@ object LanguageRunDefaults {
             val bin = dotnet.executable() ?: return null
             return bin.toAbsolutePath().toString() to mapOf("DOTNET_ROOT" to home.toAbsolutePath().toString())
         }
+        if ("dart" in template.extensions) {
+            val dart = runCatching { DartSdkInstaller() }.getOrNull() ?: return null
+            val bin = dart.executable() ?: return null
+            return bin.toAbsolutePath().toString() to emptyMap()
+        }
+        if ("swift" in template.extensions) {
+            val swift = runCatching { SwiftToolchainInstaller() }.getOrNull() ?: return null
+            val bin = swift.swiftExecutable() ?: return null
+            return bin.toAbsolutePath().toString() to swiftRunEnv(swift)
+        }
         return null
+    }
+
+    private fun swiftRunEnv(swift: SwiftToolchainInstaller): Map<String, String> {
+        val sep = java.io.File.pathSeparator
+        val env = mutableMapOf<String, String>()
+        swift.binDir()?.toAbsolutePath()?.toString()?.let { binDir ->
+            env["PATH"] = binDir + sep + (System.getenv("PATH") ?: "")
+        }
+        swift.sdkRoot()?.toAbsolutePath()?.toString()?.let { env["SDKROOT"] = it }
+        runCatching { WindowsSdkInstaller().envVars() }.getOrNull()?.let { env.putAll(it) }
+        return env
+    }
+
+    internal fun swiftWindowsPrelaunch(swiftc: String, file: String, exe: String): List<String> = listOf(
+        swiftc,
+        file,
+        "-use-ld=lld",
+        "-Xcc", "-Xclang", "-Xcc", "-fbuiltin-headers-in-system-modules",
+        "-o", exe,
+    )
+
+    internal fun buildSwiftWindowsConfig(
+        path: Path,
+        fileName: String,
+        baseName: String,
+        workspaceRoot: Path?,
+        swiftc: Path,
+        env: Map<String, String> = emptyMap(),
+    ): RunConfig? {
+        val outDir = workspaceRoot ?: path.toAbsolutePath().parent ?: return null
+        val exe = outDir.resolve("$baseName.exe").toAbsolutePath().toString()
+        return RunConfig(
+            id = "auto-swiftc-$baseName-${System.nanoTime()}",
+            name = "Swift · $fileName",
+            command = exe,
+            args = emptyList(),
+            workingDir = outDir.toString(),
+            env = env,
+            prelaunch = swiftWindowsPrelaunch(swiftc.toAbsolutePath().toString(), path.toString(), exe),
+        )
+    }
+
+    private fun buildSwiftWindowsConfig(
+        path: Path,
+        fileName: String,
+        baseName: String,
+        workspaceRoot: Path?,
+    ): RunConfig? {
+        val swift = runCatching { SwiftToolchainInstaller() }.getOrNull() ?: return null
+        val swiftc = swift.swiftcExecutable() ?: return null
+        return buildSwiftWindowsConfig(path, fileName, baseName, workspaceRoot, swiftc, swiftRunEnv(swift))
+    }
+
+    private fun buildFlutterConfig(projectRoot: Path): RunConfig {
+        val flutter = runCatching { FlutterSdkInstaller() }.getOrNull()
+        val version = flutter?.currentInstalledVersion()
+        val command = if (flutter != null && version != null) {
+            flutter.flutterCommand(version).toAbsolutePath().toString()
+        } else {
+            "flutter"
+        }
+        val projectName = projectRoot.fileName?.toString() ?: "app"
+        return RunConfig(
+            id = "auto-flutter-$projectName-${System.nanoTime()}",
+            name = "Flutter · $projectName",
+            command = command,
+            args = listOf("run"),
+            workingDir = projectRoot.toString(),
+        )
     }
 
     fun forFile(path: Path): LanguageRunTemplate? {
@@ -150,8 +241,15 @@ object LanguageRunDefaults {
 
     fun buildConfig(path: Path, workspaceRoot: Path?): RunConfig? {
         val template = forFile(path) ?: return null
+        if ("dart" in template.extensions) {
+            val flutterRoot = FlutterProjectDetector.flutterRootFor(path, workspaceRoot)
+            if (flutterRoot != null) return buildFlutterConfig(flutterRoot)
+        }
         val fileName = path.fileName?.toString() ?: return null
         val baseName = fileName.substringBeforeLast('.', fileName)
+        if ("swift" in template.extensions && LspInstaller.isWindows()) {
+            buildSwiftWindowsConfig(path, fileName, baseName, workspaceRoot)?.let { return it }
+        }
         val resolvedArgs = template.argTemplate.map { token ->
             when (token) {
                 FILE_TOKEN -> path.toString()

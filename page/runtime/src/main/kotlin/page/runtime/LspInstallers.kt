@@ -35,6 +35,7 @@ object LspInstallers {
         "go-sdk" to { GoSdkInstaller() },
         "rust-runtime" to { RustToolchainInstaller() },
         "dotnet-runtime" to { DotnetSdkInstaller() },
+        "windows-sdk" to { WindowsSdkInstaller() },
     )
 
     fun forId(languageId: String): LspInstaller? = registry[languageId]?.invoke()

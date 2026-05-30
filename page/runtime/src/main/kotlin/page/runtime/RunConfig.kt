@@ -9,6 +9,7 @@ data class RunConfig(
     val args: List<String> = emptyList(),
     val workingDir: String? = null,
     val env: Map<String, String> = emptyMap(),
+    val prelaunch: List<String>? = null,
 ) {
     fun isRunnable(): Boolean = command.isNotBlank()
 }

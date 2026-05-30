@@ -61,3 +61,7 @@ desktop.ini
 .kls-cache/
 
 .page-ide/
+
+# xwin investigation cache (large, machine-local MSVC/SDK bits)
+.xwin-cache/
+**/.xwin-cache/
