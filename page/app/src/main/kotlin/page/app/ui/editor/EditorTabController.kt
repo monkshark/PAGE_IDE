@@ -14,6 +14,8 @@ internal class EditorTabController(
     private val didClose: (Path) -> Unit,
     private val isUnsavedText: (OpenTab) -> Boolean,
     private val setPendingClose: (PendingClose) -> Unit,
+    private val autoSaveOnClose: () -> Boolean,
+    private val saveTabAt: (PaneSide, Int) -> Unit,
 ) {
     private fun disposeClosed(paths: List<Path>) {
         paths.forEach { p ->
@@ -48,7 +50,12 @@ internal class EditorTabController(
     fun requestCloseTab(side: PaneSide, idx: Int) {
         val tab = paneOf(side).book.tabs.getOrNull(idx)
         if (tab != null && isUnsavedText(tab)) {
-            setPendingClose(PendingClose.Tab(side, idx))
+            if (autoSaveOnClose()) {
+                saveTabAt(side, idx)
+                closeTabAt(side, idx)
+            } else {
+                setPendingClose(PendingClose.Tab(side, idx))
+            }
         } else {
             closeTabAt(side, idx)
         }
@@ -70,6 +77,9 @@ internal class EditorTabController(
             if (isUnsavedText(t)) (side to t.path) else null
         }
         if (dirtyPairs.isEmpty()) {
+            closeManyOnPane(side, valid)
+        } else if (autoSaveOnClose()) {
+            valid.forEach { i -> if (isUnsavedText(pane.book.tabs[i])) saveTabAt(side, i) }
             closeManyOnPane(side, valid)
         } else {
             val cleanIndices = valid.filter { i -> !isUnsavedText(pane.book.tabs[i]) }

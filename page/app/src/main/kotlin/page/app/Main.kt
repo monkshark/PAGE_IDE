@@ -955,6 +955,19 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val isUnsavedText: (OpenTab) -> Boolean = { tab ->
         tab.dirty && FileKinds.classify(tab.path).isEditableAsText
     }
+    val saveTabAt: (PaneSide, Int) -> Unit = { side, idx ->
+        val pane = paneOf(side)
+        val tab = pane.book.tabs.getOrNull(idx)
+        if (tab != null && FileKinds.classify(tab.path).isEditableAsText) {
+            val liveText = if (idx == pane.book.activeIndex) pane.editorValue.text else tab.text
+            try {
+                FileDocument.save(tab.path, liveText)
+                for (s in listOf(PaneSide.PRIMARY, PaneSide.SECONDARY)) {
+                    mutatePane(s) { it.copy(book = it.book.markPathSaved(tab.path, liveText)) }
+                }
+            } catch (_: java.io.IOException) { }
+        }
+    }
     val tabController = EditorTabController(
         paneOf = { side -> paneOf(side) },
         mutatePane = { side, transform -> mutatePane(side, transform) },
@@ -965,6 +978,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         didClose = { p -> lspRouter.controllerFor(p)?.didClose(p) },
         isUnsavedText = { tab -> isUnsavedText(tab) },
         setPendingClose = { pendingClose = it },
+        autoSaveOnClose = { pageSettings.autoSave.onClose },
+        saveTabAt = { side, idx -> saveTabAt(side, idx) },
     )
     val closeTabsUnderPath: (Path) -> Unit = { path -> tabController.closeTabsUnderPath(path) }
     val closeTabAt: (PaneSide, Int) -> Unit = { side, idx -> tabController.closeTabAt(side, idx) }
