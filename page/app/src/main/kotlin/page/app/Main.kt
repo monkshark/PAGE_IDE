@@ -1005,17 +1005,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         val idx = paneOf(side).book.activeIndex
         if (idx in paneOf(side).book.tabs.indices) requestCloseTab(side, idx)
     }
-    val activateAdjacentTab: (Int) -> Unit = { delta ->
-        val side = focusedPane
-        val book = paneOf(side).book
-        val n = book.tabs.size
-        if (n > 1) {
-            val next = ((book.activeIndex + delta) % n + n) % n
-            if (next != book.activeIndex) {
-                mutatePane(side) { it.copy(book = it.book.activate(next)) }
-            }
-        }
-    }
     val anyDirty: () -> Boolean = {
         primaryPane.book.tabs.any(isUnsavedText) || secondaryPane.book.tabs.any(isUnsavedText)
     }
@@ -1484,8 +1473,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             }
             ShortcutAction.FORMAT -> { triggerFormat(); true }
             ShortcutAction.CODE_ACTION -> { triggerCodeAction(); true }
-            ShortcutAction.PREV_TAB -> { activateAdjacentTab(-1); true }
-            ShortcutAction.NEXT_TAB -> { activateAdjacentTab(1); true }
+            ShortcutAction.PREV_TAB -> { editorWorkspace.activateAdjacentTab(-1); true }
+            ShortcutAction.NEXT_TAB -> { editorWorkspace.activateAdjacentTab(1); true }
             ShortcutAction.JUMP_PROBLEM_NEXT -> { jumpProblemRelative(true); true }
             ShortcutAction.JUMP_PROBLEM_PREV -> { jumpProblemRelative(false); true }
             ShortcutAction.REFRESH_TREE -> { treeRevision++; true }

@@ -43,4 +43,14 @@ class EditorWorkspaceState {
     }
 
     fun focused(): EditorPaneState = paneOf(focusedPane)
+
+    fun activateAdjacentTab(delta: Int) {
+        val book = paneOf(focusedPane).book
+        val n = book.tabs.size
+        if (n <= 1) return
+        val next = ((book.activeIndex + delta) % n + n) % n
+        if (next != book.activeIndex) {
+            mutatePane(focusedPane) { it.copy(book = it.book.activate(next)) }
+        }
+    }
 }
