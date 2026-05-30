@@ -136,6 +136,7 @@ fun EditorPanel(
     lspStatusText: String? = null,
     lspActivities: List<LspController.Activity> = emptyList(),
     onLspStatusClick: (() -> Unit)? = null,
+    onActivityClick: ((LspController.Activity) -> Unit)? = null,
     onProblemsToggle: (() -> Unit)? = null,
     todoCount: Int = 0,
     onTodoToggle: (() -> Unit)? = null,
@@ -1252,6 +1253,7 @@ fun EditorPanel(
             lspStatusText = lspStatusText,
             lspActivities = lspActivities,
             onLspStatusClick = onLspStatusClick,
+            onActivityClick = onActivityClick,
             onProblemsToggle = onProblemsToggle,
             todoCount = todoCount,
             onTodoToggle = onTodoToggle,
@@ -1729,6 +1731,7 @@ private fun EditorStatusBar(
     lspStatusText: String? = null,
     lspActivities: List<LspController.Activity> = emptyList(),
     onLspStatusClick: (() -> Unit)? = null,
+    onActivityClick: ((LspController.Activity) -> Unit)? = null,
     onProblemsToggle: (() -> Unit)? = null,
     todoCount: Int = 0,
     onTodoToggle: (() -> Unit)? = null,
@@ -1771,7 +1774,7 @@ private fun EditorStatusBar(
             if (showActivities || showLifecycle || showJdk) {
                 Box(modifier = Modifier.weight(1f))
                 if (showActivities) {
-                    LspActivitiesItem(activities = lspActivities)
+                    LspActivitiesItem(activities = lspActivities, onActivityClick = onActivityClick)
                 }
                 if (showLifecycle) {
                     LspLifecycleItem(text = lspStatusText!!, onClick = onLspStatusClick)
@@ -1827,7 +1830,10 @@ private fun RuntimeVersionItem(label: String, tooltip: String? = null, onClick: 
 }
 
 @Composable
-private fun LspActivitiesItem(activities: List<LspController.Activity>) {
+private fun LspActivitiesItem(
+    activities: List<LspController.Activity>,
+    onActivityClick: ((LspController.Activity) -> Unit)? = null,
+) {
     if (activities.isEmpty()) return
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(activities.size) {
@@ -1837,12 +1843,16 @@ private fun LspActivitiesItem(activities: List<LspController.Activity>) {
         }
     }
     var expanded by remember { mutableStateOf(false) }
-    val firstLabel = activities.first().label
-    val firstStartedAt = activities.first().startedAtMs
-    val firstElapsed = ((nowMs - firstStartedAt) / 1000L).coerceAtLeast(0L).toInt()
+    val first = activities.first()
+    val firstElapsed = ((nowMs - first.startedAtMs) / 1000L).coerceAtLeast(0L).toInt()
     val canExpand = activities.size >= 2
+    val firstClickable = first.installerId != null && onActivityClick != null
     val rowMod = Modifier.then(
-        if (canExpand) Modifier.clickable { expanded = !expanded } else Modifier,
+        when {
+            canExpand -> Modifier.clickable { expanded = !expanded }
+            firstClickable -> Modifier.clickable { onActivityClick!!(first) }
+            else -> Modifier
+        },
     )
     Box {
         Row(
@@ -1850,14 +1860,10 @@ private fun LspActivitiesItem(activities: List<LspController.Activity>) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            androidx.compose.material3.LinearProgressIndicator(
-                modifier = Modifier.width(72.dp).height(3.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
+            ActivityProgressBar(first.progress)
             Text(
-                text = if (firstElapsed > 0) "LSP · $firstLabel (${firstElapsed}s)"
-                else "LSP · $firstLabel",
+                text = if (firstElapsed > 0) "LSP · ${first.label} (${firstElapsed}s)"
+                else "LSP · ${first.label}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1886,15 +1892,18 @@ private fun LspActivitiesItem(activities: List<LspController.Activity>) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (a in activities) {
                         val secs = ((nowMs - a.startedAtMs) / 1000L).coerceAtLeast(0L).toInt()
+                        val clickable = a.installerId != null && onActivityClick != null
                         Row(
+                            modifier = Modifier.then(
+                                if (clickable) Modifier.clickable {
+                                    expanded = false
+                                    onActivityClick!!(a)
+                                } else Modifier,
+                            ),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            androidx.compose.material3.LinearProgressIndicator(
-                                modifier = Modifier.width(72.dp).height(3.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            )
+                            ActivityProgressBar(a.progress)
                             Text(
                                 text = if (secs > 0) "${a.label} (${secs}s)" else a.label,
                                 style = MaterialTheme.typography.labelSmall,
@@ -1905,6 +1914,32 @@ private fun LspActivitiesItem(activities: List<LspController.Activity>) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ActivityProgressBar(progress: Float?) {
+    val barMod = Modifier.width(72.dp).height(3.dp)
+    if (progress != null) {
+        val animated by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = progress,
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 300),
+            label = "installProgress",
+        )
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { animated },
+            modifier = barMod,
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+    } else {
+        androidx.compose.material3.LinearProgressIndicator(
+            modifier = barMod,
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
     }
 }
 

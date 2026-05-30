@@ -57,7 +57,14 @@ desktop.ini
 *.tmp
 *~
 
+# 증분 빌드 캐시 마커 (BuildCache)
+*.pagebuild
+
 # 로컬 KLS dev zip 캐시 (env 로컬 빌드용)
 .kls-cache/
 
 .page-ide/
+
+# xwin investigation cache (large, machine-local MSVC/SDK bits)
+.xwin-cache/
+**/.xwin-cache/

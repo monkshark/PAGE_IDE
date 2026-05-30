@@ -56,6 +56,9 @@ object PageRuntimeEnv {
                 envVars = mapOf("DOTNET_ROOT" to home.toAbsolutePath().toString()),
             )
         }
+        runCatching { SwiftToolchainInstaller().binDir() }.getOrNull()?.let { bin ->
+            if (Files.isDirectory(bin)) entries += RuntimeEntry(binDir = bin)
+        }
         return entries
     }
 
@@ -70,7 +73,44 @@ object PageRuntimeEnv {
         val prependBins = runtimes.map { it.binDir.toAbsolutePath().toString() }
         val current = env[pathKey].orEmpty()
         env[pathKey] = (prependBins + current).joinToString(sep)
+        applyWindowsSdkEnv(env, sep)
+        applySwiftSdkEnv(env)
+        runCatching { ensureSwiftCInterop() }
         runCatching { ensureClangdConfigForMingw() }
+    }
+
+    fun normalizeForLaunch(env: MutableMap<String, String>) {
+        if (!LspInstaller.isWindows()) return
+        collapseCaseInsensitiveDuplicates(env)
+    }
+
+    internal fun collapseCaseInsensitiveDuplicates(env: MutableMap<String, String>) {
+        val byLower = env.keys.groupBy { it.lowercase() }
+        for ((_, keys) in byLower) {
+            if (keys.size <= 1) continue
+            val winner = keys.maxByOrNull { (env[it] ?: "").length } ?: continue
+            val value = env[winner]
+            for (k in keys) if (k != winner) env.remove(k)
+            if (value != null) env[winner] = value
+        }
+    }
+
+    private fun applySwiftSdkEnv(env: MutableMap<String, String>) {
+        val sdk = runCatching { SwiftToolchainInstaller().sdkRoot() }.getOrNull() ?: return
+        env["SDKROOT"] = sdk.toAbsolutePath().toString()
+    }
+
+    private fun ensureSwiftCInterop() {
+        val share = runCatching { SwiftToolchainInstaller().sdkShareDir() }.getOrNull() ?: return
+        runCatching { WindowsSdkInstaller().ensureSwiftModulemaps(share) }
+    }
+
+    private fun applyWindowsSdkEnv(env: MutableMap<String, String>, sep: String) {
+        val sdkEnv = runCatching { WindowsSdkInstaller().envVars() }.getOrNull() ?: return
+        for ((key, value) in sdkEnv) {
+            val existing = env[key]
+            env[key] = if (existing.isNullOrBlank()) value else value + sep + existing
+        }
     }
 
     private const val PAGE_MANAGED_MARKER = "# PAGE-managed clangd config (auto-generated)"

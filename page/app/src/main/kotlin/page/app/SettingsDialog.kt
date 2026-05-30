@@ -262,6 +262,13 @@ private fun AutoSaveSection(o: AutoSaveOptions, onChange: (AutoSaveOptions) -> U
         checked = o.beforeRun,
         onToggle = { onChange(o.copy(beforeRun = !o.beforeRun)) },
     )
+    Spacer(Modifier.height(10.dp))
+    CheckRow(
+        label = "Save on tab close",
+        description = "Save a dirty tab silently when closing instead of prompting.",
+        checked = o.onClose,
+        onToggle = { onChange(o.copy(onClose = !o.onClose)) },
+    )
 }
 
 @Composable

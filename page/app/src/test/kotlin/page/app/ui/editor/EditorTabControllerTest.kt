@@ -31,6 +31,8 @@ class EditorTabControllerTest {
         val didClose = mutableListOf<Path>()
         val forgotten = mutableListOf<Path>()
         var pending: PendingClose? = null
+        var autoSaveOnClose = false
+        val saved = mutableListOf<Path>()
 
         val controller = EditorTabController(
             paneOf = { panes.getValue(it) },
@@ -40,6 +42,8 @@ class EditorTabControllerTest {
             didClose = { didClose.add(it) },
             isUnsavedText = { it.dirty },
             setPendingClose = { pending = it },
+            autoSaveOnClose = { autoSaveOnClose },
+            saveTabAt = { side, idx -> panes.getValue(side).book.tabs.getOrNull(idx)?.let { saved.add(it.path) } },
         )
 
         fun setPane(side: PaneSide, b: TabBook) {
@@ -115,6 +119,35 @@ class EditorTabControllerTest {
         val p = h.pending
         assertIs<PendingClose.Batch>(p)
         assertEquals(listOf(PaneSide.PRIMARY to dirty.path), p.targets)
+    }
+
+    @Test
+    fun `requestCloseTab on dirty tab saves silently and closes when autoSaveOnClose`() {
+        val h = Harness()
+        h.autoSaveOnClose = true
+        val dirty = tab("/p/A.kt", dirty = true)
+        h.setPane(PaneSide.PRIMARY, book(dirty))
+
+        h.controller.requestCloseTab(PaneSide.PRIMARY, 0)
+
+        assertTrue(h.paths(PaneSide.PRIMARY).isEmpty(), "tab closed")
+        assertNull(h.pending, "no save prompt")
+        assertEquals(listOf(dirty.path), h.saved)
+    }
+
+    @Test
+    fun `requestBatchClose saves all dirty silently and closes when autoSaveOnClose`() {
+        val h = Harness()
+        h.autoSaveOnClose = true
+        val clean = tab("/p/A.kt")
+        val dirty = tab("/p/B.kt", dirty = true)
+        h.setPane(PaneSide.PRIMARY, book(clean, dirty))
+
+        h.controller.requestBatchClose(PaneSide.PRIMARY, listOf(0, 1))
+
+        assertTrue(h.paths(PaneSide.PRIMARY).isEmpty(), "all closed")
+        assertNull(h.pending, "no save prompt")
+        assertEquals(listOf(dirty.path), h.saved)
     }
 
     @Test

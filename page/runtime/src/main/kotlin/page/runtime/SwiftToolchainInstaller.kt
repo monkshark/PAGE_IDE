@@ -137,6 +137,40 @@ class SwiftToolchainInstaller(
         return installRoot(version).resolve("usr").resolve("bin").resolve(name)
     }
 
+    fun swiftBinary(version: String): Path {
+        val name = if (isWindows) "swift.exe" else "swift"
+        return installRoot(version).resolve("usr").resolve("bin").resolve(name)
+    }
+
+    fun swiftHome(): Path? = currentInstalledVersion()?.let { installRoot(it) }
+
+    fun binDir(): Path? = swiftHome()?.resolve("usr")?.resolve("bin")
+
+    fun sdkRoot(): Path? = currentInstalledVersion()?.let { sdkRootFor(it) }?.takeIf { Files.isDirectory(it) }
+
+    internal fun sdkRootFor(version: String): Path = installRoot(version).resolve("sdk")
+
+    fun sdkShareDir(): Path? = sdkRoot()?.resolve("usr")?.resolve("share")?.takeIf { Files.isDirectory(it) }
+
+    fun swiftExecutable(): Path? =
+        currentInstalledVersion()?.let { swiftBinary(it) }?.takeIf { Files.exists(it) }
+
+    fun swiftcBinary(version: String): Path {
+        val name = if (isWindows) "swiftc.exe" else "swiftc"
+        return installRoot(version).resolve("usr").resolve("bin").resolve(name)
+    }
+
+    fun swiftcExecutable(): Path? =
+        currentInstalledVersion()?.let { swiftcBinary(it) }?.takeIf { Files.exists(it) }
+
+    fun foundationImportLib(): Path? =
+        currentInstalledVersion()?.let { foundationImportLibFor(it) }?.takeIf { Files.exists(it) }
+
+    internal fun foundationImportLibFor(version: String): Path =
+        sdkRootFor(version)
+            .resolve("usr").resolve("lib").resolve("swift").resolve("windows")
+            .resolve(assetArch()).resolve("Foundation.lib")
+
     fun installRoot(version: String): Path = installBase().resolve(sanitize(version))
 
     private fun installBase(): Path = LspInstaller.lspHome().resolve("swift")

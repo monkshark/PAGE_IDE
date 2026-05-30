@@ -7,11 +7,14 @@ import page.app.input.ShortcutAction
 import page.app.input.ShortcutResolver
 import page.app.filetree.FileTreeActionExecutor
 import page.app.filetree.LargeCopyDialogState
+import page.app.domain.FileOperationsInteractor
 import page.app.filetree.PasteEntryDialogState
 import page.app.lsp.LspEditorInterconnector
+import page.app.state.DebouncedSaver
 import page.app.state.EditorWorkspaceState
 import page.app.state.LayoutUiState
 import page.app.state.WorkspaceState
+import page.app.ui.IdeMainLayout
 import page.app.ui.editor.EditorTabController
 import page.app.utils.applyReplaceToBook
 import page.app.utils.isKotlinSource
@@ -137,11 +140,18 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         width = 1280.dp,
         height = 800.dp,
     )
-    val editorWorkspace = remember { EditorWorkspaceState() }
+    val undoTrackerPrimary = remember { UndoGroupTracker() }
+    val undoTrackerSecondary = remember { UndoGroupTracker() }
+    fun undoTracker(side: PaneSide): UndoGroupTracker = when (side) {
+        PaneSide.PRIMARY -> undoTrackerPrimary
+        PaneSide.SECONDARY -> undoTrackerSecondary
+    }
+    val editorWorkspace = remember { EditorWorkspaceState(undoTracker = ::undoTracker) }
     var primaryPane by editorWorkspace::primaryPane
     var secondaryPane by editorWorkspace::secondaryPane
     var focusedPane by editorWorkspace::focusedPane
-    val workspaceState = remember { WorkspaceState() }
+    val appScope = rememberCoroutineScope()
+    val workspaceState = remember { WorkspaceState(appScope) }
     var rootDir by workspaceState::rootDir
     var expanded by workspaceState::expanded
     var treeSelection by workspaceState::treeSelection
@@ -235,12 +245,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     registerAllBackends()
     val todo = rememberTodoController(workspaceRoot = rootDir)
     val todoItems by todo.items
-    val undoTrackerPrimary = remember { UndoGroupTracker() }
-    val undoTrackerSecondary = remember { UndoGroupTracker() }
-    fun undoTracker(side: PaneSide): UndoGroupTracker = when (side) {
-        PaneSide.PRIMARY -> undoTrackerPrimary
-        PaneSide.SECONDARY -> undoTrackerSecondary
-    }
 
     fun paneOf(side: PaneSide): EditorPaneState = editorWorkspace.paneOf(side)
 
@@ -294,41 +298,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             hadFileDialog = false
             pendingTreeFocusTick++
         }
-    }
-
-    LaunchedEffect(rootDir) {
-        val root = rootDir
-        if (root != null) {
-            val recovery = runCatching { RenameTransaction.recover(root) }.getOrNull()
-            val logHint = "see ${RenameTransaction.logFile(root)}"
-            when (recovery) {
-                is RenameTransaction.RecoveryResult.Resumed ->
-                    println("[rename] recovered: resumed ${recovery.marker.from.fileName} → ${recovery.marker.to.fileName} ($logHint)")
-                is RenameTransaction.RecoveryResult.RolledBack ->
-                    println("[rename] recovered: rolled back partial ${recovery.marker.to.fileName} ($logHint)")
-                is RenameTransaction.RecoveryResult.Skipped ->
-                    println("[rename] recovered: skipped (${recovery.reason}) ($logHint)")
-                is RenameTransaction.RecoveryResult.Failed ->
-                    println("[rename] recovery failed: ${recovery.message} ($logHint)")
-                else -> {}
-            }
-            // controllers are started on-demand via lspRouter.controllerFor()
-        }
-        todo.scanWorkspaceAsync()
-    }
-
-    LaunchedEffect(rootDir) {
-        val root = rootDir ?: run {
-            runState = RunConfigsState()
-            return@LaunchedEffect
-        }
-        runState = runCatching { RunConfigStore.load(root) }.getOrDefault(RunConfigsState())
-    }
-
-    LaunchedEffect(rootDir, runState) {
-        val root = rootDir ?: return@LaunchedEffect
-        kotlinx.coroutines.delay(400)
-        runCatching { RunConfigStore.save(root, runState) }
     }
 
     var sessionLoaded by remember { mutableStateOf(false) }
@@ -431,36 +400,67 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         runCatching { SessionStore.save(root, sessionSnapshot) }
     }
 
-    LaunchedEffect(rootDir) {
-        historyLoaded = false
-        val root = rootDir
-        if (root == null) {
-            historyFile = HistoryFile()
-            historyLoaded = true
-            return@LaunchedEffect
-        }
-        historyFile = runCatching { HistoryStore.load(root) }.getOrDefault(HistoryFile())
-        historyLoaded = true
-    }
-    LaunchedEffect(rootDir) {
-        val root = rootDir
-        if (root == null) {
-            workspaceFile = WorkspaceFile()
-            return@LaunchedEffect
-        }
-        val ws = runCatching { WorkspaceStore.load(root) }.getOrDefault(WorkspaceFile())
-        workspaceFile = ws
-        val name = ws.palette
-        if (name != null) {
-            val resolved = GlassPalette.values().firstOrNull { it.name.equals(name, ignoreCase = true) }
-            if (resolved != null) palette = resolved
-        }
-    }
-    LaunchedEffect(rootDir, historyLoaded, historyFile) {
-        if (!historyLoaded) return@LaunchedEffect
-        val root = rootDir ?: return@LaunchedEffect
-        kotlinx.coroutines.delay(500)
-        runCatching { HistoryStore.save(root, historyFile) }
+    LaunchedEffect(Unit) {
+        workspaceState.launchPersistence(
+            loaders = listOf(
+                { root ->
+                    if (root != null) {
+                        val recovery = runCatching { RenameTransaction.recover(root) }.getOrNull()
+                        val logHint = "see ${RenameTransaction.logFile(root)}"
+                        when (recovery) {
+                            is RenameTransaction.RecoveryResult.Resumed ->
+                                println("[rename] recovered: resumed ${recovery.marker.from.fileName} → ${recovery.marker.to.fileName} ($logHint)")
+                            is RenameTransaction.RecoveryResult.RolledBack ->
+                                println("[rename] recovered: rolled back partial ${recovery.marker.to.fileName} ($logHint)")
+                            is RenameTransaction.RecoveryResult.Skipped ->
+                                println("[rename] recovered: skipped (${recovery.reason}) ($logHint)")
+                            is RenameTransaction.RecoveryResult.Failed ->
+                                println("[rename] recovery failed: ${recovery.message} ($logHint)")
+                            else -> {}
+                        }
+                    }
+                    todo.scanWorkspaceAsync()
+                },
+                { root ->
+                    runState = if (root == null) RunConfigsState()
+                    else runCatching { RunConfigStore.load(root) }.getOrDefault(RunConfigsState())
+                },
+                { root ->
+                    historyLoaded = false
+                    if (root == null) {
+                        historyFile = HistoryFile()
+                    } else {
+                        historyFile = runCatching { HistoryStore.load(root) }.getOrDefault(HistoryFile())
+                    }
+                    historyLoaded = true
+                },
+                { root ->
+                    if (root == null) {
+                        workspaceFile = WorkspaceFile()
+                    } else {
+                        val ws = runCatching { WorkspaceStore.load(root) }.getOrDefault(WorkspaceFile())
+                        workspaceFile = ws
+                        val name = ws.palette
+                        if (name != null) {
+                            val resolved = GlassPalette.values().firstOrNull { it.name.equals(name, ignoreCase = true) }
+                            if (resolved != null) palette = resolved
+                        }
+                    }
+                },
+            ),
+            savers = listOf(
+                DebouncedSaver(
+                    debounceMs = 400,
+                    revision = { runState },
+                    save = { root -> runCatching { RunConfigStore.save(root, runState) } },
+                ),
+                DebouncedSaver(
+                    debounceMs = 500,
+                    revision = { historyLoaded to historyFile },
+                    save = { root -> if (historyLoaded) runCatching { HistoryStore.save(root, historyFile) } },
+                ),
+            ),
+        )
     }
     val fileTreeWatcherHolder = remember { java.util.concurrent.atomic.AtomicReference<FileTreeWatcher?>(null) }
     var fileTreeWatcherEpoch by remember { mutableStateOf(0) }
@@ -567,34 +567,14 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         }
     }
 
+    val fileOperationsInteractor = remember {
+        FileOperationsInteractor(
+            readFileText = { p -> FileDocument.loadOrNull(p) },
+            applyTextReplace = { p, text -> FileDocument.save(p, text) },
+        )
+    }
     val onReplaceInFiles: suspend (ReplaceRequest) -> ReplaceOutcome = { req ->
-        data class Outcome(val filesChanged: Int, val replacements: Int, val updates: Map<Path, String>)
-        val result = withContext(Dispatchers.IO) {
-            var filesChanged = 0
-            var replacements = 0
-            val updates = HashMap<Path, String>()
-            for (target in req.targets) {
-                val original = FileDocument.loadOrNull(target) ?: continue
-                val (newText, count) = ProjectGrep.applyReplace(
-                    text = original,
-                    query = req.query,
-                    replacement = req.replacement,
-                    caseSensitive = req.caseSensitive,
-                    regex = req.regex,
-                    wholeWord = req.wholeWord,
-                )
-                if (count == 0 || newText == original) continue
-                try {
-                    FileDocument.save(target, newText)
-                } catch (_: java.io.IOException) {
-                    continue
-                }
-                updates[target] = newText
-                filesChanged += 1
-                replacements += count
-            }
-            Outcome(filesChanged, replacements, updates)
-        }
+        val result = fileOperationsInteractor.replaceInFiles(req)
         if (result.updates.isNotEmpty()) {
             mutatePane(PaneSide.PRIMARY) { pane ->
                 val newBook = applyReplaceToBook(pane.book, result.updates)
@@ -973,6 +953,19 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
     val isUnsavedText: (OpenTab) -> Boolean = { tab ->
         tab.dirty && FileKinds.classify(tab.path).isEditableAsText
     }
+    val saveTabAt: (PaneSide, Int) -> Unit = { side, idx ->
+        val pane = paneOf(side)
+        val tab = pane.book.tabs.getOrNull(idx)
+        if (tab != null && FileKinds.classify(tab.path).isEditableAsText) {
+            val liveText = if (idx == pane.book.activeIndex) pane.editorValue.text else tab.text
+            try {
+                FileDocument.save(tab.path, liveText)
+                for (s in listOf(PaneSide.PRIMARY, PaneSide.SECONDARY)) {
+                    mutatePane(s) { it.copy(book = it.book.markPathSaved(tab.path, liveText)) }
+                }
+            } catch (_: java.io.IOException) { }
+        }
+    }
     val tabController = EditorTabController(
         paneOf = { side -> paneOf(side) },
         mutatePane = { side, transform -> mutatePane(side, transform) },
@@ -983,6 +976,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         didClose = { p -> lspRouter.controllerFor(p)?.didClose(p) },
         isUnsavedText = { tab -> isUnsavedText(tab) },
         setPendingClose = { pendingClose = it },
+        autoSaveOnClose = { pageSettings.autoSave.onClose },
+        saveTabAt = { side, idx -> saveTabAt(side, idx) },
     )
     val closeTabsUnderPath: (Path) -> Unit = { path -> tabController.closeTabsUnderPath(path) }
     val closeTabAt: (PaneSide, Int) -> Unit = { side, idx -> tabController.closeTabAt(side, idx) }
@@ -1024,22 +1019,18 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         val idx = paneOf(side).book.activeIndex
         if (idx in paneOf(side).book.tabs.indices) requestCloseTab(side, idx)
     }
-    val activateAdjacentTab: (Int) -> Unit = { delta ->
-        val side = focusedPane
-        val book = paneOf(side).book
-        val n = book.tabs.size
-        if (n > 1) {
-            val next = ((book.activeIndex + delta) % n + n) % n
-            if (next != book.activeIndex) {
-                mutatePane(side) { it.copy(book = it.book.activate(next)) }
-            }
-        }
-    }
     val anyDirty: () -> Boolean = {
         primaryPane.book.tabs.any(isUnsavedText) || secondaryPane.book.tabs.any(isUnsavedText)
     }
     val requestExit: () -> Unit = {
-        if (anyDirty()) pendingClose = PendingClose.App else exitApplication()
+        when {
+            !anyDirty() -> exitApplication()
+            pageSettings.autoSave.onClose -> {
+                saveAllDirty()
+                exitApplication()
+            }
+            else -> pendingClose = PendingClose.App
+        }
     }
     val moveCaretToActiveMatch: (PaneSide, SearchState) -> Unit = { side, s ->
         val range = s.active
@@ -1234,19 +1225,6 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         }
     }
 
-    val moveTabAcross: ((PaneSide, Int) -> Unit)? = if (splitEnabled) {
-        { source, index ->
-            val sourcePane = paneOf(source)
-            val tab = sourcePane.book.tabs.getOrNull(index)
-            if (tab != null) {
-                val target = if (source == PaneSide.PRIMARY)
-                    PaneSide.SECONDARY else PaneSide.PRIMARY
-                mutatePane(source) { it.copy(book = it.book.close(index)) }
-                mutatePane(target) { it.copy(book = it.book.appendTab(tab)) }
-                focusedPane = target
-            }
-        }
-    } else null
 
     val tabContextActionsFor: (PaneSide) -> TabContextActions = { side ->
         TabContextActions(
@@ -1284,7 +1262,9 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             onCopyRelativePath = { idx -> copyRelativePathOfTab(side, idx) },
             onShowInExplorer = { idx -> showInExplorerOfTab(side, idx) },
             onTogglePin = { idx -> togglePin(side, idx) },
-            onMoveToOtherPane = moveTabAcross?.let { fn -> { idx -> fn(side, idx) } },
+            onMoveToOtherPane = if (editorWorkspace.splitEnabled) {
+                { idx -> editorWorkspace.moveTabAcross(side, idx) }
+            } else null,
             onSplit = { idx -> splitWithTab(side, idx) },
             onRename = { idx -> renameTabFile(side, idx) },
         )
@@ -1503,8 +1483,8 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
             }
             ShortcutAction.FORMAT -> { triggerFormat(); true }
             ShortcutAction.CODE_ACTION -> { triggerCodeAction(); true }
-            ShortcutAction.PREV_TAB -> { activateAdjacentTab(-1); true }
-            ShortcutAction.NEXT_TAB -> { activateAdjacentTab(1); true }
+            ShortcutAction.PREV_TAB -> { editorWorkspace.activateAdjacentTab(-1); true }
+            ShortcutAction.NEXT_TAB -> { editorWorkspace.activateAdjacentTab(1); true }
             ShortcutAction.JUMP_PROBLEM_NEXT -> { jumpProblemRelative(true); true }
             ShortcutAction.JUMP_PROBLEM_PREV -> { jumpProblemRelative(false); true }
             ShortcutAction.REFRESH_TREE -> { treeRevision++; true }
@@ -1721,41 +1701,7 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
                     editor = editorWorkspace,
                     ui = layoutUiState,
                     lspRouter = currentLspRouter,
-                    onEditorChange = { side, v ->
-                        mutatePane(side) {
-                            val priorText = it.editorValue.text
-                            val priorSelection = it.editorValue.selection
-                            val textChanged = v.text != priorText
-                            val tracker = undoTracker(side)
-                            val nextBook = if (textChanged) {
-                                val priorCaret = priorSelection.start
-                                val shouldPush = tracker.onTextChange(priorText, v.text)
-                                val withPush = if (shouldPush) {
-                                    it.book.pushHistoryOnActive(EditSnapshot(priorText, priorCaret))
-                                } else it.book
-                                withPush.updateActive(v.text, v.selection.start)
-                            } else {
-                                if (v.selection != priorSelection) tracker.markBreak()
-                                it.book.updateActive(v.text, v.selection.start)
-                            }
-                            val nextSearch = if (textChanged) {
-                                it.search?.retarget(v.text)
-                            } else it.search
-                            it.copy(
-                                editorValue = v,
-                                book = nextBook,
-                                search = nextSearch,
-                            )
-                        }
-                    },
-                    onActivateTab = { side, index ->
-                        mutatePane(side) { it.copy(book = it.book.activate(index)) }
-                    },
                     onCloseTab = { side, index -> requestCloseTab(side, index) },
-                    onMoveTab = { side, from, to ->
-                        mutatePane(side) { it.copy(book = it.book.move(from, to)) }
-                    },
-                    onMoveTabAcross = moveTabAcross,
                     onToggle = toggleExpanded,
                     onOpenFile = openInTab,
                     onCreateFileIn = onCreateFileIn,
@@ -2450,7 +2396,7 @@ private fun registerAllBackends() {
     }
 }
 
-private fun resolveLanguageForPath(path: Path): page.lsp.LanguageDefinition? {
+internal fun resolveLanguageForPath(path: Path): page.lsp.LanguageDefinition? {
     val name = path.fileName?.toString() ?: return null
     val dot = name.lastIndexOf('.')
     val ext = if (dot >= 0 && dot < name.length - 1) name.substring(dot + 1) else name
@@ -2483,452 +2429,6 @@ private fun lspStatusLineText(lspRouter: LspRouter, activePath: Path?): String? 
     }
     val core = if (installed != null) "$resolvedName $installed" else "$resolvedName (not installed)"
     return "$core$suffix"
-}
-
-@Composable
-private fun IdeMainLayout(
-    workspace: WorkspaceState,
-    editor: EditorWorkspaceState,
-    ui: LayoutUiState,
-    lspRouter: LspRouter,
-    onEditorChange: (PaneSide, TextFieldValue) -> Unit,
-    onActivateTab: (PaneSide, Int) -> Unit,
-    onCloseTab: (PaneSide, Int) -> Unit,
-    onMoveTab: (PaneSide, Int, Int) -> Unit,
-    onMoveTabAcross: ((PaneSide, Int) -> Unit)?,
-    onToggle: (Path, Boolean) -> Unit,
-    onOpenFile: (Path) -> Unit,
-    onCreateFileIn: (Path) -> Unit,
-    onCreateFolderIn: (Path) -> Unit,
-    onRenameEntry: (Path) -> Unit,
-    onDeleteEntry: (Path) -> Unit,
-    onDeleteEntries: (Set<Path>) -> Unit,
-    onRevealInFiles: (Path) -> Unit,
-    onCopyPath: (Path) -> Unit,
-    onCopyRelativePath: (Path) -> Unit,
-    onPasteInto: (Path) -> Unit,
-    onDropPlan: (TreeDragController.DropPlan) -> Unit,
-    onExternalDrop: (List<Path>, Path) -> Unit,
-    onDropRejected: (String) -> Unit,
-    onUndoFileOp: () -> Boolean,
-    canUndoFileOp: Boolean,
-    onTreeFocusChanged: (Boolean) -> Unit = {},
-    pendingTreeFocusTick: Int = 0,
-    onQueryChange: (PaneSide, String) -> Unit,
-    onReplaceChange: (PaneSide, String) -> Unit,
-    onToggleCase: (PaneSide) -> Unit,
-    onSearchNext: (PaneSide) -> Unit,
-    onSearchPrev: (PaneSide) -> Unit,
-    onReplace: (PaneSide) -> Unit,
-    onReplaceAll: (PaneSide) -> Unit,
-    onSearchClose: (PaneSide) -> Unit,
-    onWindowShortcut: (KeyEvent) -> Boolean,
-    onJumpToProblem: (Path, Int, Int) -> Unit,
-    onApplyRename: (RenameWorkspaceEdit) -> Unit,
-    todoItems: List<page.editor.TodoItem>,
-    terminalManager: TerminalManager,
-    onTerminalToggle: () -> Unit,
-    runState: RunConfigsState,
-    onSelectRunConfig: (String) -> Unit,
-    onStartRun: () -> Unit,
-    onStopRun: () -> Unit,
-    onOpenRunDialog: () -> Unit,
-    runIsRunning: Boolean,
-    outputState: OutputPanelState,
-    onOutputClear: () -> Unit,
-    referencesState: ReferencesQueryState?,
-    onRequestReferences: (Path, Int, Int, String) -> Unit,
-    onReferencesClose: () -> Unit,
-    linePreviewFor: (String, Int) -> String?,
-    foldedLinesFor: (Path?) -> Set<Int> = { emptySet() },
-    onFoldChange: (Path, Set<Int>) -> Unit = { _, _ -> },
-    editorFocusVersion: Int = 0,
-    codeActionPreviewVisible: Boolean = false,
-    codeActionPreviewActions: List<CodeActionEntry> = emptyList(),
-    codeActionPreviewSelected: Int = 0,
-    onCodeActionSelectedChange: (Int) -> Unit = {},
-    codeActionPreviewUri: String? = null,
-    codeActionPreviewText: String? = null,
-    onCodeActionApply: (CodeActionEntry) -> Unit = {},
-    onCodeActionDismiss: () -> Unit = {},
-    editorScrollFor: (Path) -> EditorScrollSnapshot? = { null },
-    onEditorScrollChange: (Path, EditorScrollSnapshot) -> Unit = { _, _ -> },
-    tabContextActionsFor: (PaneSide) -> TabContextActions? = { null },
-    settingsPanelOpen: Boolean = false,
-    pageSettings: PageSettings = PageSettings(),
-    onSettingsApply: (PageSettings) -> Unit = {},
-    onSettingsPanelClose: () -> Unit = {},
-) {
-    var dragSourcePane: PaneSide? by remember { mutableStateOf(null) }
-    val shellActivePath = editor.focused().book.active?.path
-    val shellCtrl = shellActivePath?.let { lspRouter.controllerFor(it) }
-    val installGuideOpen by (shellCtrl?.installGuideOpen ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsState()
-    var runtimeDialogOpen by remember { mutableStateOf<String?>(null) }
-    var installManagerOpen by remember { mutableStateOf<String?>(null) }
-    val runtimeVersions = remember { mutableStateOf(mapOf<String, String>()) }
-    val runtimeSources = remember { mutableStateOf(mapOf<String, String>()) }
-    val runtimeBuildFileVersions = remember { mutableStateOf(mapOf<String, String>()) }
-    val runtimeScope = rememberCoroutineScope()
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
-            runtimeVersions.value = vers
-            runtimeSources.value = srcs
-            runtimeBuildFileVersions.value = bvs
-        }
-    }
-    Box(modifier = Modifier.fillMaxSize()) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        TitleBar(
-            path = editor.focused().book.active?.path,
-            terminalOpen = ui.terminalOpen,
-            onTerminalToggle = onTerminalToggle,
-            runState = runState,
-            activeFilePath = editor.focused().book.active?.path,
-            onSelectRunConfig = onSelectRunConfig,
-            runIsRunning = runIsRunning,
-            onStartRun = onStartRun,
-            onStopRun = onStopRun,
-            onOpenRunDialog = onOpenRunDialog,
-            outputOpen = ui.outputOpen,
-            onOutputToggle = { ui.outputOpen = !ui.outputOpen },
-        )
-        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            FileTreePanel(
-                root = workspace.rootDir,
-                expanded = workspace.expanded,
-                selection = workspace.treeSelection,
-                onToggle = onToggle,
-                onSelectionChange = { workspace.treeSelection = it },
-                onOpenFile = onOpenFile,
-                onCreateFile = onCreateFileIn,
-                onCreateFolder = onCreateFolderIn,
-                onRename = onRenameEntry,
-                onDeleteOne = onDeleteEntry,
-                onDeleteMany = onDeleteEntries,
-                onReveal = onRevealInFiles,
-                onCopyPath = onCopyPath,
-                onCopyRelativePath = onCopyRelativePath,
-                onPasteInto = onPasteInto,
-                onUndo = onUndoFileOp,
-                canUndo = canUndoFileOp,
-                onDropPlan = onDropPlan,
-                onExternalDrop = onExternalDrop,
-                onDropRejected = onDropRejected,
-                onPanelFocusChanged = onTreeFocusChanged,
-                pendingFocusTick = pendingTreeFocusTick,
-                revision = workspace.treeRevision,
-                modifier = Modifier.width(ui.sidebarWidth).fillMaxHeight(),
-            )
-            ResizeHandle(onDeltaDp = { ui.sidebarWidth = (ui.sidebarWidth + it).coerceIn(160.dp, 600.dp) })
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                if (installManagerOpen != null) {
-                    InstallManagerPanel(
-                        initialSelection = installManagerOpen,
-                        onClose = { installManagerOpen = null },
-                        onInstallRequested = { id ->
-                            installManagerOpen = null
-                            runtimeDialogOpen = id
-                        },
-                        onVersionChanged = {
-                            runtimeScope.launch {
-                                withContext(Dispatchers.IO) {
-                                    val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
-                                    runtimeVersions.value = vers
-                                    runtimeSources.value = srcs
-                                    runtimeBuildFileVersions.value = bvs
-                                }
-                            }
-                        },
-                        onBeforeDelete = { id ->
-                            // Stop running LSP so its process releases file handles on the install dir
-                            lspRouter.shutdownLanguage(id)
-                            kotlinx.coroutines.delay(500)
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else if (settingsPanelOpen) {
-                    SettingsPanel(
-                        settings = pageSettings,
-                        onApply = onSettingsApply,
-                        onClose = onSettingsPanelClose,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else if (editor.splitEnabled) {
-                    SplitPane(
-                        state = editor.splitState,
-                        onStateChange = { editor.splitState = it },
-                        orientation = editor.splitOrientation,
-                        modifier = Modifier.fillMaxSize(),
-                        firstZIndex = if (dragSourcePane == PaneSide.PRIMARY) 1f else 0f,
-                        secondZIndex = if (dragSourcePane == PaneSide.SECONDARY) 1f else 0f,
-                        first = {
-                            PaneRegion(
-                                pane = editor.primaryPane,
-                                side = PaneSide.PRIMARY,
-                                lspRouter = lspRouter,
-                                isFocused = editor.focusedPane == PaneSide.PRIMARY,
-                                onPaneFocus = { editor.focusedPane = it },
-                                onEditorChange = onEditorChange,
-                                onActivateTab = onActivateTab,
-                                onCloseTab = onCloseTab,
-                                onMoveTab = onMoveTab,
-                                onMoveTabAcross = onMoveTabAcross,
-                                onQueryChange = onQueryChange,
-                                onReplaceChange = onReplaceChange,
-                                onToggleCase = onToggleCase,
-                                onSearchNext = onSearchNext,
-                                onSearchPrev = onSearchPrev,
-                                onReplace = onReplace,
-                                onReplaceAll = onReplaceAll,
-                                onSearchClose = onSearchClose,
-                                onWindowShortcut = onWindowShortcut,
-                                onTabDragStart = { dragSourcePane = PaneSide.PRIMARY },
-                                onTabDragEnd = { dragSourcePane = null },
-                                onProblemsToggle = { ui.problemsOpen = !ui.problemsOpen },
-                                onJumpToProblem = onJumpToProblem,
-                                onApplyRename = onApplyRename,
-                                onRequestReferences = onRequestReferences,
-                                todoCount = todoItems.size,
-                                onTodoToggle = { ui.todoOpen = !ui.todoOpen },
-                                workspaceRoot = workspace.rootDir,
-                                editorFocusVersion = if (editor.focusedPane == PaneSide.PRIMARY) editorFocusVersion else 0,
-                                initialFoldedStartLines = foldedLinesFor(editor.primaryPane.book.active?.path),
-                                onFoldStartLinesChange = onFoldChange,
-                                editorScrollFor = editorScrollFor,
-                                onEditorScrollChange = onEditorScrollChange,
-                                tabContextActions = tabContextActionsFor(PaneSide.PRIMARY),
-                                runtimeVersions = runtimeVersions.value,
-                                runtimeSources = runtimeSources.value,
-                                runtimeBuildFileVersions = runtimeBuildFileVersions.value,
-                                onRuntimeClick = { id -> runtimeDialogOpen = id },
-                                pageSettings = pageSettings,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        },
-                        second = {
-                            PaneRegion(
-                                pane = editor.secondaryPane,
-                                side = PaneSide.SECONDARY,
-                                lspRouter = lspRouter,
-                                isFocused = editor.focusedPane == PaneSide.SECONDARY,
-                                onPaneFocus = { editor.focusedPane = it },
-                                onEditorChange = onEditorChange,
-                                onActivateTab = onActivateTab,
-                                onCloseTab = onCloseTab,
-                                onMoveTab = onMoveTab,
-                                onMoveTabAcross = onMoveTabAcross,
-                                onQueryChange = onQueryChange,
-                                onReplaceChange = onReplaceChange,
-                                onToggleCase = onToggleCase,
-                                onSearchNext = onSearchNext,
-                                onSearchPrev = onSearchPrev,
-                                onReplace = onReplace,
-                                onReplaceAll = onReplaceAll,
-                                onSearchClose = onSearchClose,
-                                onWindowShortcut = onWindowShortcut,
-                                onTabDragStart = { dragSourcePane = PaneSide.SECONDARY },
-                                onTabDragEnd = { dragSourcePane = null },
-                                onProblemsToggle = { ui.problemsOpen = !ui.problemsOpen },
-                                onJumpToProblem = onJumpToProblem,
-                                onApplyRename = onApplyRename,
-                                onRequestReferences = onRequestReferences,
-                                todoCount = todoItems.size,
-                                onTodoToggle = { ui.todoOpen = !ui.todoOpen },
-                                workspaceRoot = workspace.rootDir,
-                                editorFocusVersion = if (editor.focusedPane == PaneSide.SECONDARY) editorFocusVersion else 0,
-                                initialFoldedStartLines = foldedLinesFor(editor.secondaryPane.book.active?.path),
-                                onFoldStartLinesChange = onFoldChange,
-                                editorScrollFor = editorScrollFor,
-                                onEditorScrollChange = onEditorScrollChange,
-                                tabContextActions = tabContextActionsFor(PaneSide.SECONDARY),
-                                runtimeVersions = runtimeVersions.value,
-                                runtimeSources = runtimeSources.value,
-                                runtimeBuildFileVersions = runtimeBuildFileVersions.value,
-                                onRuntimeClick = { id -> runtimeDialogOpen = id },
-                                pageSettings = pageSettings,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        },
-                    )
-                } else {
-                    PaneRegion(
-                        pane = editor.primaryPane,
-                        side = PaneSide.PRIMARY,
-                        lspRouter = lspRouter,
-                        isFocused = true,
-                        onPaneFocus = { editor.focusedPane = it },
-                        onEditorChange = onEditorChange,
-                        onActivateTab = onActivateTab,
-                        onCloseTab = onCloseTab,
-                        onMoveTab = onMoveTab,
-                        onMoveTabAcross = null,
-                        onQueryChange = onQueryChange,
-                        onReplaceChange = onReplaceChange,
-                        onToggleCase = onToggleCase,
-                        onSearchNext = onSearchNext,
-                        onSearchPrev = onSearchPrev,
-                        onReplace = onReplace,
-                        onReplaceAll = onReplaceAll,
-                        onSearchClose = onSearchClose,
-                        onWindowShortcut = onWindowShortcut,
-                        onProblemsToggle = { ui.problemsOpen = !ui.problemsOpen },
-                        onJumpToProblem = onJumpToProblem,
-                        onApplyRename = onApplyRename,
-                        onRequestReferences = onRequestReferences,
-                        todoCount = todoItems.size,
-                        onTodoToggle = { ui.todoOpen = !ui.todoOpen },
-                        workspaceRoot = workspace.rootDir,
-                        editorFocusVersion = editorFocusVersion,
-                        initialFoldedStartLines = foldedLinesFor(editor.primaryPane.book.active?.path),
-                        onFoldStartLinesChange = onFoldChange,
-                        editorScrollFor = editorScrollFor,
-                        onEditorScrollChange = onEditorScrollChange,
-                        tabContextActions = tabContextActionsFor(PaneSide.PRIMARY),
-                        runtimeVersions = runtimeVersions.value,
-                        runtimeSources = runtimeSources.value,
-                        runtimeBuildFileVersions = runtimeBuildFileVersions.value,
-                        onRuntimeClick = { id -> runtimeDialogOpen = id },
-                        pageSettings = pageSettings,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-            if (codeActionPreviewVisible) {
-                CodeActionPreviewPanel(
-                    actions = codeActionPreviewActions,
-                    selected = codeActionPreviewSelected,
-                    onSelectedChange = onCodeActionSelectedChange,
-                    currentUri = codeActionPreviewUri,
-                    currentText = codeActionPreviewText,
-                    onApply = onCodeActionApply,
-                    onDismiss = onCodeActionDismiss,
-                    width = 420.dp,
-                )
-            }
-        }
-        if (ui.problemsOpen) {
-            ProblemsPanel(
-                diagnostics = lspRouter.allDiagnosticsByUri,
-                onJump = onJumpToProblem,
-                onClose = { ui.problemsOpen = false },
-                height = ui.problemsHeight,
-                onResizeDelta = { ui.problemsHeight = (ui.problemsHeight + it).coerceIn(80.dp, 600.dp) },
-                collapsedKeys = ui.problemsCollapsed,
-                onCollapsedKeysChange = { ui.problemsCollapsed = it },
-                fileOrder = ui.problemsFileOrder,
-                onFileOrderChange = { ui.problemsFileOrder = it },
-            )
-        }
-        if (ui.todoOpen) {
-            TodoPanel(
-                items = todoItems,
-                onJump = onJumpToProblem,
-                onClose = { ui.todoOpen = false },
-                height = ui.todoHeight,
-                onResizeDelta = { ui.todoHeight = (ui.todoHeight + it).coerceIn(80.dp, 600.dp) },
-                collapsedKeys = ui.todoCollapsed,
-                onCollapsedKeysChange = { ui.todoCollapsed = it },
-                fileOrder = ui.todoFileOrder,
-                onFileOrderChange = { ui.todoFileOrder = it },
-            )
-        }
-        if (referencesState != null) {
-            ReferencesPanel(
-                state = referencesState,
-                onJump = onJumpToProblem,
-                onClose = onReferencesClose,
-                height = ui.referencesHeight,
-                onResizeDelta = { ui.referencesHeight = (ui.referencesHeight + it).coerceIn(80.dp, 600.dp) },
-                linePreviewFor = linePreviewFor,
-            )
-        }
-        if (ui.terminalOpen) {
-            TerminalPanel(
-                manager = terminalManager,
-                onPanelClose = { ui.terminalOpen = false },
-                height = ui.terminalHeight,
-                onResizeDelta = { ui.terminalHeight = (ui.terminalHeight + it).coerceIn(120.dp, 600.dp) },
-            )
-        }
-        if (ui.outputOpen) {
-            OutputPanel(
-                state = outputState,
-                onClose = { ui.outputOpen = false },
-                onClear = onOutputClear,
-                onStop = onStopRun,
-                height = ui.outputHeight,
-                onResizeDelta = { ui.outputHeight = (ui.outputHeight + it).coerceIn(120.dp, 1200.dp) },
-            )
-        }
-    }
-    if (installGuideOpen && shellCtrl != null) {
-        val activeDef = shellActivePath?.let { resolveLanguageForPath(it) }
-        val def = activeDef
-            ?: shellCtrl.missingDefinition.value
-            ?: page.lsp.LanguageRegistry.byId("kotlin")
-        if (def != null) {
-            InstallGuideDialog(
-                definition = def,
-                attempted = shellCtrl.missingAttempted.value,
-                onDismiss = { shellCtrl.closeInstallGuide() },
-                onInstalled = { shellCtrl.retry() },
-                onOpenManager = {
-                    val id = def.id
-                    shellCtrl.closeInstallGuide()
-                    installManagerOpen = id
-                },
-            )
-        } else {
-            shellCtrl.closeInstallGuide()
-        }
-    }
-    val runtimeDialogId = runtimeDialogOpen
-    if (runtimeDialogId != null) {
-        val runtimeDefs = mapOf(
-            "jdk" to page.lsp.LanguageDefinition("jdk", "Eclipse Temurin JDK", listOf("java"), emptyList(), emptyList(), "https://adoptium.net/", emptyMap(), null),
-            "node" to page.lsp.LanguageDefinition("node", "Node.js", listOf("js"), emptyList(), emptyList(), "https://nodejs.org/", emptyMap(), null),
-            "python-runtime" to page.lsp.LanguageDefinition("python-runtime", "Python", listOf("py"), emptyList(), emptyList(), "https://python.org/", emptyMap(), null),
-            "go-sdk" to page.lsp.LanguageDefinition("go-sdk", "Go SDK", listOf("go"), emptyList(), emptyList(), "https://go.dev/", emptyMap(), null),
-            "cpp-toolchain" to page.lsp.LanguageDefinition("cpp-toolchain", "LLVM/Clang Toolchain", listOf("c", "cpp"), emptyList(), emptyList(), "https://llvm.org/", emptyMap(), null),
-            "rust-runtime" to page.lsp.LanguageDefinition("rust-runtime", "Rust Toolchain", listOf("rs"), emptyList(), emptyList(), "https://rustup.rs/", emptyMap(), null),
-            "dotnet-runtime" to page.lsp.LanguageDefinition("dotnet-runtime", ".NET SDK", listOf("cs"), emptyList(), emptyList(), "https://dotnet.microsoft.com/download", emptyMap(), null),
-        )
-        val def = runtimeDefs[runtimeDialogId]
-        val buildFileKey = when (runtimeDialogId) {
-            "jdk" -> "java"; "node" -> "js"; "python-runtime" -> "py"
-            "go-sdk" -> "go"; "rust-runtime" -> "rs"; "dotnet-runtime" -> "cs"
-            else -> null
-        }
-        val suggested = buildFileKey?.let { runtimeBuildFileVersions.value[it] }
-        if (def != null) {
-            InstallGuideDialog(
-                definition = def,
-                attempted = emptyList(),
-                onDismiss = { runtimeDialogOpen = null },
-                onInstalled = {
-                    runtimeScope.launch {
-                        withContext(Dispatchers.IO) {
-                            val (vers, srcs, bvs) = detectRuntimeVersionsWithSources(workspace.rootDir)
-                            runtimeVersions.value = vers
-                            runtimeSources.value = srcs
-                            runtimeBuildFileVersions.value = bvs
-                        }
-                    }
-                },
-                installer = LspInstallers.forId(runtimeDialogId),
-                suggestedVersion = suggested,
-                onOpenManager = {
-                    val id = runtimeDialogOpen
-                    runtimeDialogOpen = null
-                    installManagerOpen = id
-                },
-            )
-        } else {
-            runtimeDialogOpen = null
-        }
-    }
-    }
 }
 
 private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<String, String> {
@@ -2987,7 +2487,7 @@ private fun detectRuntimeVersions(projectRoot: java.nio.file.Path? = null): Map<
     return vers
 }
 
-private fun detectRuntimeVersionsWithSources(projectRoot: java.nio.file.Path? = null): Triple<Map<String, String>, Map<String, String>, Map<String, String>> {
+internal fun detectRuntimeVersionsWithSources(projectRoot: java.nio.file.Path? = null): Triple<Map<String, String>, Map<String, String>, Map<String, String>> {
     val vers = detectRuntimeVersions(projectRoot)
     val sources = mutableMapOf<String, String>()
     val buildVers = mutableMapOf<String, String>()
@@ -3021,17 +2521,14 @@ private fun captureVersion(cmd: String, vararg args: String): String? {
 }
 
 @Composable
-private fun PaneRegion(
+internal fun PaneRegion(
     pane: EditorPaneState,
     side: PaneSide,
+    editor: EditorWorkspaceState,
     lspRouter: LspRouter,
     isFocused: Boolean,
     onPaneFocus: (PaneSide) -> Unit,
-    onEditorChange: (PaneSide, TextFieldValue) -> Unit,
-    onActivateTab: (PaneSide, Int) -> Unit,
     onCloseTab: (PaneSide, Int) -> Unit,
-    onMoveTab: (PaneSide, Int, Int) -> Unit,
-    onMoveTabAcross: ((PaneSide, Int) -> Unit)?,
     onQueryChange: (PaneSide, String) -> Unit,
     onReplaceChange: (PaneSide, String) -> Unit,
     onToggleCase: (PaneSide) -> Unit,
@@ -3109,12 +2606,14 @@ private fun PaneRegion(
             book = pane.book,
             onActivate = { idx ->
                 onPaneFocus(side)
-                onActivateTab(side, idx)
+                editor.activateTab(side, idx)
             },
             onClose = { idx -> onCloseTab(side, idx) },
-            onMove = { from, to -> onMoveTab(side, from, to) },
-            onMoveToOtherPane = onMoveTabAcross?.let { fn -> { idx -> fn(side, idx) } },
-            crossPaneSide = if (onMoveTabAcross == null) null else when (side) {
+            onMove = { from, to -> editor.moveTab(side, from, to) },
+            onMoveToOtherPane = if (editor.splitEnabled) {
+                { idx -> editor.moveTabAcross(side, idx) }
+            } else null,
+            crossPaneSide = if (!editor.splitEnabled) null else when (side) {
                 PaneSide.PRIMARY -> CrossPaneSide.RIGHT
                 PaneSide.SECONDARY -> CrossPaneSide.LEFT
             },
@@ -3133,7 +2632,7 @@ private fun PaneRegion(
             FileKind.SVG -> SvgEditPanel(
                 path = active.path,
                 value = pane.editorValue,
-                onValueChange = { v -> onEditorChange(side, v) },
+                onValueChange = { v -> editor.handleEditorChange(side, v) },
                 search = pane.search,
                 onQueryChange = { q -> onQueryChange(side, q) },
                 onReplaceChange = { v -> onReplaceChange(side, v) },
@@ -3157,10 +2656,15 @@ private fun PaneRegion(
                     ?.toList().orEmpty()
                 val globalStarting = lspRouter.startingActivities
                 val installActivities = InstallProgressRegistry.entries.values.map { e ->
+                    val frac = (e.progress as? page.runtime.LspInstaller.Progress.Downloading)
+                        ?.takeIf { it.total > 0 }
+                        ?.let { (it.bytesRead.toFloat() / it.total.toFloat()).coerceIn(0f, 1f) }
                     page.app.LspController.Activity(
                         kind = "install",
                         label = "${e.displayName} (installing)",
                         startedAtMs = e.startedAtMs,
+                        progress = frac,
+                        installerId = e.installerId,
                     )
                 }
                 val lspActivities = (globalStarting + ctrlActivities + installActivities)
@@ -3168,7 +2672,7 @@ private fun PaneRegion(
                     .sortedBy { it.startedAtMs }
                 EditorPanel(
                     value = pane.editorValue,
-                    onValueChange = { v -> onEditorChange(side, v) },
+                    onValueChange = { v -> editor.handleEditorChange(side, v) },
                     search = pane.search,
                     onQueryChange = { q -> onQueryChange(side, q) },
                     onReplaceChange = { v -> onReplaceChange(side, v) },
@@ -3185,6 +2689,9 @@ private fun PaneRegion(
                     lspStatusText = lspStatusText,
                     lspActivities = lspActivities,
                     onLspStatusClick = { activeCtrl?.openInstallGuide() },
+                    onActivityClick = { act ->
+                        act.installerId?.let { onRuntimeClick?.invoke(it) }
+                    },
                     onProblemsToggle = onProblemsToggle,
                     todoCount = todoCount,
                     onTodoToggle = onTodoToggle,
@@ -3271,7 +2778,7 @@ private fun EmptyPanePlaceholder(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TitleBar(
+internal fun TitleBar(
     path: Path?,
     terminalOpen: Boolean,
     onTerminalToggle: () -> Unit,
@@ -3624,7 +3131,7 @@ private fun OutputGlyph(tint: Color, size: Dp = 14.dp) {
 }
 
 @Composable
-private fun ResizeHandle(onDeltaDp: (Dp) -> Unit) {
+internal fun ResizeHandle(onDeltaDp: (Dp) -> Unit) {
     val density = LocalDensity.current
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()

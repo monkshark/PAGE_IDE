@@ -13,6 +13,7 @@ data class AutoSaveOptions(
     val onFocusLost: Boolean = true,
     val idleSeconds: Int = 15,
     val beforeRun: Boolean = true,
+    val onClose: Boolean = true,
 ) {
     companion object { val DEFAULT = AutoSaveOptions() }
 }
@@ -69,6 +70,7 @@ object AppSettings {
     private const val KEY_AS_FOCUS_LOST = "autoSave.onFocusLost"
     private const val KEY_AS_IDLE_SECONDS = "autoSave.idleSeconds"
     private const val KEY_AS_BEFORE_RUN = "autoSave.beforeRun"
+    private const val KEY_AS_ON_CLOSE = "autoSave.onClose"
 
     private const val KEY_ED_FONT_SIZE = "editor.fontSize"
     private const val KEY_ED_TAB_SIZE = "editor.tabSize"
@@ -109,12 +111,14 @@ object AppSettings {
             onFocusLost = p.getBoolean(KEY_AS_FOCUS_LOST, default.onFocusLost),
             idleSeconds = p.getInt(KEY_AS_IDLE_SECONDS, default.idleSeconds, 0, 3600),
             beforeRun = p.getBoolean(KEY_AS_BEFORE_RUN, default.beforeRun),
+            onClose = p.getBoolean(KEY_AS_ON_CLOSE, default.onClose),
         )
     }
     fun saveAutoSave(o: AutoSaveOptions) = writeProperties(mapOf(
         KEY_AS_FOCUS_LOST to o.onFocusLost.toString(),
         KEY_AS_IDLE_SECONDS to o.idleSeconds.toString(),
         KEY_AS_BEFORE_RUN to o.beforeRun.toString(),
+        KEY_AS_ON_CLOSE to o.onClose.toString(),
     ))
 
     fun loadEditor(default: EditorOptions = EditorOptions.DEFAULT): EditorOptions {

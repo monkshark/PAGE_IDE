@@ -360,7 +360,7 @@ private fun ManagerDetailPane(
     }
 }
 
-private val RUNTIME_IDS = listOf("jdk", "node", "python-runtime", "go-sdk", "cpp-toolchain", "mingw-toolchain", "rust-runtime", "dotnet-runtime")
+private val RUNTIME_IDS = listOf("jdk", "node", "python-runtime", "go-sdk", "cpp-toolchain", "mingw-toolchain", "rust-runtime", "dotnet-runtime", "windows-sdk")
 private val RUNTIME_NAMES = mapOf(
     "jdk" to "Eclipse Temurin JDK",
     "node" to "Node.js",
@@ -370,6 +370,7 @@ private val RUNTIME_NAMES = mapOf(
     "mingw-toolchain" to "MinGW-w64 (UCRT64)",
     "rust-runtime" to "Rust Toolchain",
     "dotnet-runtime" to ".NET SDK",
+    "windows-sdk" to "Windows SDK (MSVC, xwin)",
 )
 
 private fun buildManagerEntries(): List<ManagerEntry> {
