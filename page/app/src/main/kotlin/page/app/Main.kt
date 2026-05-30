@@ -7,6 +7,7 @@ import page.app.input.ShortcutAction
 import page.app.input.ShortcutResolver
 import page.app.filetree.FileTreeActionExecutor
 import page.app.filetree.LargeCopyDialogState
+import page.app.domain.FileOperationsInteractor
 import page.app.filetree.PasteEntryDialogState
 import page.app.lsp.LspEditorInterconnector
 import page.app.state.EditorWorkspaceState
@@ -567,34 +568,14 @@ private fun androidx.compose.ui.window.ApplicationScope.AppContent() {
         }
     }
 
+    val fileOperationsInteractor = remember {
+        FileOperationsInteractor(
+            readFileText = { p -> FileDocument.loadOrNull(p) },
+            applyTextReplace = { p, text -> FileDocument.save(p, text) },
+        )
+    }
     val onReplaceInFiles: suspend (ReplaceRequest) -> ReplaceOutcome = { req ->
-        data class Outcome(val filesChanged: Int, val replacements: Int, val updates: Map<Path, String>)
-        val result = withContext(Dispatchers.IO) {
-            var filesChanged = 0
-            var replacements = 0
-            val updates = HashMap<Path, String>()
-            for (target in req.targets) {
-                val original = FileDocument.loadOrNull(target) ?: continue
-                val (newText, count) = ProjectGrep.applyReplace(
-                    text = original,
-                    query = req.query,
-                    replacement = req.replacement,
-                    caseSensitive = req.caseSensitive,
-                    regex = req.regex,
-                    wholeWord = req.wholeWord,
-                )
-                if (count == 0 || newText == original) continue
-                try {
-                    FileDocument.save(target, newText)
-                } catch (_: java.io.IOException) {
-                    continue
-                }
-                updates[target] = newText
-                filesChanged += 1
-                replacements += count
-            }
-            Outcome(filesChanged, replacements, updates)
-        }
+        val result = fileOperationsInteractor.replaceInFiles(req)
         if (result.updates.isNotEmpty()) {
             mutatePane(PaneSide.PRIMARY) { pane ->
                 val newBook = applyReplaceToBook(pane.book, result.updates)
